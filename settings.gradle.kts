@@ -23,4 +23,5 @@ include(
     ":feature:auth",
     ":feature:player",
     ":feature:chat",
+    ":feature:channel",
 )
