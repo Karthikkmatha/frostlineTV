@@ -45,3 +45,38 @@ Stage 4 additions:
 - Animated emotes run on one shared 12-15 fps clock and stop when off screen, hidden or paused; Settings can turn them
   into still frames. Settings also has a UI frame-rate overlay toggle.
 
+
+## Channel points, rewards, predictions and polls (Stage 5)
+
+Signed-in only, and only with a linked web session; for guests none of it exists (no button, no banner, no requests).
+GQL sits behind `EngagementApi` (`:core:twitch-internal`); Hermes carries `community-points-user-v1.<userId>`,
+`predictions-channel-v1.<channelId>` and `polls.<channelId>`. Each part fails on its own and quietly (its UI is hidden);
+the debug overlay shows only the HTTP status, exception class or GQL message. Nothing that costs real money is offered:
+rewards that look like Bits, cheers or gifted subs are filtered out, redeems are always `pricingType: POINTS`, and poll
+Bits settings are never read.
+
+- Header: balance with the channel's points name and icon. The bonus chest is claimed automatically (Settings > Channel
+  points, default on) with a short "+50" toast. The balance follows Hermes; a GQL poll covers a quiet or broken socket.
+- Rewards sheet: title, cost and icon; unaffordable, cooling-down, paused and out-of-stock rewards stay visible, inert,
+  with the reason. OK on a reward opens a confirm step (text field for rewards that need input; OK opens the keyboard),
+  then the result is shown.
+- Prediction banner: title, outcomes with percentages and point totals, time left; OK opens a sheet to pick an outcome,
+  an amount (10 / 100 / 1k / Max presets, +/- steppers, never above the balance) and confirm. Locked and resolved states
+  show, with won/lost/refunded for the viewer.
+- Poll banner: same; the vote sheet offers the free vote and, if the poll has it, an extra vote paid with channel points.
+  Results stay for 15 s after the poll ends.
+
+### Focus model additions
+
+```
+[Menu] [Rewards]        Left/Right between them; Left from Menu -> player; Down -> first banner, else the list
+[prediction banner]     Up -> the header button that was last focused; Down -> poll banner, else list; Left -> player
+[poll banner]           Up -> prediction banner, else the header; Down -> list
+[ message list ]        Up at the oldest line -> last banner, else Menu
+```
+
+- Banners sit above the list and never take focus when they appear. If the focused banner goes away, focus moves to the list.
+- Rewards, prediction and poll sheets trap focus (`exit` is cancelled; every edge is closed). Back steps out of a confirm or
+  result step first, then closes the sheet; focus returns to the element that opened it (Rewards button, or the banner;
+  the list if the banner is gone).
+- Covered by `EngagementFocusTest` (header to Rewards, Rewards sheet to redeem confirm, banner to prediction sheet, Back).

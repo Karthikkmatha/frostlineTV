@@ -42,6 +42,7 @@ fun SettingsScreen(
         onFollowRaids = viewModel::setFollowRaids,
         onDebugOverlay = viewModel::setDebugOverlay,
         onShowFps = viewModel::setShowFps,
+        onAutoClaim = viewModel::setAutoClaimPoints,
         onChatChange = viewModel::updateChat,
     )
 }
@@ -58,6 +59,7 @@ fun SettingsContent(
     onDebugOverlay: (Boolean) -> Unit,
     onChatChange: ((ChatSettings) -> ChatSettings) -> Unit = {},
     onShowFps: (Boolean) -> Unit = {},
+    onAutoClaim: (Boolean) -> Unit = {},
 ) {
     LazyColumn(
         // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
@@ -177,6 +179,20 @@ fun SettingsContent(
                 onToggle = { v -> onChatChange { it.copy(showFfz = v) } },
                 modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat_ffz"),
             )
+        }
+
+        if (ui.signedIn) {
+            item { Spacer(Modifier.height(12.dp)) }
+            item { Heading("Channel points") }
+            item {
+                TvToggleRow(
+                    label = "Auto-claim bonus points",
+                    description = "Claim the bonus chest as soon as it appears while you watch.",
+                    checked = ui.autoClaimPoints,
+                    onToggle = onAutoClaim,
+                    modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_auto_claim"),
+                )
+            }
         }
 
         item { Spacer(Modifier.height(12.dp)) }

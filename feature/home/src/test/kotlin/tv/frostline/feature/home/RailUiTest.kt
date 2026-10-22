@@ -71,7 +71,7 @@ class RailUiTest {
         var size: androidx.compose.ui.geometry.Size? = null
         items.forEach { item ->
             val ind = rule.onNodeWithTag("rail_${item.id}").fetchSemanticsNode().boundsInRoot
-            val icon = rule.onNodeWithTag("rail_icon_${item.id}").fetchSemanticsNode().boundsInRoot
+            val icon = rule.onNodeWithTag("rail_icon_${item.id}", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
             org.junit.Assert.assertEquals(item.id, ind.center.x, icon.center.x, tol)
             org.junit.Assert.assertEquals(item.id, ind.center.y, icon.center.y, tol)
             if (size == null) size = ind.size else org.junit.Assert.assertEquals(size, ind.size)

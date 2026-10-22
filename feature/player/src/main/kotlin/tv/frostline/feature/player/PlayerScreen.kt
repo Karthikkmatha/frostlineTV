@@ -40,7 +40,11 @@ import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.TvButton
 import tv.frostline.core.ui.rememberUiFps
+import kotlinx.coroutines.flow.MutableStateFlow
 import tv.frostline.feature.chat.ChatActions
+import tv.frostline.feature.chat.EngagementActions
+import tv.frostline.feature.chat.EngagementUi
+import tv.frostline.feature.chat.EngagementViewModel
 import tv.frostline.feature.chat.ChatLayout
 import tv.frostline.feature.chat.ChatUiModel
 import tv.frostline.feature.chat.ChatViewModel
@@ -54,6 +58,8 @@ fun PlayerScreen(
     onBack: () -> Unit,
     /** Opens the channel page of the given login. */
     onOpenChannel: (String) -> Unit = {},
+    /** Channel points, rewards, predictions and polls (signed in only). Null = none of it. */
+    engagement: EngagementViewModel? = null,
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
@@ -76,6 +82,8 @@ fun PlayerScreen(
     val chatSignedIn by chat.signedIn.collectAsStateWithLifecycle()
     val chatPicker by chat.picker.collectAsStateWithLifecycle()
     val chatVisible = chatSettings.enabled
+    val engUi by remember(engagement) { engagement?.engine?.ui ?: MutableStateFlow(EngagementUi()) }.collectAsStateWithLifecycle()
+    val engDebug by remember(engagement) { engagement?.engine?.debug ?: MutableStateFlow(emptyList<String>()) }.collectAsStateWithLifecycle()
     val chatController = rememberChatController()
     val playerRoot = remember { FocusRequester() }
     var returnTick by remember { mutableIntStateOf(0) }
@@ -94,17 +102,21 @@ fun PlayerScreen(
         onDispose { chat.stop() }
     }
     LaunchedEffect(ui.login) { chat.setChannel(ui.login) }
+    LaunchedEffect(ui.login, engagement) { engagement?.setChannel(ui.login) }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { engagement?.setChannel(ui.login) }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { engagement?.engine?.stop() }
     val chatPlaying = ui.playing
-    val chatModel = remember(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying) {
-        ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying)
+    val chatModel = remember(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying, engUi) {
+        ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying, engagement = engUi)
     }
-    val chatActions = remember(chat) {
+    val chatActions = remember(chat, engagement) {
         ChatActions(
             send = chat::send,
             update = chat::update,
             hide = { chat.setEnabled(false); returnToPlayer() },
             loadPicker = chat::ensurePickerLoaded,
             leave = { returnToPlayer() },
+            engagement = engagement?.engine?.actions() ?: EngagementActions(),
         )
     }
     val chatHasFocus = chatVisible && chatController.hasFocus
@@ -173,7 +185,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = engDebug.map { "engage   $it" })
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))

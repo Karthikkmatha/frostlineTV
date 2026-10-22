@@ -27,6 +27,7 @@ import tv.frostline.feature.auth.SignInScreen
 import tv.frostline.feature.home.HomeScreen
 import tv.frostline.feature.home.HomeViewModel
 import tv.frostline.feature.chat.ChatViewModel
+import tv.frostline.feature.chat.EngagementViewModel
 import tv.frostline.feature.channel.ChannelScreen
 import tv.frostline.feature.channel.ChannelViewModel
 import tv.frostline.feature.channel.asChannelSource
@@ -179,7 +180,17 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         }
                     },
                 )
-                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel)
+                val engagementVm: EngagementViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            EngagementViewModel(
+                                login, container.engagement, container.hermes, container.vault,
+                                container.twitch.helix, container.settings,
+                            )
+                        }
+                    },
+                )
+                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel, engagement = engagementVm)
             }
         }
         composable(CHANNEL, arguments = listOf(navArgument("login") { type = NavType.StringType })) { entry ->

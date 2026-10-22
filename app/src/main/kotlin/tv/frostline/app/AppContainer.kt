@@ -28,6 +28,7 @@ class AppContainer(context: Context) {
     val webCookies = AndroidWebCookies()
     val playback = TwitchInternal.playback()
     val hermes = TwitchInternal.hermes()
+    val engagement = TwitchInternal.engagement()
     val vodPlayback = TwitchInternal.vodPlayback()
     val videoComments = TwitchInternal.videoComments()
 

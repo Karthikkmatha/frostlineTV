@@ -23,6 +23,7 @@ data class AccountUi(
     val followRaids: Boolean = true,
     val debugOverlay: Boolean = false,
     val showFps: Boolean = false,
+    val autoClaimPoints: Boolean = true,
     val chat: ChatSettings = ChatSettings(),
 )
 
@@ -38,7 +39,8 @@ class AccountViewModel(
 
     val ui: StateFlow<AccountUi> = combine(account, settings.followRaids, settings.debugOverlay, settings.chat) { a, raids, dbg, chat ->
         a.copy(followRaids = raids, debugOverlay = dbg, chat = chat)
-    }.combine(settings.showFps) { ui, fps -> ui.copy(showFps = fps) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
+    }.combine(settings.showFps) { ui, fps -> ui.copy(showFps = fps) }
+        .combine(settings.autoClaimPoints) { ui, claim -> ui.copy(autoClaimPoints = claim) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
 
     init {
         // Re-check a stored web session when Settings opens so an expired one is flagged.
@@ -63,6 +65,10 @@ class AccountViewModel(
 
     fun updateChat(transform: (ChatSettings) -> ChatSettings) {
         viewModelScope.launch { settings.updateChat(transform) }
+    }
+
+    fun setAutoClaimPoints(value: Boolean) {
+        viewModelScope.launch { settings.setAutoClaimPoints(value) }
     }
 
     fun setShowFps(value: Boolean) {
