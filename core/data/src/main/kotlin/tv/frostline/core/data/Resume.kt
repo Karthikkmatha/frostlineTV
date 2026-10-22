@@ -9,7 +9,7 @@ import androidx.room.RoomDatabase
 import androidx.room.Upsert
 import kotlinx.coroutines.flow.Flow
 
-/** A VOD the user stopped partway through. Empty for now; stage 2 (player) fills it. */
+/** A VOD the user stopped partway through. Positions and durations are in milliseconds. */
 @Entity(tableName = "resume")
 data class ResumeEntity(
     @PrimaryKey val videoId: String,
@@ -25,6 +25,9 @@ data class ResumeEntity(
 interface ResumeDao {
     @Query("SELECT * FROM resume ORDER BY updatedAt DESC LIMIT 30")
     fun observeAll(): Flow<List<ResumeEntity>>
+
+    @Query("SELECT * FROM resume WHERE videoId = :videoId")
+    suspend fun get(videoId: String): ResumeEntity?
 
     @Upsert
     suspend fun upsert(entity: ResumeEntity)

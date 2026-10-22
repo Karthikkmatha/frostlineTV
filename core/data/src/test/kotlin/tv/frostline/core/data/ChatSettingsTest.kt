@@ -36,3 +36,20 @@ class ChatSettingsTest {
         assertEquals(0, ChatOptions.nextIndex(3, 4))
     }
 }
+
+class StageFourSettingsTest {
+    @Test fun animatedEmotesDefaultOnAndPersistOff() = runTest {
+        val store = SettingsStore(InMemoryPreferencesStore())
+        assertTrue(store.chat.first().animatedEmotes)
+        store.updateChat { it.copy(animatedEmotes = false) }
+        assertEquals(false, store.chat.first().animatedEmotes)
+        assertTrue(store.chat.first().show7tv)
+    }
+
+    @Test fun fpsOverlayDefaultsOff() = runTest {
+        val store = SettingsStore(InMemoryPreferencesStore())
+        assertEquals(false, store.showFps.first())
+        store.setShowFps(true)
+        assertEquals(true, store.showFps.first())
+    }
+}

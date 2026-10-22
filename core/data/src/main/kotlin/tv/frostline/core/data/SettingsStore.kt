@@ -17,6 +17,8 @@ data class ChatSettings(
     val show7tv: Boolean = true,
     val showBttv: Boolean = true,
     val showFfz: Boolean = true,
+    /** Animated emotes play (at a throttled frame rate). Off shows the first frame only. */
+    val animatedEmotes: Boolean = true,
 )
 
 /** Plain (non-secret) app settings. */
@@ -27,6 +29,9 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     /** Playback stats overlay (Settings > Developer). Default off. */
     val debugOverlay: Flow<Boolean> = store.data.map { it[DEBUG_OVERLAY] ?: false }
 
+    /** Shows the measured UI frame rate in the debug overlay. Default off. */
+    val showFps: Flow<Boolean> = store.data.map { it[SHOW_FPS] ?: false }
+
     val chat: Flow<ChatSettings> = store.data.map { p ->
         ChatSettings(
             enabled = p[CHAT_ENABLED] ?: true,
@@ -36,6 +41,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
             show7tv = p[CHAT_7TV] ?: true,
             showBttv = p[CHAT_BTTV] ?: true,
             showFfz = p[CHAT_FFZ] ?: true,
+            animatedEmotes = p[CHAT_ANIMATED] ?: true,
         )
     }
 
@@ -49,6 +55,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
                 show7tv = p[CHAT_7TV] ?: true,
                 showBttv = p[CHAT_BTTV] ?: true,
                 showFfz = p[CHAT_FFZ] ?: true,
+                animatedEmotes = p[CHAT_ANIMATED] ?: true,
             )
             val n = transform(cur)
             p[CHAT_ENABLED] = n.enabled
@@ -58,6 +65,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
             p[CHAT_7TV] = n.show7tv
             p[CHAT_BTTV] = n.showBttv
             p[CHAT_FFZ] = n.showFfz
+            p[CHAT_ANIMATED] = n.animatedEmotes
         }
     }
 
@@ -69,7 +77,13 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[DEBUG_OVERLAY] = value }
     }
 
+    suspend fun setShowFps(value: Boolean) {
+        store.edit { it[SHOW_FPS] = value }
+    }
+
     private companion object {
+        val SHOW_FPS = booleanPreferencesKey("debug_fps_v1")
+        val CHAT_ANIMATED = booleanPreferencesKey("chat_animated_emotes_v1")
         val FOLLOW_RAIDS = booleanPreferencesKey("follow_raids_v1")
         val DEBUG_OVERLAY = booleanPreferencesKey("debug_overlay_v1")
         val CHAT_ENABLED = booleanPreferencesKey("chat_enabled_v1")
