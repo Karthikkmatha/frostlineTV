@@ -1,26 +1,20 @@
 package tv.frostline.feature.home
 
 import androidx.annotation.DrawableRes
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -33,12 +27,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.Surface
-import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.cardScale
 import tv.frostline.core.ui.cardShape
@@ -46,12 +38,15 @@ import tv.frostline.core.ui.focusRingBorder
 
 data class RailItem(val id: String, val label: String, @DrawableRes val icon: Int)
 
-val RailCollapsedWidth: Dp = 64.dp
-val RailExpandedWidth: Dp = 220.dp
+val RailCollapsedWidth: Dp = 72.dp
+
+/** One fixed size for every item's focus/selection indicator; it is centred on its icon. */
+val RailIndicatorSize: Dp = 48.dp
+val RailIconSize: Dp = 24.dp
 
 /**
- * Icon rail that is always collapsed and slides open only while it holds focus (Left from content).
- * It overlays the content, so the content never reflows.
+ * Icon-only rail. It never expands: content does not shift when it gains focus. Labels are exposed as
+ * contentDescription for accessibility only. Each item is a [RailIndicatorSize] circle with its icon centred in it.
  */
 @OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
@@ -63,58 +58,46 @@ fun SideRail(
     groupRequester: FocusRequester = remember { FocusRequester() },
     onFocusChange: (Boolean) -> Unit = {},
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    val width by animateDpAsState(
-        targetValue = if (expanded) RailExpandedWidth else RailCollapsedWidth,
-        animationSpec = tween(180),
-        label = "railWidth",
-    )
     val requesters = remember(items) { items.associate { it.id to FocusRequester() } }
+    val shape = CircleShape
 
     Column(
         modifier
             .fillMaxHeight()
-            .width(width)
+            .width(RailCollapsedWidth)
             .background(Brush.horizontalGradient(listOf(Color(0xF2050507), Color(0xE6050507), Color(0x00050507))))
-            .onFocusChanged {
-                expanded = it.hasFocus
-                onFocusChange(it.hasFocus)
-            }
+            .onFocusChanged { onFocusChange(it.hasFocus) }
             .focusRequester(groupRequester)
             .focusProperties { enter = { requesters[selectedId] ?: FocusRequester.Default } }
             .focusGroup()
-            .padding(horizontal = 8.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterVertically),
     ) {
-        items.forEachIndexed { i, item ->
-            if (i > 0) Spacer(Modifier.height(6.dp))
+        items.forEach { item ->
             val selected = item.id == selectedId
             Surface(
                 onClick = { onSelect(item.id) },
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp)
+                    .size(RailIndicatorSize)
                     .focusRequester(requesters.getValue(item.id))
                     .testTag("rail_${item.id}"),
-                shape = cardShape(RoundedCornerShape(22.dp)),
-                border = focusRingBorder(RoundedCornerShape(22.dp)),
+                shape = cardShape(shape),
+                border = focusRingBorder(shape),
                 scale = cardScale(1f),
                 colors = ClickableSurfaceDefaults.colors(
-                    containerColor = if (selected) FrostColors.Primary else Color.Transparent,
+                    containerColor = if (selected) FrostColors.Primary.copy(alpha = 0.55f) else Color.Transparent,
                     contentColor = FrostColors.OnSurface,
                     focusedContainerColor = FrostColors.SurfaceFocused,
                     focusedContentColor = FrostColors.Lavender,
                 ),
             ) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(painterResource(item.icon), contentDescription = null, modifier = Modifier.width(22.dp).height(22.dp))
-                    if (expanded) {
-                        Spacer(Modifier.width(14.dp))
-                        Text(item.label, fontSize = 15.sp, maxLines = 1)
-                    }
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Icon(
+                        painterResource(item.icon),
+                        contentDescription = item.label,
+                        modifier = Modifier.size(RailIconSize).testTag("rail_icon_${item.id}"),
+                    )
                 }
             }
         }

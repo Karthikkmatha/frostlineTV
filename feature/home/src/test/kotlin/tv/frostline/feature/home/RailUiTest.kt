@@ -10,6 +10,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -51,17 +52,34 @@ class RailUiTest {
         rule.onNodeWithText("Settings").assertDoesNotExist()
     }
 
-    @Test fun railSlidesInOnFocusAndCollapsesWhenFocusLeaves() {
+    @Test fun railNeverExpandsOnFocusAndContentDoesNotShift() {
         show()
         rule.onNodeWithTag("content").requestFocus()
         rule.waitForIdle()
+        val before = rule.onNodeWithTag("content").fetchSemanticsNode().boundsInRoot
         rule.onNodeWithTag("rail_top").requestFocus()
         rule.waitForIdle()
-        rule.onNodeWithText("Top").assertExists()
-        rule.onNodeWithText("Following").assertExists()
-        rule.onNodeWithTag("content").requestFocus()
-        rule.waitForIdle()
+        rule.onNodeWithText("Top").assertDoesNotExist()
         rule.onNodeWithText("Following").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Top").assertExists()
+        org.junit.Assert.assertEquals(before, rule.onNodeWithTag("content").fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Test fun indicatorIsCentredOnItsIconForEveryItemAndSizesMatch() {
+        show(selected = "top")
+        val tol = with(rule.density) { 1.dp.toPx() }
+        var size: androidx.compose.ui.geometry.Size? = null
+        items.forEach { item ->
+            val ind = rule.onNodeWithTag("rail_${item.id}").fetchSemanticsNode().boundsInRoot
+            val icon = rule.onNodeWithTag("rail_icon_${item.id}").fetchSemanticsNode().boundsInRoot
+            org.junit.Assert.assertEquals(item.id, ind.center.x, icon.center.x, tol)
+            org.junit.Assert.assertEquals(item.id, ind.center.y, icon.center.y, tol)
+            if (size == null) size = ind.size else org.junit.Assert.assertEquals(size, ind.size)
+        }
+        // Evenly spaced: equal gaps between consecutive indicators.
+        val tops = items.map { rule.onNodeWithTag("rail_${it.id}").fetchSemanticsNode().boundsInRoot }
+        val gaps = tops.zipWithNext { a, b -> b.top - a.bottom }
+        gaps.forEach { org.junit.Assert.assertEquals(gaps[0], it, tol) }
     }
 
     @Test fun leftFromContentEntersRailAtSelectedItem() {
@@ -71,6 +89,5 @@ class RailUiTest {
         rule.onNodeWithTag("content").performKeyInput { pressKey(Key.DirectionLeft) }
         rule.waitForIdle()
         rule.onNodeWithTag("rail_search").assertIsFocused()
-        rule.onNodeWithText("Search").assertExists()
     }
 }
