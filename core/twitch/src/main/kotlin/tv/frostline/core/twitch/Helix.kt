@@ -28,6 +28,10 @@ data class HelixUser(
     val login: String,
     @SerialName("display_name") val displayName: String = "",
     @SerialName("profile_image_url") val profileImageUrl: String = "",
+    val description: String = "",
+    @SerialName("offline_image_url") val offlineImageUrl: String = "",
+    @SerialName("broadcaster_type") val broadcasterType: String = "",
+    @SerialName("created_at") val createdAt: String = "",
 )
 
 @Serializable
@@ -140,6 +144,32 @@ interface HelixApi {
         @Query("user_login") userLogin: String? = null,
     ): Page<HelixStream>
 
+    /** Past broadcasts, highlights and uploads of one channel, newest first. [type]: all, archive, highlight, upload. */
+    @GET("videos")
+    suspend fun videos(
+        @Query("user_id") userId: String,
+        @Query("type") type: String = "all",
+        @Query("first") first: Int = 24,
+        @Query("after") after: String? = null,
+        @Query("sort") sort: String = "time",
+    ): Page<HelixVideo>
+
+    @GET("videos")
+    suspend fun videoById(@Query("id") id: String): Page<HelixVideo>
+
+    /** Clips of one channel, most viewed first. [startedAt] (RFC 3339) limits them to a period. */
+    @GET("clips")
+    suspend fun clips(
+        @Query("broadcaster_id") broadcasterId: String,
+        @Query("first") first: Int = 24,
+        @Query("after") after: String? = null,
+        @Query("started_at") startedAt: String? = null,
+        @Query("ended_at") endedAt: String? = null,
+    ): Page<HelixClip>
+
+    @GET("clips")
+    suspend fun clipById(@Query("id") id: String): Page<HelixClip>
+
     @GET("games/top")
     suspend fun topGames(
         @Query("first") first: Int = 40,
@@ -211,4 +241,5 @@ fun createHelixApi(
 
 /** Replaces Twitch's `{width}x{height}` placeholders. */
 fun String.sized(width: Int, height: Int): String =
-    replace("{width}", width.toString()).replace("{height}", height.toString())
+    replace("%{width}", width.toString()).replace("%{height}", height.toString())
+        .replace("{width}", width.toString()).replace("{height}", height.toString())

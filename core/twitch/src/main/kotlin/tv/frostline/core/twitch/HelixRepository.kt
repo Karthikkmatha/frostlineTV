@@ -25,6 +25,8 @@ class HelixRepository(private val api: HelixApi) {
     /** The live stream of [login], or null when the channel is offline. */
     suspend fun streamByLogin(login: String): HelixStream? = api.streams(first = 1, userLogin = login).data.firstOrNull()
 
+    suspend fun userById(id: String): HelixUser? = api.usersByIds(listOf(id)).data.firstOrNull()
+
     suspend fun userByLogin(login: String): HelixUser? = api.usersByLogin(listOf(login)).data.firstOrNull()
 
     suspend fun followedLive(userId: String): List<HelixStream> {
@@ -69,6 +71,19 @@ class HelixRepository(private val api: HelixApi) {
         return if (out.size > limit) out.subList(0, limit) else out
     }
 
+    suspend fun videoById(id: String): HelixVideo? = api.videoById(id).data.firstOrNull()
+    suspend fun clipById(id: String): HelixClip? = api.clipById(id).data.firstOrNull()
+
+    suspend fun videos(userId: String, kind: VideoKind, after: String? = null): PagedResult<HelixVideo> {
+        val p = api.videos(userId, kind.helixType, PAGE, after)
+        return PagedResult(p.data, p.pagination?.cursor)
+    }
+
+    suspend fun clips(broadcasterId: String, period: ClipPeriod, after: String? = null, now: java.time.Instant = java.time.Instant.now()): PagedResult<HelixClip> {
+        val p = api.clips(broadcasterId, PAGE, after, period.startedAt(now))
+        return PagedResult(p.data, p.pagination?.cursor)
+    }
+
     suspend fun topStreams(): List<HelixStream> = api.streams(first = 48).data
     suspend fun topCategories(): List<HelixGame> = api.topGames(first = 48).data
     suspend fun categoryStreams(gameId: String): List<HelixStream> = api.streams(first = 48, gameId = gameId).data
@@ -77,5 +92,6 @@ class HelixRepository(private val api: HelixApi) {
 
     private companion object {
         const val MAX_PAGES = 100
+        const val PAGE = 24
     }
 }
