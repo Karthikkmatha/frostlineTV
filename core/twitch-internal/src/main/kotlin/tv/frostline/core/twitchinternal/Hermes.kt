@@ -34,7 +34,7 @@ internal object HermesProtocol {
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun subscribe(topic: String, nonce: String, subscriptionId: String, timestamp: String): String =
+    fun subscribe(topic: String, nonce: String, subscriptionId: String, timestamp: String, authToken: String? = null): String =
         buildJsonObject {
             put("type", "subscribe")
             put("id", nonce)
@@ -42,6 +42,7 @@ internal object HermesProtocol {
                 put("id", subscriptionId)
                 put("type", "pubsub")
                 put("pubsub", buildJsonObject { put("topic", topic) })
+                if (authToken != null) put("auth", buildJsonObject { put("type", "bearer"); put("key", authToken) })
             })
             put("timestamp", timestamp)
         }.toString()
@@ -111,7 +112,9 @@ internal class HermesWebSocketClient(
     private val retryDelayMs: (Int) -> Long = { attempt -> minOf(30_000L, 1_000L shl minOf(attempt, 5)) },
 ) : HermesClient {
 
-    override fun events(topics: List<String>): Flow<HermesEvent> = channelFlow {
+    override fun events(topics: List<String>): Flow<HermesEvent> = events(topics, null)
+
+    override fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> = channelFlow {
         var attempt = 0
         while (isActive) {
             val ended = CompletableDeferred<Boolean>()
@@ -124,7 +127,7 @@ internal class HermesWebSocketClient(
                             topics.forEach { topic ->
                                 val sub = UUID.randomUUID().toString()
                                 byId[sub] = topic
-                                webSocket.send(HermesProtocol.subscribe(topic, UUID.randomUUID().toString(), sub, now()))
+                                webSocket.send(HermesProtocol.subscribe(topic, UUID.randomUUID().toString(), sub, now(), authToken))
                             }
                         }
                         HermesProtocol.Message.Reconnect -> {

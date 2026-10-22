@@ -19,6 +19,9 @@ interface WebSessionValidator {
 /** Twitch's internal realtime channel (the PubSub replacement). */
 interface HermesClient {
     fun events(topics: List<String>): Flow<HermesEvent>
+
+    /** For topics that need the viewer's web session. [authToken] is only ever put in the subscribe frame. */
+    fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> = events(topics)
 }
 
 data class HermesEvent(val topic: String, val payload: String)
@@ -36,6 +39,12 @@ object TwitchInternal {
     fun hermes(url: String): HermesClient = HermesWebSocketClient(url = url, retryDelayMs = { 50L })
 
     fun playback(): PlaybackResolver = TwitchPlaybackResolver()
+
+    /** Channel points, rewards, predictions and polls (GQL). */
+    fun engagement(): EngagementApi = GqlEngagementApi()
+
+    /** Test hook: point the engagement client at another GQL URL. */
+    fun engagement(gqlUrl: String): EngagementApi = GqlEngagementApi(gqlUrl = gqlUrl)
 
     /** Past broadcasts and clips. */
     fun vodPlayback(): VodPlaybackResolver = TwitchVodResolver()

@@ -26,6 +26,9 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     /** Follow raids automatically after a 10 s notice. Default on. */
     val followRaids: Flow<Boolean> = store.data.map { it[FOLLOW_RAIDS] ?: true }
 
+    /** Claim the channel-points bonus chest automatically while watching (signed in). Default on. */
+    val autoClaimPoints: Flow<Boolean> = store.data.map { it[AUTO_CLAIM] ?: true }
+
     /** Playback stats overlay (Settings > Developer). Default off. */
     val debugOverlay: Flow<Boolean> = store.data.map { it[DEBUG_OVERLAY] ?: false }
 
@@ -73,6 +76,10 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[FOLLOW_RAIDS] = value }
     }
 
+    suspend fun setAutoClaimPoints(value: Boolean) {
+        store.edit { it[AUTO_CLAIM] = value }
+    }
+
     suspend fun setDebugOverlay(value: Boolean) {
         store.edit { it[DEBUG_OVERLAY] = value }
     }
@@ -82,6 +89,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     }
 
     private companion object {
+        val AUTO_CLAIM = booleanPreferencesKey("points_auto_claim_v1")
         val SHOW_FPS = booleanPreferencesKey("debug_fps_v1")
         val CHAT_ANIMATED = booleanPreferencesKey("chat_animated_emotes_v1")
         val FOLLOW_RAIDS = booleanPreferencesKey("follow_raids_v1")

@@ -53,3 +53,12 @@ class StageFourSettingsTest {
         assertEquals(true, store.showFps.first())
     }
 }
+
+class StageFiveSettingsTest {
+    @Test fun autoClaimDefaultsOnAndPersistsOff() = runTest {
+        val store = SettingsStore(InMemoryPreferencesStore())
+        assertTrue(store.autoClaimPoints.first())
+        store.setAutoClaimPoints(false)
+        assertEquals(false, store.autoClaimPoints.first())
+    }
+}
