@@ -20,6 +20,9 @@ import androidx.compose.ui.unit.dp
 import tv.frostline.core.ui.FocusMemory
 import tv.frostline.core.ui.rememberFocusIn
 
+val OverscanX: Dp = 48.dp
+val OverscanY: Dp = 27.dp
+
 /**
  * One item of a [FocusGrid]. [content] receives a modifier that must be applied to the item's single
  * focus stop (it records focus for restoration and carries the restore FocusRequester).
@@ -75,7 +78,8 @@ fun FocusGrid(
         columns = GridCells.Adaptive(minCellWidth),
         state = state,
         modifier = modifier,
-        contentPadding = PaddingValues(start = 16.dp, end = 32.dp, top = 24.dp, bottom = 32.dp),
+        // 5% overscan on a 960x540 dp screen: 48 dp sides, 27 dp top and bottom.
+        contentPadding = PaddingValues(start = 16.dp, end = OverscanX, top = OverscanY, bottom = OverscanY),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {

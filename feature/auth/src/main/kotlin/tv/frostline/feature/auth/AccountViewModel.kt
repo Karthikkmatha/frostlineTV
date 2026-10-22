@@ -2,13 +2,12 @@ package tv.frostline.feature.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.TokenManager
 import tv.frostline.core.twitchinternal.ProbeResult
@@ -16,59 +15,50 @@ import tv.frostline.core.twitchinternal.WebSessionValidator
 
 data class AccountUi(
     val login: String? = null,
+    val signedIn: Boolean = false,
+    val guest: Boolean = false,
     val webLinked: Boolean = false,
     val webExpired: Boolean = false,
+    val followRaids: Boolean = true,
+    val debugOverlay: Boolean = false,
 )
 
 class AccountViewModel(
     private val vault: TokenVault,
     private val tokenManager: TokenManager,
     private val validator: WebSessionValidator,
+    private val settings: SettingsStore,
 ) : ViewModel() {
-    val ui: StateFlow<AccountUi> = combine(vault.tokens, vault.webSession, vault.webSessionExpired) { t, w, e ->
-        AccountUi(login = t?.login, webLinked = w != null, webExpired = w != null && e)
+    private val account = combine(vault.tokens, vault.webSession, vault.webSessionExpired, vault.guest) { t, w, e, g ->
+        AccountUi(login = t?.login, signedIn = t != null, guest = g && t == null, webLinked = w != null, webExpired = w != null && e)
+    }
+
+    val ui: StateFlow<AccountUi> = combine(account, settings.followRaids, settings.debugOverlay) { a, raids, dbg ->
+        a.copy(followRaids = raids, debugOverlay = dbg)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
 
-    private val _message = MutableStateFlow<String?>(null)
-    val message: StateFlow<String?> = _message.asStateFlow()
-    private val _busy = MutableStateFlow(false)
-    val busy: StateFlow<Boolean> = _busy.asStateFlow()
-
     init {
-        // Re-check a stored cookie when Settings opens so an expired one is flagged.
+        // Re-check a stored web session when Settings opens so an expired one is flagged.
         viewModelScope.launch {
             val stored = vault.currentWebSession() ?: return@launch
             if (validator.validate(stored) == ProbeResult.Invalid) vault.setWebSessionExpired(true)
         }
     }
 
-    fun link(input: String) {
-        if (_busy.value) return
-        viewModelScope.launch {
-            _busy.value = true
-            _message.value = null
-            when (val r = validator.validate(input)) {
-                ProbeResult.Valid -> {
-                    vault.saveWebSession(cleanToken(input))
-                    _message.value = "Web session linked."
-                }
-                ProbeResult.Invalid -> _message.value = "Twitch rejected that token (401). Check you copied the auth-token cookie."
-                is ProbeResult.Failed -> _message.value = "Could not verify the token (${r.reason}). Try again."
-            }
-            _busy.value = false
-        }
+    fun unlinkWebSession() {
+        viewModelScope.launch { vault.clearWebSession() }
     }
 
-    fun unlink() {
-        viewModelScope.launch {
-            vault.clearWebSession()
-            _message.value = "Web session removed."
-        }
-    }
-
+    /** The app watches the vault and navigates to sign-in once the session is gone. */
     fun signOut() {
         viewModelScope.launch { tokenManager.signOut() }
     }
 
-    private fun cleanToken(s: String) = s.trim().removePrefix("auth-token=").trim('"', '\'', ' ', ';')
+    fun setFollowRaids(value: Boolean) {
+        viewModelScope.launch { settings.setFollowRaids(value) }
+    }
+
+    fun setDebugOverlay(value: Boolean) {
+        viewModelScope.launch { settings.setDebugOverlay(value) }
+    }
 }

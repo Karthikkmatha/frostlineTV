@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -44,6 +45,7 @@ import tv.frostline.core.ui.focusRingBorder
 private fun CardSurface(
     onClick: () -> Unit,
     modifier: Modifier,
+    focusedScale: Float = 1.04f,
     content: @Composable () -> Unit,
 ) {
     Surface(
@@ -51,7 +53,7 @@ private fun CardSurface(
         modifier = modifier,
         shape = cardShape(),
         border = focusRingBorder(),
-        scale = cardScale(),
+        scale = cardScale(focusedScale),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = FrostColors.Surface,
             contentColor = FrostColors.OnSurface,
@@ -94,7 +96,7 @@ fun StreamCard(stream: HelixStream, modifier: Modifier, onClick: () -> Unit) {
                 Text(
                     "${formatViewers(stream.viewerCount)} viewers",
                     fontSize = 10.sp,
-                    color = FrostColors.OnSurface,
+                    color = FrostColors.Background,
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(6.dp)
@@ -105,7 +107,7 @@ fun StreamCard(stream: HelixStream, modifier: Modifier, onClick: () -> Unit) {
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Line(stream.userName, 13, FrostColors.OnSurface, bold = true)
                 Line(stream.title.ifBlank { " " }, 11, FrostColors.Muted)
-                Line(stream.gameName.ifBlank { " " }, 11, FrostColors.Ice)
+                Line(stream.gameName.ifBlank { " " }, 11, FrostColors.Lavender)
             }
         }
     }
@@ -165,12 +167,46 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
                     modifier = Modifier.fillMaxSize(),
                 )
                 val fraction = if (item.duration > 0) (item.position.toFloat() / item.duration).coerceIn(0f, 1f) else 0f
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.Background))
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Ice))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.SurfaceAlt))
+                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Primary))
             }
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Line(item.channel, 13, FrostColors.OnSurface, bold = true)
                 Line(item.title, 11, FrostColors.Muted)
+            }
+        }
+    }
+}
+
+/** Following page card: 16:9 thumbnail (~340 dp) on the left, channel details on the right. */
+@Composable
+fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onClick: () -> Unit) {
+    CardSurface(onClick, modifier.fillMaxWidth(), focusedScale = 1f) {
+        Row(Modifier.fillMaxWidth()) {
+            AsyncImage(
+                model = stream.thumbnailUrl.sized(680, 383),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.width(340.dp).aspectRatio(16f / 9f),
+            )
+            Column(
+                Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(36.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
+                        if (!avatarUrl.isNullOrEmpty()) {
+                            AsyncImage(avatarUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        }
+                    }
+                    Line(stream.userName, 18, FrostColors.OnSurface, bold = true)
+                }
+                Line(stream.title.ifBlank { " " }, 15, FrostColors.OnSurface)
+                Line(stream.gameName.ifBlank { " " }, 14, FrostColors.Lavender)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(FrostColors.Live))
+                    Line("${formatViewers(stream.viewerCount)} viewers", 14, FrostColors.Live)
+                }
             }
         }
     }

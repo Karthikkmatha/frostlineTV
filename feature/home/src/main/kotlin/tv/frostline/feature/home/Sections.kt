@@ -5,6 +5,9 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
@@ -49,25 +52,45 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
     val resume by vm.resume.collectAsStateWithLifecycle()
     val entries = remember(st, resume) {
         buildList {
-            add(header("h:live", "Live now"))
-            when {
-                st.error != null -> addAll(retry("f", st.error!!, vm::loadFollowing))
-                st.live.isEmpty() && st.loading -> add(note("f:loading", "Loading your follows..."))
-                st.live.isEmpty() -> add(note("f:none", "None of the channels you follow are live."))
-                else -> st.live.forEach { s -> add(GridEntry("live:${s.userId}") { m -> StreamCard(s, m) { vm.onLeaving(); onOpen(s.userLogin) } }) }
-            }
-            if (resume.isNotEmpty()) {
-                add(header("h:resume", "Continue watching"))
-                resume.forEach { r -> add(GridEntry("resume:${r.videoId}") { m -> ResumeCard(r, m) { vm.onLeaving(); onOpen(r.channel) } }) }
-            }
-            if (st.offline.isNotEmpty()) {
-                add(
-                    GridEntry("offline:toggle", fullSpan = true) { m ->
-                        OfflineToggle("Offline (${st.offline.size})", st.offlineExpanded, vm::toggleOffline, m)
-                    },
-                )
-                if (st.offlineExpanded) {
-                    st.offline.forEach { c -> add(GridEntry("off:${c.broadcasterId}") { m -> OfflineChip(c, m) { vm.onLeaving(); onOpen(c.login) } }) }
+            if (st.needsSignIn) {
+                add(header("h:live", "Following"))
+                add(note("f:signin", "Sign in to see your follows"))
+                add(GridEntry("f:settings", fullSpan = true) { m -> TvButton("Open Settings to sign in", { vm.select(HomeSection.Settings) }, m) })
+            } else {
+                add(header("h:live", "Live now"))
+                when {
+                    st.error != null -> addAll(retry("f", st.error!!, vm::loadFollowing))
+                    st.live.isEmpty() && st.loading -> add(note("f:loading", "Loading your follows..."))
+                    st.live.isEmpty() -> add(note("f:none", "None of the channels you follow are live."))
+                    else -> st.live.forEach { s ->
+                        add(
+                            GridEntry("live:${s.userId}", fullSpan = true) { m ->
+                                WideStreamCard(s, st.avatars[s.userId], m) { vm.onLeaving(); onOpen(s.userLogin) }
+                            },
+                        )
+                    }
+                }
+                if (resume.isNotEmpty()) {
+                    add(header("h:resume", "Continue watching"))
+                    add(
+                        GridEntry("resume:row", fullSpan = true) { m ->
+                            LazyRow(m.focusGroup(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                items(resume, key = { it.videoId }) { r ->
+                                    ResumeCard(r, Modifier.width(220.dp)) { vm.onLeaving(); onOpen(r.channel) }
+                                }
+                            }
+                        },
+                    )
+                }
+                if (st.offline.isNotEmpty()) {
+                    add(
+                        GridEntry("offline:toggle", fullSpan = true) { m ->
+                            OfflineToggle("Offline A\u2013Z (${st.offline.size})", st.offlineExpanded, vm::toggleOffline, m)
+                        },
+                    )
+                    if (st.offlineExpanded) {
+                        st.offline.forEach { c -> add(GridEntry("off:${c.broadcasterId}") { m -> OfflineChip(c, m) { vm.onLeaving(); onOpen(c.login) } }) }
+                    }
                 }
             }
         }
@@ -109,10 +132,10 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
         border = focusRingBorder(RoundedCornerShape(20.dp)),
         scale = cardScale(1f),
         colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) FrostColors.SurfaceFocused else FrostColors.Surface,
-            contentColor = if (selected) FrostColors.Ice else FrostColors.OnSurface,
+            containerColor = if (selected) FrostColors.Primary else FrostColors.Surface,
+            contentColor = FrostColors.OnSurface,
             focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.Ice,
+            focusedContentColor = FrostColors.Lavender,
         ),
     ) {
         Text(label, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
@@ -143,7 +166,7 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
             when {
                 st.error != null -> addAll(retry("t", st.error!!, vm::loadTop))
                 st.category != null -> {
-                    add(header("h:cat", st.category!!.name, FrostColors.Ice))
+                    add(header("h:cat", st.category!!.name, FrostColors.Lavender))
                     if (st.categoryStreams.isEmpty()) add(note("t:loading", if (st.loading) "Loading..." else "Nobody is live in this category."))
                     st.categoryStreams.forEach { s -> add(GridEntry("cs:${s.id}") { m -> StreamCard(s, m) { vm.onLeaving(); onOpen(s.userLogin) } }) }
                 }

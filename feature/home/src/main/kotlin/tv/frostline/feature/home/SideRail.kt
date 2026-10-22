@@ -75,7 +75,7 @@ fun SideRail(
         modifier
             .fillMaxHeight()
             .width(width)
-            .background(Brush.horizontalGradient(listOf(Color(0xF20B1118), Color(0xE60B1118), Color(0x000B1118))))
+            .background(Brush.horizontalGradient(listOf(Color(0xF2050507), Color(0xE6050507), Color(0x00050507))))
             .onFocusChanged {
                 expanded = it.hasFocus
                 onFocusChange(it.hasFocus)
@@ -100,10 +100,10 @@ fun SideRail(
                 border = focusRingBorder(RoundedCornerShape(22.dp)),
                 scale = cardScale(1f),
                 colors = ClickableSurfaceDefaults.colors(
-                    containerColor = if (selected) FrostColors.SurfaceFocused else Color.Transparent,
-                    contentColor = if (selected) FrostColors.Ice else FrostColors.OnSurface,
+                    containerColor = if (selected) FrostColors.Primary else Color.Transparent,
+                    contentColor = FrostColors.OnSurface,
                     focusedContainerColor = FrostColors.SurfaceFocused,
-                    focusedContentColor = FrostColors.Ice,
+                    focusedContentColor = FrostColors.Lavender,
                 ),
             ) {
                 Row(

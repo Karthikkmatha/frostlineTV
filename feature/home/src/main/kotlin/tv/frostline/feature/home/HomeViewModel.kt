@@ -46,6 +46,10 @@ data class FollowingState(
     val live: List<HelixStream> = emptyList(),
     val offline: List<FollowedChannel> = emptyList(),
     val offlineExpanded: Boolean = false,
+    /** Guest mode: no user token, so no follows. */
+    val needsSignIn: Boolean = false,
+    /** Profile image URL by broadcaster id. */
+    val avatars: Map<String, String> = emptyMap(),
 )
 
 data class TopState(
@@ -119,10 +123,10 @@ class HomeViewModel(
     // ---- Following ----
     fun loadFollowing() {
         viewModelScope.launch {
-            _following.update { it.copy(loading = true, error = null) }
+            _following.update { it.copy(loading = true, error = null, needsSignIn = false) }
             val uid = userId()
             if (uid == null) {
-                _following.update { it.copy(loading = false, error = "Not signed in") }
+                _following.update { it.copy(loading = false, needsSignIn = true, live = emptyList(), offline = emptyList()) }
                 return@launch
             }
             try {
@@ -131,6 +135,10 @@ class HomeViewModel(
                     val allD = async { helix.followedChannels(uid) }
                     val live = liveD.await()
                     _following.update { it.copy(live = live) }
+                    launch {
+                        val avatars = runCatching { helix.profileImages(live.map { s -> s.userId }) }.getOrNull()
+                        if (avatars != null) _following.update { it.copy(avatars = avatars) }
+                    }
                     val all = allD.await()
                     _following.update { it.copy(loading = false, offline = offlineChannels(all, live)) }
                 }
