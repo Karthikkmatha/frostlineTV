@@ -47,6 +47,7 @@ class EngagementEngine(
     private val api: EngagementApi,
     private val hermes: HermesClient,
     private val session: suspend () -> EngagementSession?,
+    private val noSession: suspend () -> String = { "not signed in" },
     private val autoClaim: Flow<Boolean>,
     private val channelIdOf: suspend (login: String) -> String?,
     private val clock: () -> Long = System::currentTimeMillis,
@@ -60,14 +61,28 @@ class EngagementEngine(
     val ui: StateFlow<EngagementUi> = _ui.asStateFlow()
 
     private val debugMap = LinkedHashMap<String, String>()
-    private val _debug = MutableStateFlow<List<String>>(emptyList())
-    /** Lines for the debug overlay, for example "points: HTTP 401". Only status, exception class or GQL message. */
+    private val _debug = MutableStateFlow(renderDebug(idleDebug()))
+    /**
+     * One line per part (points, rewards, prediction, poll, hermes), always present, for the debug overlay:
+     * idle, loading, ok, "hidden: reason", or an error as HTTP status, exception class or GQL message. No tokens.
+     */
     val debug: StateFlow<List<String>> = _debug.asStateFlow()
+
+    private fun idleDebug() = linkedMapOf("points" to "idle", "rewards" to "idle", "prediction" to "idle", "poll" to "idle", "hermes" to "idle")
+    private fun renderDebug(m: Map<String, String>) = m.map { "${it.key.padEnd(11)}${it.value}" }
 
     private fun setDebug(source: String, text: String) {
         synchronized(debugMap) {
+            if (debugMap.isEmpty()) debugMap.putAll(idleDebug())
             debugMap[source] = text
-            _debug.value = debugMap.map { "${it.key}: ${it.value}" }
+            _debug.value = renderDebug(debugMap)
+        }
+    }
+
+    private fun resetDebug(all: String = "idle") {
+        synchronized(debugMap) {
+            debugMap.clear(); debugMap.putAll(idleDebug().mapValues { all })
+            _debug.value = renderDebug(debugMap)
         }
     }
 
@@ -93,7 +108,7 @@ class EngagementEngine(
         job?.cancel()
         toastJob?.cancel(); rewardsJob?.cancel(); predEndJob?.cancel(); pollEndJob?.cancel()
         _ui.value = EngagementUi()
-        synchronized(debugMap) { debugMap.clear(); _debug.value = emptyList() }
+        resetDebug()
         token = null; userId = null; channelId = null
         bets.clear(); betResults.clear(); votes.clear()
         pendingClaim.value = null; lastClaimTried = null; lastUserEventAt = Long.MIN_VALUE / 2
@@ -110,11 +125,24 @@ class EngagementEngine(
 
     private fun fail(source: String, e: Throwable) {
         if (e is CancellationException) throw e
-        setDebug(source, e.engagementDebugText())
+        val part = when {
+            source.startsWith("hermes") -> "hermes"
+            source == "claim" -> "points"
+            source == "redeem" -> "rewards"
+            source == "predictions" || source == "predict" -> "prediction"
+            source == "vote" -> "poll"
+            else -> source
+        }
+        setDebug(part, e.engagementDebugText())
     }
 
     private suspend fun run(forLogin: String) {
-        val s = session() ?: return // guest, or no web session linked: none of this exists
+        val s = session()
+        if (s == null) { // guest, or no web session linked: none of this exists
+            resetDebug("hidden: ${noSession()}")
+            return
+        }
+        resetDebug("loading")
         token = s.authToken
         userId = s.userId
         val info = try {
@@ -124,7 +152,8 @@ class EngagementEngine(
         }
         val chId = info?.channelId ?: runCatching { channelIdOf(forLogin) }.getOrNull()
         channelId = chId
-        if (info != null) applyPoints(info)
+        if (info != null) { applyPoints(info); setDebug("points", "ok") }
+        setDebug("rewards", if (info != null) "idle (opens with Rewards)" else "hidden: no points")
         coroutineScope {
             if (info != null) {
                 launch { userTopic(s) }
@@ -151,8 +180,10 @@ class EngagementEngine(
 
     private suspend fun userTopic(s: EngagementSession) {
         try {
+            setDebug("hermes", "connecting")
             hermes.events(listOf(PointsEvents.topic(s.userId)), s.authToken).collect { ev ->
                 lastUserEventAt = clock()
+                setDebug("hermes", "ok (user topic)")
                 PointsEvents.parse(ev.payload)?.let(::onPoints)
             }
         } catch (e: Throwable) {
@@ -206,7 +237,7 @@ class EngagementEngine(
         val before = _ui.value.points?.balance
         try {
             val r = api.claim(ch, claimId, t)
-            if (!r.ok) { setDebug("claim", "GQL: ${r.errorCode}"); return }
+            if (!r.ok) { setDebug("points", "claim: GQL ${r.errorCode}"); return }
             pendingClaim.value = null
             val gained = r.pointsEarned ?: run {
                 val now = runCatching { api.pointsContext(login, t) }.getOrNull()?.also { applyPoints(it) }
@@ -233,9 +264,11 @@ class EngagementEngine(
         val t = token ?: return
         rewardsJob?.cancel()
         _ui.update { it.copy(rewardsLoad = if (it.rewards.isEmpty()) RewardsLoad.Loading else it.rewardsLoad) }
+        setDebug("rewards", "loading")
         rewardsJob = scope.launch {
             try {
                 val list = api.rewards(login, t)
+                setDebug("rewards", "ok (${list.size})")
                 _ui.update { it.copy(rewards = list, rewardsLoad = RewardsLoad.Ready) }
             } catch (e: Throwable) {
                 fail("rewards", e)
@@ -278,6 +311,7 @@ class EngagementEngine(
         launch {
             try {
                 val list = api.predictions(forLogin, s.authToken)
+                setDebug("prediction", if (list.isEmpty()) "ok (none)" else "ok (${list.size})")
                 (list.firstOrNull { it.status == PredictionStatus.Active } ?: list.firstOrNull())?.let(::applyPrediction)
             } catch (e: Throwable) {
                 fail("predictions", e)
@@ -368,7 +402,9 @@ class EngagementEngine(
     private suspend fun polls(forLogin: String, chId: String, s: EngagementSession) = coroutineScope {
         launch {
             try {
-                api.poll(forLogin, s.authToken)?.let(::applyPoll)
+                val pl = api.poll(forLogin, s.authToken)
+                setDebug("poll", if (pl == null) "ok (none)" else "ok")
+                pl?.let(::applyPoll)
             } catch (e: Throwable) {
                 fail("poll", e)
             }
@@ -449,6 +485,16 @@ class EngagementEngine(
     )
 }
 
+/**
+ * Signed in AND a linked web session (the `auth-token` from the WebView sign-in; the Helix device-code token does not
+ * work for GQL). The user id comes from the stored tokens, else from [fetchId]. Null means the feature stays hidden.
+ */
+internal suspend fun resolveEngagementSession(web: String?, signedIn: Boolean, storedUserId: String?, fetchId: suspend () -> String?): EngagementSession? {
+    if (!signedIn || web.isNullOrEmpty()) return null
+    val id = storedUserId ?: fetchId() ?: return null
+    return EngagementSession(web, id)
+}
+
 /** Wires the engine to the app: the web session from the vault, the channel id from Helix, auto-claim from Settings. */
 class EngagementViewModel(
     initialLogin: String,
@@ -463,9 +509,15 @@ class EngagementViewModel(
         api = api,
         hermes = hermes,
         session = {
-            val web = vault.currentWebSession()
-            val id = vault.currentTokens()?.userId
-            if (web.isNullOrEmpty() || id == null) null else EngagementSession(web, id)
+            val tokens = vault.currentTokens()
+            resolveEngagementSession(vault.currentWebSession(), tokens != null, tokens?.userId) { runCatching { helix.me().id }.getOrNull() }
+        },
+        noSession = {
+            when {
+                vault.currentTokens() == null -> "not signed in"
+                vault.currentWebSession().isNullOrEmpty() -> "no web session linked (Settings > Link web session)"
+                else -> "user id unknown"
+            }
         },
         autoClaim = settings.autoClaimPoints,
         channelIdOf = { l -> helix.userByLogin(l)?.id },

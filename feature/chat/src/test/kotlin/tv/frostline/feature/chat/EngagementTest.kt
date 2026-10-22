@@ -160,6 +160,35 @@ class EngagementEngineTest {
         assertTrue(hermes.asked.isEmpty())
     }
 
+    @Test fun guestDebugLinesAreAlwaysFiveAndSayWhyHidden() = runTest {
+        val e = EngagementEngine(backgroundScope, api, hermes, { null }, { "no web session linked" }, auto, { "9" })
+        assertEquals(listOf("points", "rewards", "prediction", "poll", "hermes"), e.debug.value.map { it.trim().substringBefore(" ") })
+        e.setChannel("chan"); runCurrent()
+        assertEquals(5, e.debug.value.size)
+        assertTrue(e.debug.value.all { it.endsWith("hidden: no web session linked") })
+    }
+
+    @Test fun sessionWithoutWebTokenStaysHiddenButWithOneIsVisible() = runTest {
+        assertNull(resolveEngagementSession(null, true, "7") { "7" })
+        assertNull(resolveEngagementSession("", true, "7") { "7" })
+        assertNull(resolveEngagementSession("web", false, "7") { "7" })
+        assertNull(resolveEngagementSession("web", true, null) { null })
+        assertEquals("7", resolveEngagementSession("web", true, null) { "7" }!!.userId)
+        assertEquals("tok", resolveEngagementSession("tok", true, "7") { null }!!.authToken)
+    }
+
+    @Test fun signedInPathFromSessionToRewardsButtonCondition() = runTest {
+        val s = resolveEngagementSession("tok", true, null) { "7" }
+        val e = EngagementEngine(backgroundScope, api, hermes, { s }, { "n/a" }, auto, { "9" })
+        e.setChannel("chan"); runCurrent()
+        val u = e.ui.value
+        // The panel shows Rewards when available and rewards have not failed.
+        assertTrue(u.available && u.rewardsLoad != RewardsLoad.Failed)
+        assertEquals(1_000L, u.points!!.balance)
+        assertEquals("ok", e.debug.value.first { it.startsWith("points") }.removePrefix("points").trim())
+        assertTrue(e.debug.value.first { it.startsWith("hermes") }.endsWith("connecting"))
+    }
+
     @Test fun showsBalanceWithChannelNameAndIcon() = runTest {
         val e = engine()
         e.setChannel("chan")
@@ -237,7 +266,8 @@ class EngagementEngineTest {
         val e = engine()
         e.setChannel("chan"); runCurrent()
         assertFalse(e.ui.value.available)
-        assertEquals(listOf("points: HTTP 401"), e.debug.value)
+        assertEquals("points     HTTP 401", e.debug.value.first { it.startsWith("points") })
+        assertEquals(5, e.debug.value.size)
     }
 
     private val chatty = CustomReward("r1", "Say hi", "Type", 200, null, true, true, false, true, null, null, null, 0)
