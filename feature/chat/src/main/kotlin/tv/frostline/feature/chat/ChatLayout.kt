@@ -61,7 +61,7 @@ fun ChatLayout(
         if (chatVisible && controller.menuOpen) {
             ChatMenu(
                 model.settings, controller, actions,
-                onJumpToLive = { scope.launch { controller.listState.scrollToItem(0) } },
+                onJumpToLive = { scope.launch { controller.resumeLive() } },
                 modifier = Modifier.align(Alignment.CenterEnd).padding(end = panelWidth + 8.dp).width(280.dp),
             )
         }

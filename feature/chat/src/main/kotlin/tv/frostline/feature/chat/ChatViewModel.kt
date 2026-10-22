@@ -47,7 +47,7 @@ class ChatViewModel(
     private val vault: TokenVault,
     private val settingsStore: SettingsStore,
     private val worker: CoroutineDispatcher = Dispatchers.Default,
-    private val flushMs: Long = 100L,
+    private val flushMs: Long = 200L,
 ) : ViewModel() {
     private val session: IrcSession = sessionFactory(viewModelScope)
     private val buffer = ChatBuffer(MAX_LINES)

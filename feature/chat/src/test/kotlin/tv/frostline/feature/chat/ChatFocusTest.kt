@@ -196,6 +196,60 @@ class ChatFocusTest {
         focused("chat_input")
     }
 
+    // ---- following live ----
+
+    @Test fun focusAloneDoesNotPauseAndNewestLineIsPinned() {
+        show()
+        rule.onNodeWithTag("chat_paused").assertDoesNotExistCompat()
+        enter()
+        rule.onNodeWithTag("chat_paused").assertDoesNotExistCompat()
+        assertTrue(controller.following)
+        assertEquals(0, index())
+        assertEquals(0, controller.listState.firstVisibleItemScrollOffset)
+    }
+
+    @Test fun onlyUpPausesAndLeavingChatResumesLive() {
+        show()
+        enter()
+        press(Key.DirectionUp); press(Key.DirectionUp)
+        assertFalse(controller.following)
+        rule.onNodeWithTag("chat_paused").assertExists()
+        press(Key.DirectionLeft) // leave() is a stub in this host, so move focus away ourselves
+        rule.onNodeWithTag("video_root").focus()
+        rule.waitForIdle()
+        assertTrue(controller.following)
+        assertEquals(0, index())
+        rule.onNodeWithTag("chat_paused").assertDoesNotExistCompat()
+    }
+
+    @Test fun downBackToNewestResumesLive() {
+        show()
+        enter()
+        press(Key.DirectionUp)
+        assertFalse(controller.following)
+        var guard = 0
+        while (!controller.following && guard++ < 30) press(Key.DirectionDown)
+        assertTrue(controller.following)
+        assertEquals(0, index())
+        focused("chat_list")
+    }
+
+    // ---- input row, driven by keys only ----
+
+    @Test fun listToFieldToEmotesToSendAndBackUsingOnlyKeys() {
+        show()
+        enter()
+        press(Key.DirectionDown); focused("chat_input")
+        press(Key.DirectionDown); focused("chat_emotes_btn")
+        press(Key.DirectionRight); focused("chat_send_btn")
+        press(Key.DirectionUp); focused("chat_input")
+        press(Key.DirectionUp); focused("chat_list")
+        press(Key.DirectionCenter); focused("chat_input") // OK on a live list opens the field
+        press(Key.DirectionDown); focused("chat_emotes_btn")
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag("emote_picker").assertExists()
+    }
+
     // ---- input row ----
 
     @Test fun inputRowTraversal() {

@@ -31,6 +31,8 @@ class ChatController(val listState: LazyListState) {
     var menuOpen by mutableStateOf(false)
     var pickerOpen by mutableStateOf(false)
     var draft by mutableStateOf("")
+    /** True = pinned to the newest message. Only an explicit Up on the list clears it. */
+    var following by mutableStateOf(true)
     var panelFocused by mutableStateOf(false)
     var overlayFocused by mutableStateOf(false)
     /** True while focus is anywhere in the panel or its overlays. */
@@ -44,6 +46,12 @@ class ChatController(val listState: LazyListState) {
     fun insertEmote(code: String) {
         val sep = if (draft.isEmpty() || draft.endsWith(" ")) "" else " "
         draft = draft + sep + code + " "
+    }
+
+    /** Resume live following and show the newest message. */
+    suspend fun resumeLive() {
+        following = true
+        listState.scrollToItem(0)
     }
 
     fun closeOverlays() {

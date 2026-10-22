@@ -13,6 +13,7 @@ sealed interface Part {
 /** Badge image resolved to a URL. */
 class BadgeImage(val set: String, val url: String)
 
+@androidx.compose.runtime.Immutable
 sealed interface ChatLine {
     /** Stable LazyColumn key. */
     val key: String
@@ -22,6 +23,7 @@ sealed interface ChatLine {
  * A fully prepared message. Built once on a background thread: the text is tokenised into [parts]
  * (emote objects are shared, never copied) so the UI does no parsing work while scrolling.
  */
+@androidx.compose.runtime.Immutable
 class ChatMessage(
     override val key: String,
     val tsMs: Long,
@@ -39,6 +41,7 @@ class ChatMessage(
     val mine: Boolean = false,
 ) : ChatLine
 
+@androidx.compose.runtime.Immutable
 class SystemLine(
     override val key: String,
     val time: String,

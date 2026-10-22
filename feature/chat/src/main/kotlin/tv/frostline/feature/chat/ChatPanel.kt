@@ -17,7 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -139,14 +139,26 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
     val scope = rememberCoroutineScope()
     val f = c.focus
     var focused by remember { mutableStateOf(false) }
-    // Newest-first data with reverseLayout: index 0 is the live edge and stays pinned to the bottom.
-    val atLive by remember { derivedStateOf { state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset == 0 } }
+    val following = c.following
     val step = with(LocalDensity.current) { (fontSp * 4.8f).sp.toPx() }
 
-    // While scrolled back, remember the newest line at the moment we left live so we can count what arrived since.
+    // Following live is the default: keep the newest line pinned to the bottom, even if item sizes
+    // change after the first frame (images loading, the first system line).
+    LaunchedEffect(following) {
+        if (following) {
+            state.scrollToItem(0)
+            snapshotFlow { state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset }.collect {
+                if (c.following && (it.first != 0 || it.second != 0)) state.scrollToItem(0)
+            }
+        }
+    }
+    // Leaving the chat zone resumes live following.
+    LaunchedEffect(c.hasFocus) { if (!c.hasFocus) c.resumeLive() }
+
+    // While scrolled back, remember the newest line at the moment we paused so we can count what arrived since.
     var pausedAtKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(atLive) { pausedAtKey = if (atLive) null else model.lines.firstOrNull()?.key }
-    val newCount = if (atLive) 0 else pausedAtKey?.let { k -> model.lines.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: 0
+    LaunchedEffect(following) { pausedAtKey = if (following) null else model.lines.firstOrNull()?.key }
+    val newCount = if (following) 0 else pausedAtKey?.let { k -> model.lines.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: 0
 
     Box(
         modifier
@@ -155,15 +167,18 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when {
                     e.key == Key.DirectionUp -> if (state.canScrollForward) {
+                        c.following = false // the one thing that pauses live
                         scope.launch { state.scrollBy(step) }
                         true
                     } else false // nothing older: let focus move up to the menu
-                    e.key == Key.DirectionDown -> if (!atLive) {
+                    e.key == Key.DirectionDown -> if (!following) {
                         scope.launch {
                             state.scrollBy(-step)
-                            // Snap the last partial step so "live" is reachable exactly.
-                            if (state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset < step) state.scrollToItem(0)
+                            if (state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset < step) c.resumeLive()
                         }
+                        true
+                    } else if (model.signedIn) {
+                        runCatching { f.input.requestFocus() }
                         true
                     } else false
                     e.key == Key.DirectionLeft -> {
@@ -171,7 +186,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                         true
                     }
                     isOkKey(e.key) -> {
-                        if (!atLive) scope.launch { state.scrollToItem(0) }
+                        if (!following) scope.launch { c.resumeLive() }
                         else if (model.signedIn) runCatching { f.input.requestFocus() }
                         true
                     }
@@ -187,6 +202,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
         LazyColumn(
             state = state,
             reverseLayout = true,
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 4.dp),
             userScrollEnabled = false, // scrolled by the D-pad handler above (and programmatically)
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -194,7 +210,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                 ChatLineItem(line, fontSp, model.settings.timestamps)
             }
         }
-        if (!atLive) {
+        if (!following) {
             Text(
                 if (newCount > 0) "Paused - $newCount new. OK: jump to live" else "Paused. OK: jump to live",
                 fontSize = 12.sp,
@@ -239,9 +255,18 @@ private fun InputArea(model: ChatUiModel, actions: ChatActions, c: ChatControlle
                     actions.loadPicker()
                     c.pickerOpen = true
                 },
-                Modifier.onDpad(Key.DirectionLeft) { actions.leave(); true }.focusRequester(f.emotes).testTag("chat_emotes_btn"),
+                Modifier.onDpad(Key.DirectionLeft) { actions.leave(); true }
+                    .onDpad(Key.DirectionRight) { runCatching { f.send.requestFocus() }; true }
+                    .onDpad(Key.DirectionUp) { runCatching { f.input.requestFocus() }; true }
+                    .focusRequester(f.emotes).testTag("chat_emotes_btn"),
             )
-            TvButton("Send", ::submit, Modifier.focusRequester(f.send).testTag("chat_send_btn"), enabled = model.canSend)
+            TvButton(
+                "Send", ::submit,
+                Modifier.onDpad(Key.DirectionLeft) { runCatching { f.emotes.requestFocus() }; true }
+                    .onDpad(Key.DirectionUp) { runCatching { f.input.requestFocus() }; true }
+                    .onDpad(Key.DirectionRight) { true }
+                    .focusRequester(f.send).testTag("chat_send_btn"),
+            )
         }
     }
 }
