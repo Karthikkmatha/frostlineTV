@@ -28,7 +28,7 @@ import tv.frostline.core.ui.TvButton
 import tv.frostline.core.ui.TvTextField
 
 @Composable
-fun SettingsScreen(viewModel: AccountViewModel, versionName: String, onSignedOut: () -> Unit) {
+fun SettingsScreen(viewModel: AccountViewModel, versionName: String) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
@@ -47,10 +47,8 @@ fun SettingsScreen(viewModel: AccountViewModel, versionName: String, onSignedOut
             )
         }
         item {
-            TvButton("Sign out", onClick = {
-                viewModel.signOut()
-                onSignedOut()
-            })
+            // The app watches the vault and navigates to sign-in once the tokens are gone.
+            TvButton("Sign out", onClick = viewModel::signOut)
         }
 
         item { Spacer(Modifier.height(12.dp)) }
