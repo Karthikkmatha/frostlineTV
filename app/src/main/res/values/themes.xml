@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.FrostlineTV" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/frost_background</item>
+        <item name="android:colorBackground">@color/frost_background</item>
+        <item name="android:navigationBarColor">@color/frost_background</item>
+        <item name="android:statusBarColor">@color/frost_background</item>
+    </style>
+</resources>
