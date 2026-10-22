@@ -88,6 +88,37 @@ class VodControlsUiTest {
         assertTrue(skips.isEmpty())
     }
 
+    @Test fun withChatShownRightFromPauseReachesSkipForwardBeforeChat() {
+        show(chatShown = true)
+        press(Key.DirectionCenter)
+        focused(ControlTags.PlayPause)
+        press(Key.DirectionRight)
+        focused(ControlTags.SkipForward)
+        assertEquals("Pause -> +30 s must not enter chat", 0, enters)
+        press(Key.DirectionLeft); focused(ControlTags.PlayPause)
+        press(Key.DirectionLeft); focused(ControlTags.SkipBack)
+        press(Key.DirectionRight); press(Key.DirectionRight)
+        focused(ControlTags.SkipForward)
+        assertEquals(0, enters)
+        press(Key.DirectionRight)
+        assertEquals("Right from +30 s enters chat", 1, enters)
+        assertTrue(skips.isEmpty())
+    }
+
+    @Test fun aHeldRightFromPauseDoesNotRunOnIntoChat() {
+        show(chatShown = true)
+        press(Key.DirectionCenter)
+        focused(ControlTags.PlayPause)
+        rule.onNodeWithTag(ControlTags.Root).performKeyInput {
+            keyDown(Key.DirectionRight)
+            advanceEventTime(900) // auto-repeats while held
+            keyUp(Key.DirectionRight)
+        }
+        rule.waitForIdle()
+        assertEquals(0, enters)
+        focused(ControlTags.SkipForward)
+    }
+
     @Test fun leftAndRightWithControlsShownOnlyMoveFocus() {
         show()
         press(Key.DirectionCenter)

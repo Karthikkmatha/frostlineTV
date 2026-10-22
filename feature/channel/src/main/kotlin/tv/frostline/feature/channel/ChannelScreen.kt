@@ -243,7 +243,7 @@ private fun LazyGridScope.videoItems(state: ChannelState, actions: ChannelAction
         val key = "v:${v.id}"
         if (i >= total - PAGE_AHEAD) LaunchedEffect(total) { actions.onLoadMore() }
         VideoCard(
-            v, state.user?.offlineImageUrl,
+            v, state.user?.offlineImageUrl, state.user?.displayName.orEmpty(),
             Modifier.rememberFocusIn(key, memory).then(if (memory.key == key) Modifier.focusRequester(restore) else Modifier),
         ) { actions.onOpenVod(v.id) }
     }
@@ -342,10 +342,10 @@ private fun CardSurface(modifier: Modifier, onClick: () -> Unit, content: @Compo
 
 /** A thumbnail, or a placeholder when the URL is missing or one of Twitch's 404/processing images. */
 @Composable
-private fun Thumb(url: String?, id: String, modifier: Modifier = Modifier) {
+private fun Thumb(url: String?, id: String, modifier: Modifier = Modifier, label: String = "") {
     if (url == null) {
         Box(modifier.background(FrostColors.SurfaceAlt).testTag(ChannelTags.Placeholder + id), contentAlignment = Alignment.Center) {
-            Text("No preview", fontSize = 12.sp, color = FrostColors.Muted)
+            Text(label.ifBlank { "No preview" }, fontSize = 12.sp, color = FrostColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
         }
     } else {
         AsyncImage(url, null, contentScale = ContentScale.Crop, modifier = modifier)
@@ -369,12 +369,12 @@ private fun CardText(title: String, sub: String) {
 }
 
 @Composable
-fun VideoCard(video: HelixVideo, offlineImage: String?, modifier: Modifier, onClick: () -> Unit) {
+fun VideoCard(video: HelixVideo, offlineImage: String?, channelName: String, modifier: Modifier, onClick: () -> Unit) {
     CardSurface(modifier.testTag(ChannelTags.VideoPrefix + video.id), onClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 // A live archive has a blank thumbnail: the channel's offline image stands in, else a placeholder.
-                Thumb(Thumbnails.videoOrOffline(video.thumbnailUrl, offlineImage, 440, 248), video.id, Modifier.fillMaxSize())
+                Thumb(Thumbnails.videoOrOffline(video.thumbnailUrl, offlineImage, 440, 248), video.id, Modifier.fillMaxSize(), channelName)
                 if (video.durationMs > 0) Badge(Durations.clock(video.durationMs), Modifier.align(Alignment.BottomEnd))
             }
             CardText(video.title, listOf(Counts.date(video.createdAt), "${Counts.compact(video.viewCount)} views").filter { it.isNotBlank() }.joinToString("  ·  "))

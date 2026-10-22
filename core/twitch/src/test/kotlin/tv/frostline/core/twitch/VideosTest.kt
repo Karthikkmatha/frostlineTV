@@ -33,6 +33,9 @@ class VideosTest {
         assertTrue(Thumbnails.isMissing(""))
         assertTrue(Thumbnails.isMissing("https://vod-secure.twitch.tv/_404/404_processing_%{width}x%{height}.png"))
         assertTrue(Thumbnails.isMissing("https://x/cf_vods/_404/thumb.jpg"))
+        assertTrue(Thumbnails.isMissing("https://static-cdn.jtvnw.net/jtv_user_pictures/abc-profile_image-300x300.png"))
+        assertNull(Thumbnails.videoOrOffline("https://static-cdn.jtvnw.net/jtv_user_pictures/abc-profile_image-300x300.png", "", 320, 180))
+        assertEquals("https://off/o.png", Thumbnails.videoOrOffline("https://static-cdn.jtvnw.net/jtv_user_pictures/abc-profile_image-300x300.png", "https://off/o.png", 320, 180))
         assertTrue(!Thumbnails.isMissing("https://x/cf_vods/abc/thumb/thumb0-%{width}x%{height}.jpg"))
     }
 

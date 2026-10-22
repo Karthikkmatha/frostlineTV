@@ -169,7 +169,7 @@ fun PlayerChrome(
                     onShowControls()
                     true
                 } else if (!controlsVisible && onEnterChat != null && it.key == Key.DirectionRight && it.type == KeyEventType.KeyDown) {
-                    onEnterChat()
+                    if (it.nativeKeyEvent.repeatCount == 0) onEnterChat()
                     true
                 } else {
                     false
@@ -183,7 +183,8 @@ fun PlayerChrome(
             // Right on the right-most controls hands focus to the chat panel (when it is shown).
             val enterChat = Modifier.onPreviewKeyEvent {
                 if (onEnterChat != null && it.key == Key.DirectionRight && it.type == KeyEventType.KeyDown) {
-                    onEnterChat()
+                    // A held Right that moved focus here must not carry on into chat: only a fresh press enters.
+                    if (it.nativeKeyEvent.repeatCount == 0) onEnterChat()
                     true
                 } else {
                     false

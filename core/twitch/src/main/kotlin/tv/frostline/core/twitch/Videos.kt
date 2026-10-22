@@ -80,7 +80,9 @@ object Durations {
 object Thumbnails {
     /** Twitch serves a placeholder for videos that have no thumbnail (yet). Treat those URLs as missing. */
     fun isMissing(url: String?): Boolean =
-        url.isNullOrBlank() || url.contains("_404") || url.contains("404_processing")
+        url.isNullOrBlank() || url.contains("_404") || url.contains("404_processing") ||
+            // A live archive can come back with the channel's avatar; blown up to card size it is just a blur.
+            url.contains("jtv_user_pictures") || url.contains("profile_image")
 
     /** A sized Helix thumbnail URL, or null when the video has no usable one (use a placeholder). */
     fun video(url: String?, width: Int, height: Int): String? =
