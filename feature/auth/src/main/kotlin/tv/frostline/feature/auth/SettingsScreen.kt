@@ -17,7 +17,10 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
+import tv.frostline.core.data.ChatOptions
+import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.TvChoiceRow
 import tv.frostline.core.ui.TvToggleRow
 import tv.frostline.core.ui.brandName
 
@@ -38,6 +41,7 @@ fun SettingsScreen(
         onUnlink = viewModel::unlinkWebSession,
         onFollowRaids = viewModel::setFollowRaids,
         onDebugOverlay = viewModel::setDebugOverlay,
+        onChatChange = viewModel::updateChat,
     )
 }
 
@@ -51,6 +55,7 @@ fun SettingsContent(
     onUnlink: () -> Unit,
     onFollowRaids: (Boolean) -> Unit,
     onDebugOverlay: (Boolean) -> Unit,
+    onChatChange: ((ChatSettings) -> ChatSettings) -> Unit = {},
 ) {
     LazyColumn(
         // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
@@ -96,6 +101,70 @@ fun SettingsContent(
                 checked = ui.followRaids,
                 onToggle = onFollowRaids,
                 modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_raids"),
+            )
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+        item { Heading("Chat") }
+        item {
+            TvToggleRow(
+                label = "Show chat",
+                description = "Open the player with the chat panel beside the video.",
+                checked = ui.chat.enabled,
+                onToggle = { v -> onChatChange { it.copy(enabled = v) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat"),
+            )
+        }
+        item {
+            TvChoiceRow(
+                label = "Panel width",
+                value = ChatOptions.widthNames[ui.chat.widthIndex.coerceIn(0, 3)],
+                onClick = { onChatChange { it.copy(widthIndex = ChatOptions.nextIndex(it.widthIndex, ChatOptions.widthFractions.size)) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_width"),
+            )
+        }
+        item {
+            TvChoiceRow(
+                label = "Font size",
+                value = ChatOptions.fontNames[ui.chat.fontIndex.coerceIn(0, 3)],
+                onClick = { onChatChange { it.copy(fontIndex = ChatOptions.nextIndex(it.fontIndex, ChatOptions.fontSizesSp.size)) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_font"),
+            )
+        }
+        item {
+            TvToggleRow(
+                label = "Timestamps",
+                description = null,
+                checked = ui.chat.timestamps,
+                onToggle = { v -> onChatChange { it.copy(timestamps = v) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat_time"),
+            )
+        }
+        item {
+            TvToggleRow(
+                label = "7TV emotes",
+                description = null,
+                checked = ui.chat.show7tv,
+                onToggle = { v -> onChatChange { it.copy(show7tv = v) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat_7tv"),
+            )
+        }
+        item {
+            TvToggleRow(
+                label = "BTTV emotes",
+                description = null,
+                checked = ui.chat.showBttv,
+                onToggle = { v -> onChatChange { it.copy(showBttv = v) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat_bttv"),
+            )
+        }
+        item {
+            TvToggleRow(
+                label = "FFZ emotes",
+                description = null,
+                checked = ui.chat.showFfz,
+                onToggle = { v -> onChatChange { it.copy(showFfz = v) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_chat_ffz"),
             )
         }
 

@@ -90,8 +90,14 @@ fun PlayerChrome(
     /** Something else (raid banner, quality sheet) owns focus right now. */
     focusLocked: Boolean = false,
     autoHideMs: Long = 6_000,
+    /** Non-null while the chat panel is shown: Right on the bare player or on the right-most controls enters chat. */
+    onEnterChat: (() -> Unit)? = null,
+    /** Lets the host put focus back on the bare player (controls hidden) when it leaves chat. */
+    rootRequester: FocusRequester? = null,
+    /** False while an overlay owns focus, so the bare player cannot take it by a stray D-pad move. */
+    rootFocusable: Boolean = true,
 ) {
-    val root = remember { FocusRequester() }
+    val root = rootRequester ?: remember { FocusRequester() }
     val play = remember { FocusRequester() }
     val channel = remember { FocusRequester() }
     val gear = remember { FocusRequester() }
@@ -126,15 +132,27 @@ fun PlayerChrome(
                 if (!controlsVisible && isOk(it.key) && it.type == KeyEventType.KeyUp) {
                     onShowControls()
                     true
+                } else if (!controlsVisible && onEnterChat != null && it.key == Key.DirectionRight && it.type == KeyEventType.KeyDown) {
+                    onEnterChat()
+                    true
                 } else {
                     false
                 }
             }
             .focusRequester(root)
-            .focusable(enabled = !controlsVisible),
+            .focusable(enabled = !controlsVisible && rootFocusable),
     ) {
         if (controlsVisible) {
             val stop = FocusRequester.Cancel
+            // Right on the right-most controls hands focus to the chat panel (when it is shown).
+            val enterChat = Modifier.onPreviewKeyEvent {
+                if (onEnterChat != null && it.key == Key.DirectionRight && it.type == KeyEventType.KeyDown) {
+                    onEnterChat()
+                    true
+                } else {
+                    false
+                }
+            }
             // Scrims keep white text readable over any video.
             Box(
                 Modifier.fillMaxWidth().align(Alignment.TopCenter)
@@ -155,7 +173,7 @@ fun PlayerChrome(
                     )
                     IconControl(
                         R.drawable.ic_gear, "Quality", onQuality, 44,
-                        Modifier.focusRequester(gear).testTag(ControlTags.Quality)
+                        enterChat.focusRequester(gear).testTag(ControlTags.Quality)
                             .focusProperties { up = stop; right = stop; left = channel; down = play },
                     )
                 }
@@ -164,7 +182,7 @@ fun PlayerChrome(
                 if (playing) R.drawable.ic_pause else R.drawable.ic_play,
                 if (playing) "Pause" else "Play",
                 onPlayPause, 72,
-                Modifier.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
+                enterChat.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
                     .focusProperties { up = channel; down = refresh; left = stop; right = stop },
             )
             Box(
@@ -180,7 +198,7 @@ fun PlayerChrome(
                     )
                     IconControl(
                         R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 44,
-                        Modifier.focusRequester(chat).testTag(ControlTags.Chat)
+                        enterChat.focusRequester(chat).testTag(ControlTags.Chat)
                             .focusProperties { up = play; down = stop; left = refresh; right = stop },
                         active = chatVisible,
                     )

@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":core:data"))
     implementation(project(":core:twitch"))
     implementation(project(":core:twitch-internal"))
+    implementation(project(":feature:chat"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

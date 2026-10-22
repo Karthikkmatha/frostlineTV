@@ -82,6 +82,7 @@ dependencies {
     implementation(project(":feature:home"))
     implementation(project(":feature:auth"))
     implementation(project(":feature:player"))
+    implementation(project(":feature:chat"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
@@ -90,4 +91,5 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
+    implementation(libs.coil.gif)
 }

@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.TokenManager
@@ -21,6 +22,7 @@ data class AccountUi(
     val webExpired: Boolean = false,
     val followRaids: Boolean = true,
     val debugOverlay: Boolean = false,
+    val chat: ChatSettings = ChatSettings(),
 )
 
 class AccountViewModel(
@@ -33,8 +35,8 @@ class AccountViewModel(
         AccountUi(login = t?.login, signedIn = t != null, guest = g && t == null, webLinked = w != null, webExpired = w != null && e)
     }
 
-    val ui: StateFlow<AccountUi> = combine(account, settings.followRaids, settings.debugOverlay) { a, raids, dbg ->
-        a.copy(followRaids = raids, debugOverlay = dbg)
+    val ui: StateFlow<AccountUi> = combine(account, settings.followRaids, settings.debugOverlay, settings.chat) { a, raids, dbg, chat ->
+        a.copy(followRaids = raids, debugOverlay = dbg, chat = chat)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
 
     init {
@@ -56,6 +58,10 @@ class AccountViewModel(
 
     fun setFollowRaids(value: Boolean) {
         viewModelScope.launch { settings.setFollowRaids(value) }
+    }
+
+    fun updateChat(transform: (ChatSettings) -> ChatSettings) {
+        viewModelScope.launch { settings.updateChat(transform) }
     }
 
     fun setDebugOverlay(value: Boolean) {

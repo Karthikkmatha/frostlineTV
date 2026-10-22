@@ -15,7 +15,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -37,13 +39,15 @@ import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.TvButton
-
-/** Share of the width the chat column takes when shown. */
-const val CHAT_WIDTH_FRACTION = 0.28f
+import tv.frostline.feature.chat.ChatActions
+import tv.frostline.feature.chat.ChatLayout
+import tv.frostline.feature.chat.ChatUiModel
+import tv.frostline.feature.chat.ChatViewModel
+import tv.frostline.feature.chat.rememberChatController
 
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
+fun PlayerScreen(viewModel: PlayerViewModel, chat: ChatViewModel, onBack: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
     val aspect by viewModel.videoAspect.collectAsStateWithLifecycle()
@@ -52,8 +56,46 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
 
     var controlsVisible by remember { mutableStateOf(false) }
-    var chatVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
+
+    // ---- chat ----
+    val chatSettings by chat.settings.collectAsStateWithLifecycle()
+    val chatLines by chat.lines.collectAsStateWithLifecycle()
+    val chatConn by chat.connection.collectAsStateWithLifecycle()
+    val chatRoom by chat.room.collectAsStateWithLifecycle()
+    val chatCanSend by chat.canSend.collectAsStateWithLifecycle()
+    val chatSignedIn by chat.signedIn.collectAsStateWithLifecycle()
+    val chatPicker by chat.picker.collectAsStateWithLifecycle()
+    val chatVisible = chatSettings.enabled
+    val chatController = rememberChatController()
+    val playerRoot = remember { FocusRequester() }
+    var returnTick by remember { mutableIntStateOf(0) }
+    // Focus goes back to the bare player (controls hidden). Waits one frame so the root is focusable again.
+    val returnToPlayer = { controlsVisible = false; returnTick++ }
+    LaunchedEffect(returnTick) {
+        if (returnTick > 0) {
+            withFrameNanos { }
+            runCatching { playerRoot.requestFocus() }
+        }
+    }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { chat.start() }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { chat.stop() }
+    DisposableEffect(chat) {
+        chat.start()
+        onDispose { chat.stop() }
+    }
+    LaunchedEffect(ui.login) { chat.setChannel(ui.login) }
+    val chatModel = ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker)
+    val chatActions = remember(chat) {
+        ChatActions(
+            send = chat::send,
+            update = chat::update,
+            hide = { chat.setEnabled(false); returnToPlayer() },
+            loadPicker = chat::ensurePickerLoaded,
+            leave = { returnToPlayer() },
+        )
+    }
+    val chatHasFocus = chatVisible && chatController.hasFocus
 
     // Decoder lifecycle: acquire when started, release in onStop and when leaving the screen.
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.start() }
@@ -74,8 +116,14 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
         if (qualityOpen) qualityOpen = false else onBack()
     }
 
-    Row(Modifier.fillMaxSize().background(Color.Black)) {
-        Box(Modifier.weight(if (chatVisible) 1f - CHAT_WIDTH_FRACTION else 1f).fillMaxHeight()) {
+    ChatLayout(
+        chatVisible = chatVisible,
+        model = chatModel,
+        actions = chatActions,
+        controller = chatController,
+        modifier = Modifier.background(Color.Black),
+    ) {
+        Box(Modifier.fillMaxSize()) {
             // Video is a SurfaceView layer; nothing is ever rendered through Compose.
             player?.let { p ->
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -93,10 +141,17 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 chatVisible = chatVisible,
                 onPlayPause = viewModel::togglePlay,
                 onRefresh = viewModel::refresh,
-                onToggleChat = { chatVisible = !chatVisible },
+                onToggleChat = { chat.setEnabled(!chatVisible) },
                 onChannel = { viewModel.showNotice("Channel page arrives in a later update") },
                 onQuality = { qualityOpen = true },
-                focusLocked = qualityOpen || raid != null || ui.error != null,
+                focusLocked = qualityOpen || raid != null || ui.error != null || chatHasFocus,
+                onEnterChat = if (chatVisible) {
+                    {
+                        controlsVisible = false
+                        chatController.enter()
+                    }
+                } else null,
+                rootRequester = playerRoot,
             )
 
             if (ui.loading && ui.error == null) {
@@ -123,19 +178,6 @@ fun PlayerScreen(viewModel: PlayerViewModel, onBack: () -> Unit) {
                 )
             }
         }
-        if (chatVisible) ChatPlaceholder(Modifier.weight(CHAT_WIDTH_FRACTION).fillMaxHeight())
-    }
-}
-
-/** Stage 3 replaces this with the live chat. */
-@Composable
-fun ChatPlaceholder(modifier: Modifier = Modifier) {
-    Column(
-        modifier.background(FrostColors.Surface).padding(horizontal = 16.dp, vertical = 27.dp).testTag("chat_panel"),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Text("Chat", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
-        Text("Live chat arrives in the next update.", fontSize = 13.sp, color = FrostColors.Muted)
     }
 }
 

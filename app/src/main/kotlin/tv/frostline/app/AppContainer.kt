@@ -9,6 +9,11 @@ import tv.frostline.core.data.createVault
 import tv.frostline.core.twitch.TwitchConfig
 import tv.frostline.core.twitch.TwitchServices
 import tv.frostline.core.twitchinternal.TwitchInternal
+import tv.frostline.feature.chat.EmoteRepository
+import tv.frostline.feature.chat.IrcCredentials
+import tv.frostline.feature.chat.IrcSession
+import tv.frostline.feature.chat.OkHttpIrcTransportFactory
+import tv.frostline.feature.chat.OkHttpTextFetcher
 
 /** Hand-wired dependency graph; small enough that a DI framework would be noise. */
 class AppContainer(context: Context) {
@@ -35,6 +40,22 @@ class AppContainer(context: Context) {
         vault.saveTokens(t.copy(userId = me.id, login = me.login))
         return me.id
     }
+
+    // ---- chat ----
+    val emoteRepository = EmoteRepository(OkHttpTextFetcher())
+    private val ircTransports = OkHttpIrcTransportFactory()
+
+    /** The user's chat login and access token, or null (guest, or a token without chat scopes) for anonymous read-only chat. */
+    suspend fun ircCredentials(): IrcCredentials? {
+        val t = vault.currentTokens() ?: return null
+        if (t.scopes.isNotEmpty() && "chat:read" !in t.scopes) return null
+        userId() // makes sure the login is cached in the vault
+        val token = twitch.tokenManager.accessToken() ?: return null
+        val login = vault.currentTokens()?.login ?: return null
+        return IrcCredentials(login, token)
+    }
+
+    fun ircSession(scope: kotlinx.coroutines.CoroutineScope) = IrcSession(scope, ircTransports, credentials = { ircCredentials() })
 
     fun signInFlow(scope: kotlinx.coroutines.CoroutineScope, webOnly: Boolean) = tv.frostline.feature.auth.SignInFlow(
         oauth = twitch.oauth,

@@ -26,6 +26,7 @@ import tv.frostline.feature.auth.LinkWebSessionScreen
 import tv.frostline.feature.auth.SignInScreen
 import tv.frostline.feature.home.HomeScreen
 import tv.frostline.feature.home.HomeViewModel
+import tv.frostline.feature.chat.ChatViewModel
 import tv.frostline.feature.player.PlayerScreen
 import tv.frostline.feature.player.PlayerViewModel
 
@@ -136,7 +137,17 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         }
                     },
                 )
-                PlayerScreen(vm, onBack = { nav.popBackStack() })
+                val chatVm: ChatViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            ChatViewModel(
+                                login, container::ircSession, container.emoteRepository,
+                                container.twitch.helix, container.vault, container.settings,
+                            )
+                        }
+                    },
+                )
+                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() })
             }
         }
     }
