@@ -28,7 +28,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.focusGroup
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import tv.frostline.core.ui.tryFocus
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -64,6 +67,8 @@ class ChatUiModel(
     val replay: Boolean = false,
     /** False while the player is paused: animated emotes hold still. */
     val playerPlaying: Boolean = true,
+    /** Channel points, rewards, predictions and polls. Empty for guests, so none of it is drawn. */
+    val engagement: EngagementUi = EngagementUi(),
 )
 
 @Immutable
@@ -75,6 +80,7 @@ class ChatActions(
     val loadPicker: () -> Unit,
     /** Focus goes back to the player. */
     val leave: () -> Unit,
+    val engagement: EngagementActions = EngagementActions(),
 )
 
 internal fun isOkKey(k: Key) = k == Key.DirectionCenter || k == Key.Enter || k == Key.NumPadEnter
@@ -106,8 +112,23 @@ internal fun ChatPanel(
     val clock = remember { EmoteClock(clockScope) }
     val animate = model.settings.animatedEmotes && model.playerPlaying
     LaunchedEffect(animate) { clock.setActive(animate) }
+    val eng = model.engagement
+    val act = actions.engagement
+    val showRewards = eng.available && eng.rewardsLoad != RewardsLoad.Failed
+    val pred = eng.prediction
+    val poll = eng.poll
+    // Where Down from the header, and Up from the list, lead: banners sit between the header and the list.
+    val firstBanner = if (pred != null) f.bannerPrediction else if (poll != null) f.bannerPoll else f.list
+    val lastBanner = if (poll != null) f.bannerPoll else if (pred != null) f.bannerPrediction else f.menu
+    // A banner that held focus and went away hands focus to the list instead of dropping it.
+    LaunchedEffect(pred == null) {
+        if (pred == null && c.bannerFocused == Banner.Prediction && !c.overlayOpen) { c.bannerFocused = null; f.list.tryFocus() }
+    }
+    LaunchedEffect(poll == null) {
+        if (poll == null && c.bannerFocused == Banner.Poll && !c.overlayOpen) { c.bannerFocused = null; f.list.tryFocus() }
+    }
     CompositionLocalProvider(LocalEmoteClock provides if (model.settings.animatedEmotes) clock else null) {
-    Column(
+    Box(
         modifier
             // Its own layer: new lines and emote frames redraw this panel, not the rest of the window.
             .graphicsLayer()
@@ -116,17 +137,9 @@ internal fun ChatPanel(
             .focusGroup()
             .testTag("chat_panel"),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TvButton(
-                "Menu",
-                { c.menuOpen = true },
-                Modifier.onDpad(Key.DirectionLeft) { actions.leave(); true }.focusRequester(f.menu).testTag("chat_menu_btn"),
-            )
-            Column(Modifier.weight(1f)) {
+    Column(Modifier.fillMaxSize()) {
+        val titleBlock: @Composable (Modifier) -> Unit = { mod ->
+            Column(mod) {
                 Text(if (model.replay) "Chat replay" else "Chat", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("chat_title"))
                 val status = when (val s = model.connection) {
                     is ConnState.Connected -> model.room
@@ -137,7 +150,77 @@ internal fun ChatPanel(
                 if (status.isNotEmpty()) Text(status, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("chat_status"))
             }
         }
-        MessageList(model, c, fontSp, actions, Modifier.weight(1f).fillMaxWidth())
+        val menuButton: @Composable () -> Unit = {
+            TvButton(
+                "Menu",
+                { c.menuOpen = true },
+                Modifier
+                    .onDpad(Key.DirectionLeft) { actions.leave(); true }
+                    .onDpad(Key.DirectionRight) { if (showRewards) f.rewards.tryFocus(); true }
+                    .focusProperties { down = firstBanner }
+                    .onFocusChanged { if (it.isFocused) c.lastHeader = f.menu }
+                    .focusRequester(f.menu).testTag("chat_menu_btn"),
+            )
+        }
+        if (!eng.available) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                menuButton()
+                titleBlock(Modifier.weight(1f))
+            }
+        } else {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    menuButton()
+                    if (showRewards) {
+                        TvButton(
+                            "Rewards",
+                            { c.openRewards(act) },
+                            Modifier
+                                .onDpad(Key.DirectionLeft) { f.menu.tryFocus(); true }
+                                .onDpad(Key.DirectionRight) { true }
+                                .focusProperties { down = firstBanner; up = FocusRequester.Cancel }
+                                .onFocusChanged { if (it.isFocused) c.lastHeader = f.rewards }
+                                .focusRequester(f.rewards).testTag("chat_rewards_btn"),
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    titleBlock(Modifier.weight(1f))
+                    eng.points?.let { PointsBadge(it) }
+                }
+            }
+        }
+        if (pred != null) {
+            PredictionBanner(
+                pred,
+                Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    .onDpad(Key.DirectionLeft) { c.bannerFocused = null; actions.leave(); true }
+                    .onDpad(Key.DirectionRight) { true }
+                    .onDpad(Key.DirectionUp) { c.bannerFocused = null; c.lastHeader.tryFocus(); true }
+                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; (if (poll != null) f.bannerPoll else f.list).tryFocus(); true }
+                    .onFocusChanged { if (it.isFocused) c.bannerFocused = Banner.Prediction }
+                    .focusRequester(f.bannerPrediction),
+                onOpen = { c.openPrediction(act) },
+            )
+        }
+        if (poll != null) {
+            PollBanner(
+                poll,
+                Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    .onDpad(Key.DirectionLeft) { c.bannerFocused = null; actions.leave(); true }
+                    .onDpad(Key.DirectionRight) { true }
+                    .onDpad(Key.DirectionUp) { c.bannerFocused = null; (if (pred != null) f.bannerPrediction else c.lastHeader).tryFocus(); true }
+                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; f.list.tryFocus(); true }
+                    .onFocusChanged { if (it.isFocused) c.bannerFocused = Banner.Poll }
+                    .focusRequester(f.bannerPoll),
+                onOpen = { c.openPoll(act) },
+            )
+        }
+        MessageList(model, c, fontSp, actions, lastBanner, Modifier.weight(1f).fillMaxWidth())
         if (model.replay) {
             Text(
                 "Chat replay. Sending is disabled.",
@@ -156,11 +239,13 @@ internal fun ChatPanel(
             )
         }
     }
+    eng.toast?.let { PointsToast(it, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) }
+    }
     }
 }
 
 @Composable
-private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, actions: ChatActions, modifier: Modifier) {
+private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, actions: ChatActions, upTarget: FocusRequester, modifier: Modifier) {
     val state = c.listState
     val scope = rememberCoroutineScope()
     val f = c.focus
@@ -196,7 +281,11 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                         c.following = false // the one thing that pauses live
                         scope.launch { state.scrollBy(step) }
                         true
-                    } else false // nothing older: let focus move up to the menu
+                    } else {
+                        // Nothing older: on to the banner above the list, or the header.
+                        upTarget.tryFocus()
+                        true
+                    }
                     e.key == Key.DirectionDown -> if (!following) {
                         scope.launch {
                             state.scrollBy(-step)

@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import tv.frostline.core.ui.tryFocus
 
 /**
  * Video on the left, chat panel on the right, menu and emote picker as overlays.
@@ -33,7 +34,9 @@ import kotlinx.coroutines.launch
  *    panel calls ChatActions.leave(); the host puts focus back on the player root with controls hidden.
  *  - Inside CHAT: Menu -> list -> field -> [Emotes][Send] top to bottom. Up/Down on the list scroll history;
  *    Down at the live edge moves on to the field, Up at the oldest line moves to Menu; OK on the list jumps to live.
- *  - Overlays (menu, picker) trap focus: every outward edge is closed; Back/Close returns focus to the button
+ *  - Header row: Menu and Rewards (signed in), Left/Right between them, Down to the first banner (prediction, then poll)
+ *    or the list. Banners sit above the list; Up from the list reaches the last banner. Banners never take focus on their own.
+ *  - Overlays (menu, picker, rewards, prediction, poll) trap focus: every outward edge is closed; Back/Close returns focus to the button
  *    that opened them.
  *
  * The video box keeps one position in the Row; only its weight changes with the panel, so the SurfaceView
@@ -72,6 +75,12 @@ fun ChatLayout(
             )
         }
 
+        val eng = model.engagement
+        val sheetModifier = Modifier.align(Alignment.CenterEnd).width(if (panelWidth > 420.dp) panelWidth else 420.dp).fillMaxHeight()
+        if (chatVisible && controller.rewardsOpen) RewardsSheet(eng, actions.engagement, controller, sheetModifier)
+        if (chatVisible && controller.predictionOpen) PredictionSheet(eng, actions.engagement, controller, sheetModifier)
+        if (chatVisible && controller.pollOpen) PollSheet(eng, actions.engagement, controller, sheetModifier)
+
         // Closing an overlay returns focus to its opener.
         var menuWas by remember { mutableStateOf(false) }
         LaunchedEffect(controller.menuOpen) {
@@ -84,9 +93,29 @@ fun ChatLayout(
             pickerWas = controller.pickerOpen
         }
 
+        var rewardsWas by remember { mutableStateOf(false) }
+        LaunchedEffect(controller.rewardsOpen) {
+            // The Rewards button is gone if rewards failed to load; Menu is the neighbour then.
+            if (!controller.rewardsOpen && rewardsWas && !f.rewards.tryFocus()) f.menu.tryFocus()
+            rewardsWas = controller.rewardsOpen
+        }
+        var predictionWas by remember { mutableStateOf(false) }
+        LaunchedEffect(controller.predictionOpen) {
+            if (!controller.predictionOpen && predictionWas && !f.bannerPrediction.tryFocus()) f.list.tryFocus()
+            predictionWas = controller.predictionOpen
+        }
+        var pollWas by remember { mutableStateOf(false) }
+        LaunchedEffect(controller.pollOpen) {
+            if (!controller.pollOpen && pollWas && !f.bannerPoll.tryFocus()) f.list.tryFocus()
+            pollWas = controller.pollOpen
+        }
+
         // Composed after the video (and its controls), so it wins over their Back handlers while chat has focus.
-        BackHandler(enabled = chatVisible && controller.hasFocus) {
+        BackHandler(enabled = chatVisible && (controller.hasFocus || controller.overlayOpen)) {
             when {
+                controller.rewardsOpen -> controller.backFromRewards(eng, actions.engagement)
+                controller.predictionOpen -> controller.backFromPrediction(eng, actions.engagement)
+                controller.pollOpen -> controller.backFromPoll(eng, actions.engagement)
                 controller.pickerOpen -> controller.pickerOpen = false
                 controller.menuOpen -> controller.menuOpen = false
                 else -> actions.leave()
