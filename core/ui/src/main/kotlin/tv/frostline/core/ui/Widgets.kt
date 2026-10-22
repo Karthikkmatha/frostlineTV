@@ -76,6 +76,8 @@ fun TvTextField(
     secret: Boolean = false,
     imeAction: ImeAction = ImeAction.Done,
     onImeAction: () -> Unit = {},
+    /** Applied to the focusable text field itself (focus requesters, focus observers). */
+    fieldModifier: Modifier = Modifier,
 ) {
     var focused by remember { mutableStateOf(false) }
     val ringEnabled = LocalFocusRingEnabled.current
@@ -101,7 +103,7 @@ fun TvTextField(
             visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
             keyboardActions = KeyboardActions(onAny = { onImeAction() }),
-            modifier = Modifier
+            modifier = fieldModifier
                 .fillMaxWidth()
                 .onFocusChanged { focused = it.isFocused }
                 .onPreviewKeyEvent { e ->
