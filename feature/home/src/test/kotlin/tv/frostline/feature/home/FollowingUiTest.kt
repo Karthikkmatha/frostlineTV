@@ -1,6 +1,10 @@
 package tv.frostline.feature.home
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.input.key.Key
@@ -40,11 +44,16 @@ private class FakeApi(val live: List<HelixStream> = emptyList()) : HelixApi {
     override suspend fun globalBadges() = Page<tv.frostline.core.twitch.BadgeSet>()
     override suspend fun channelBadges(broadcasterId: String) = Page<tv.frostline.core.twitch.BadgeSet>()
     override suspend fun userEmotes(userId: String, after: String?) = Page<tv.frostline.core.twitch.HelixEmote>()
+    override suspend fun videos(userId: String, type: String, first: Int, after: String?, sort: String) = Page<tv.frostline.core.twitch.HelixVideo>()
+    override suspend fun videoById(id: String) = Page<tv.frostline.core.twitch.HelixVideo>()
+    override suspend fun clips(broadcasterId: String, first: Int, after: String?, startedAt: String?, endedAt: String?) = Page<tv.frostline.core.twitch.HelixClip>()
+    override suspend fun clipById(id: String) = Page<tv.frostline.core.twitch.HelixClip>()
 }
 
 private class FakeResume(items: List<ResumeEntity> = emptyList()) : ResumeDao {
     private val state = MutableStateFlow(items)
     override fun observeAll() = state
+    override suspend fun get(videoId: String): ResumeEntity? = state.value.firstOrNull { it.videoId == videoId }
     override suspend fun upsert(entity: ResumeEntity) {}
     override suspend fun delete(videoId: String) {}
 }
@@ -75,16 +84,47 @@ class FollowingUiTest {
 
     @Test fun guestSeesSignInPromptInsteadOfFollows() {
         val vm = HomeViewModel(HelixRepository(FakeApi()), FakeResume()) { null }
-        rule.setContent { FrostlineTheme { FollowingContent(vm) {} } }
+        rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, {}) } }
         rule.waitForIdle()
         rule.onNodeWithText("Sign in to see your follows").assertIsDisplayed()
     }
 
     @Test fun signedInSeesLiveCardsAsAVerticalList() {
         val vm = HomeViewModel(HelixRepository(FakeApi(listOf(stream))), FakeResume()) { "99" }
-        rule.setContent { FrostlineTheme { FollowingContent(vm) {} } }
+        rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, {}) } }
         rule.waitForIdle()
         rule.onNodeWithText("Live now").assertIsDisplayed()
         rule.onNodeWithText("Someone").assertIsDisplayed()
+    }
+
+    @Test fun comingBackToTheScreenRestoresFocusToTheCardThatWasOpened() {
+        val vm = HomeViewModel(HelixRepository(FakeApi(listOf(stream))), FakeResume()) { "99" }
+        var show by mutableStateOf(true)
+        rule.setContent { FrostlineTheme { if (show) FollowingContent(vm, {}, {}, {}) } }
+        rule.waitForIdle()
+        rule.onNodeWithText(stream.title).requestFocus()
+        rule.waitForIdle()
+        vm.onLeaving() // what a card click does before navigating to the player
+        rule.waitForIdle()
+        rule.runOnUiThread { show = false } // the player is on top: the grid leaves the composition
+        rule.waitForIdle()
+        rule.runOnUiThread { show = true } // Back
+        rule.waitForIdle()
+        rule.onNodeWithText(stream.title).assertIsFocused()
+    }
+
+    @Test fun continueWatchingOpensTheVideo() {
+        val resume = ResumeEntity("555", 600_000, 3_600_000, "Last night", "", "someone", 1L)
+        val vm = HomeViewModel(HelixRepository(FakeApi(listOf(stream))), FakeResume(listOf(resume))) { "99" }
+        var opened: String? = null
+        rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, { opened = it }) } }
+        rule.waitForIdle()
+        rule.onNodeWithText("Continue watching").assertIsDisplayed()
+        rule.onNodeWithText("10:00 of 1:00:00").assertIsDisplayed()
+        rule.onNodeWithText("Last night").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithText("Last night").performKeyInput { pressKey(Key.DirectionCenter) }
+        rule.waitForIdle()
+        assertEquals("555", opened)
     }
 }

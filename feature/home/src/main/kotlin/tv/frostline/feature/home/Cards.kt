@@ -46,10 +46,12 @@ private fun CardSurface(
     onClick: () -> Unit,
     modifier: Modifier,
     focusedScale: Float = 1.04f,
+    onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     Surface(
         onClick = onClick,
+        onLongClick = onLongClick,
         modifier = modifier,
         shape = cardShape(),
         border = focusRingBorder(),
@@ -83,8 +85,8 @@ fun formatViewers(n: Int): String = when {
 }
 
 @Composable
-fun StreamCard(stream: HelixStream, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier) {
+fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    CardSurface(onClick, modifier, onLongClick = onLongClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 AsyncImage(
@@ -129,8 +131,8 @@ fun CategoryCard(game: HelixGame, modifier: Modifier, onClick: () -> Unit) {
 }
 
 @Composable
-fun ChannelCard(channel: SearchChannel, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier) {
+fun ChannelCard(channel: SearchChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    CardSurface(onClick, modifier, onLongClick = onLongClick) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             AsyncImage(
                 model = channel.thumbnailUrl,
@@ -147,8 +149,8 @@ fun ChannelCard(channel: SearchChannel, modifier: Modifier, onClick: () -> Unit)
 }
 
 @Composable
-fun OfflineChip(channel: FollowedChannel, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier.fillMaxWidth().height(40.dp)) {
+fun OfflineChip(channel: FollowedChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    CardSurface(onClick, modifier.fillMaxWidth().height(40.dp), onLongClick = onLongClick) {
         Box(Modifier.fillMaxHeight().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
             Line(channel.displayName, 13, FrostColors.OnSurface)
         }
@@ -160,19 +162,27 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
     CardSurface(onClick, modifier) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                AsyncImage(
-                    model = item.thumbnail,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
+                if (item.thumbnail.isNotBlank()) {
+                    AsyncImage(
+                        model = item.thumbnail,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                } else {
+                    Box(Modifier.fillMaxSize().background(FrostColors.SurfaceAlt))
+                }
                 val fraction = if (item.duration > 0) (item.position.toFloat() / item.duration).coerceIn(0f, 1f) else 0f
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.SurfaceAlt))
                 Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Primary))
             }
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Line(item.channel, 13, FrostColors.OnSurface, bold = true)
-                Line(item.title, 11, FrostColors.Muted)
+                Line(item.title.ifBlank { " " }, 11, FrostColors.Muted)
+                Line(
+                    "${tv.frostline.core.twitch.Durations.clock(item.position)} of ${tv.frostline.core.twitch.Durations.clock(item.duration)}",
+                    11, FrostColors.Lavender,
+                )
             }
         }
     }
@@ -180,8 +190,8 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
 
 /** Following page card: 16:9 thumbnail (~340 dp) on the left, channel details on the right. */
 @Composable
-fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier.fillMaxWidth(), focusedScale = 1f) {
+fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    CardSurface(onClick, modifier.fillMaxWidth(), focusedScale = 1f, onLongClick = onLongClick) {
         Row(Modifier.fillMaxWidth()) {
             AsyncImage(
                 model = stream.thumbnailUrl.sized(680, 383),

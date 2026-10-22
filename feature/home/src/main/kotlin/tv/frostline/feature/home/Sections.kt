@@ -47,7 +47,7 @@ private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridE
 )
 
 @Composable
-fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
+fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit, onOpenVod: (String) -> Unit) {
     val st by vm.following.collectAsStateWithLifecycle()
     val resume by vm.resume.collectAsStateWithLifecycle()
     val entries = remember(st, resume) {
@@ -65,7 +65,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
                     else -> st.live.forEach { s ->
                         add(
                             GridEntry("live:${s.userId}", fullSpan = true) { m ->
-                                WideStreamCard(s, st.avatars[s.userId], m) { vm.onLeaving(); onOpen(s.userLogin) }
+                                WideStreamCard(s, st.avatars[s.userId], m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) }
                             },
                         )
                     }
@@ -76,7 +76,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
                         GridEntry("resume:row", fullSpan = true) { m ->
                             LazyRow(m.focusGroup(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                 items(resume, key = { it.videoId }) { r ->
-                                    ResumeCard(r, Modifier.width(220.dp)) { vm.onLeaving(); onOpen(r.channel) }
+                                    ResumeCard(r, Modifier.width(220.dp)) { vm.onLeaving(); onOpenVod(r.videoId) }
                                 }
                             }
                         },
@@ -89,7 +89,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
                         },
                     )
                     if (st.offlineExpanded) {
-                        st.offline.forEach { c -> add(GridEntry("off:${c.broadcasterId}") { m -> OfflineChip(c, m) { vm.onLeaving(); onOpen(c.login) } }) }
+                        st.offline.forEach { c -> add(GridEntry("off:${c.broadcasterId}") { m -> OfflineChip(c, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(c.login) }) { vm.onLeaving(); onOpen(c.login) } }) }
                     }
                 }
             }
@@ -143,7 +143,7 @@ private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
+fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit) {
     val st by vm.top.collectAsStateWithLifecycle()
     BackHandler(enabled = st.category != null) { vm.closeCategory() }
     val memoryName = when {
@@ -168,11 +168,11 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
                 st.category != null -> {
                     add(header("h:cat", st.category!!.name, FrostColors.Lavender))
                     if (st.categoryStreams.isEmpty()) add(note("t:loading", if (st.loading) "Loading..." else "Nobody is live in this category."))
-                    st.categoryStreams.forEach { s -> add(GridEntry("cs:${s.id}") { m -> StreamCard(s, m) { vm.onLeaving(); onOpen(s.userLogin) } }) }
+                    st.categoryStreams.forEach { s -> add(GridEntry("cs:${s.id}") { m -> StreamCard(s, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) } }) }
                 }
                 st.tab == TopTab.Streams -> {
                     if (st.streams.isEmpty() && st.loading) add(note("t:loading", "Loading..."))
-                    st.streams.forEach { s -> add(GridEntry("ts:${s.id}") { m -> StreamCard(s, m) { vm.onLeaving(); onOpen(s.userLogin) } }) }
+                    st.streams.forEach { s -> add(GridEntry("ts:${s.id}") { m -> StreamCard(s, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) } }) }
                 }
                 else -> {
                     if (st.categories.isEmpty() && st.loading) add(note("t:loading", "Loading..."))
@@ -185,7 +185,7 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
 }
 
 @Composable
-fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
+fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit) {
     val st by vm.search.collectAsStateWithLifecycle()
     val entries = remember(st) {
         buildList {
@@ -208,7 +208,7 @@ fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit) {
             }
             if (st.channels.isNotEmpty()) {
                 add(header("h:channels", "Channels"))
-                st.channels.forEach { c -> add(GridEntry("sc:${c.id}") { m -> ChannelCard(c, m) { vm.onLeaving(); onOpen(c.login) } }) }
+                st.channels.forEach { c -> add(GridEntry("sc:${c.id}") { m -> ChannelCard(c, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(c.login) }) { vm.onLeaving(); onOpen(c.login) } }) }
             }
             if (st.categories.isNotEmpty()) {
                 add(header("h:categories", "Categories"))

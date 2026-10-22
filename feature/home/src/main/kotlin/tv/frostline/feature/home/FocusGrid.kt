@@ -59,18 +59,24 @@ fun FocusGrid(
         ?: entries.firstOrNull { it.focusable }?.key
 
     val tick = signal.tick
+    // A grid that is composed again (coming back from the player or a channel page) must put focus back on the
+    // entry that was opened, even though the signal it already consumed has not moved on: without this, focus
+    // falls to the first focusable thing on screen, the side rail.
+    val firstRun = remember { booleanArrayOf(true) }
     LaunchedEffect(tick, target) {
-        if (target != null && tick > signal.consumed) {
+        if (target != null && (firstRun[0] || tick > signal.consumed)) {
             val index = entries.indexOfFirst { it.key == target }
             if (index >= 0) state.scrollToItem(index)
-            repeat(6) {
+            repeat(if (firstRun[0]) 20 else 6) {
                 withFrameNanos { }
                 val result: Any? = runCatching { requester.requestFocus() }.getOrNull()
                 if (result == true || result is Unit) {
                     signal.consumed = tick
+                    firstRun[0] = false
                     return@LaunchedEffect
                 }
             }
+            firstRun[0] = false
         }
     }
 

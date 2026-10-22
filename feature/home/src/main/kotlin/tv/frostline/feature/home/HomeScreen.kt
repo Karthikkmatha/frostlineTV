@@ -30,6 +30,10 @@ private val RailItems = listOf(
 fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenChannel: (String) -> Unit,
+    /** Long-press on a stream card: the channel page (videos, clips, about). */
+    onOpenChannelPage: (String) -> Unit = {},
+    /** "Continue watching": a past broadcast, by video id. */
+    onOpenVod: (String) -> Unit = {},
     settingsContent: @Composable () -> Unit,
 ) {
     val section by viewModel.section.collectAsStateWithLifecycle()
@@ -44,9 +48,9 @@ fun HomeScreen(
     Box(Modifier.fillMaxSize()) {
         Box(Modifier.fillMaxSize().padding(start = RailCollapsedWidth)) {
             when (section) {
-                HomeSection.Following -> FollowingContent(viewModel, onOpenChannel)
-                HomeSection.Top -> TopContent(viewModel, onOpenChannel)
-                HomeSection.Search -> SearchContent(viewModel, onOpenChannel)
+                HomeSection.Following -> FollowingContent(viewModel, onOpenChannel, onOpenChannelPage, onOpenVod)
+                HomeSection.Top -> TopContent(viewModel, onOpenChannel, onOpenChannelPage)
+                HomeSection.Search -> SearchContent(viewModel, onOpenChannel, onOpenChannelPage)
                 HomeSection.Settings -> settingsContent()
             }
         }
