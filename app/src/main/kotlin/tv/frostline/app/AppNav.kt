@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
+import kotlinx.coroutines.flow.first
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -21,19 +22,22 @@ import tv.frostline.core.ui.FocusRingScope
 import tv.frostline.feature.auth.AccountViewModel
 import tv.frostline.feature.auth.AuthViewModel
 import tv.frostline.feature.auth.SettingsScreen
+import tv.frostline.feature.auth.LinkWebSessionScreen
 import tv.frostline.feature.auth.SignInScreen
 import tv.frostline.feature.home.HomeScreen
 import tv.frostline.feature.home.HomeViewModel
 import tv.frostline.feature.player.PlayerScreen
+import tv.frostline.feature.player.PlayerViewModel
 
 private const val SIGN_IN = "signin"
 private const val HOME = "home"
+private const val LINK_WEB = "linkweb"
 private const val PLAYER = "player/{login}"
 
 @Composable
 fun AppNav(container: AppContainer) {
     val start by produceState<String?>(initialValue = null) {
-        value = if (container.vault.currentTokens() != null) HOME else SIGN_IN
+        value = if (container.vault.sessionActive.first()) HOME else SIGN_IN
     }
     start?.let { AppNavHost(container, it) }
 }
@@ -48,12 +52,13 @@ private fun AnimatedContentScope.Settled(content: @Composable () -> Unit) {
 @Composable
 private fun AppNavHost(container: AppContainer, startRoute: String) {
     val nav = rememberNavController()
-    val signedIn by container.twitch.tokenManager.signedIn.collectAsStateWithLifecycle(initialValue = startRoute == HOME)
+    // Signed in or guest. Sign out clears both.
+    val signedIn by container.vault.sessionActive.collectAsStateWithLifecycle(initialValue = startRoute == HOME)
 
-    // Sign out (or a revoked refresh token) clears the vault; send the user back to sign-in.
+    // Sign out (or a revoked refresh token) clears the session; send the user back to sign-in.
     LaunchedEffect(signedIn) {
         val current = nav.currentDestination?.route
-        if (!signedIn && current != null && current != SIGN_IN) {
+        if (!signedIn && current != null && current != SIGN_IN && current != LINK_WEB) {
             nav.navigate(SIGN_IN) { popUpTo(nav.graph.id) { inclusive = true } }
         }
     }
@@ -70,12 +75,22 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
             Settled {
                 val vm: AuthViewModel = viewModel(
                     factory = viewModelFactory {
-                        initializer { AuthViewModel(container.twitch.oauth, container.vault, container.twitch.helix) }
+                        initializer { AuthViewModel(container.vault) { scope -> container.signInFlow(scope, webOnly = false) } }
                     },
                 )
-                SignInScreen(vm) {
-                    nav.navigate(HOME) { popUpTo(SIGN_IN) { inclusive = true } }
-                }
+                val toHome = { nav.navigate(HOME) { popUpTo(nav.graph.id) { inclusive = true } }; Unit }
+                SignInScreen(vm, onSignedIn = toHome, onGuest = toHome)
+            }
+        }
+        composable(LINK_WEB) {
+            Settled {
+                val vm: AuthViewModel = viewModel(
+                    key = "linkweb",
+                    factory = viewModelFactory {
+                        initializer { AuthViewModel(container.vault) { scope -> container.signInFlow(scope, webOnly = true) } }
+                    },
+                )
+                LinkWebSessionScreen(vm, onDone = { nav.popBackStack() })
             }
         }
         composable(HOME) {
@@ -94,18 +109,34 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         val account: AccountViewModel = viewModel(
                             factory = viewModelFactory {
                                 initializer {
-                                    AccountViewModel(container.vault, container.twitch.tokenManager, container.webSessionValidator)
+                                    AccountViewModel(container.vault, container.twitch.tokenManager, container.webSessionValidator, container.settings)
                                 }
                             },
                         )
-                        SettingsScreen(account, versionName = BuildConfig.VERSION_NAME)
+                        SettingsScreen(
+                            account,
+                            versionName = BuildConfig.VERSION_NAME,
+                            onLinkWebSession = { nav.navigate(LINK_WEB) },
+                            onSignIn = { nav.navigate(SIGN_IN) },
+                        )
                     },
                 )
             }
         }
         composable(PLAYER, arguments = listOf(navArgument("login") { type = NavType.StringType })) { entry ->
+            val login = entry.arguments?.getString("login").orEmpty()
             Settled {
-                PlayerScreen(entry.arguments?.getString("login").orEmpty(), onBack = { nav.popBackStack() })
+                val vm: PlayerViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            PlayerViewModel(
+                                login, container.playerSlot, container.playback, container.twitch.helix,
+                                container.vault, container.settings, container.hermes,
+                            )
+                        }
+                    },
+                )
+                PlayerScreen(vm, onBack = { nav.popBackStack() })
             }
         }
     }

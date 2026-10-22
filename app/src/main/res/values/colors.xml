@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="frost_background">#FF0B1118</color>
-    <color name="frost_ice">#FF8FD3FF</color>
+    <color name="frost_background">#FF050507</color>
+    <color name="frost_primary">#FF4E2E99</color>
+    <color name="frost_violet">#FF8F74E8</color>
 </resources>
