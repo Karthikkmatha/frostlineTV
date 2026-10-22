@@ -13,6 +13,7 @@ android {
 }
 dependencies {
     implementation(project(":core:ui"))
+    implementation(libs.androidx.activity.compose)
     // Stage 2 will use these; declared now so the catalog stays exercised.
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.exoplayer.hls)
