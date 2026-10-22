@@ -86,3 +86,29 @@ class TokenVaultTest {
         assertFalse(sample.toString().contains("PLAINTEXT"))
     }
 }
+
+class GuestAndSettingsTest {
+    private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
+
+    @Test fun guestFlagActivatesSessionAndSignInClearsIt() = runBlocking {
+        val vault = TokenVault(InMemoryPreferencesStore(), GcmKeyCipher { key })
+        assertFalse(vault.sessionActive.first())
+        vault.setGuest(true)
+        assertTrue(vault.sessionActive.first())
+        vault.saveTokens(TokenSet("a", "r", 1L))
+        assertFalse(vault.guest.first())
+        assertTrue(vault.sessionActive.first())
+        vault.clearAll()
+        assertFalse(vault.sessionActive.first())
+    }
+
+    @Test fun settingsDefaultsAndToggles() = runBlocking {
+        val s = SettingsStore(InMemoryPreferencesStore())
+        assertTrue(s.followRaids.first())
+        assertFalse(s.debugOverlay.first())
+        s.setFollowRaids(false)
+        s.setDebugOverlay(true)
+        assertFalse(s.followRaids.first())
+        assertTrue(s.debugOverlay.first())
+    }
+}

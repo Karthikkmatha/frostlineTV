@@ -55,8 +55,18 @@ fun TvButton(
         modifier = modifier,
         enabled = enabled,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+        colors = ButtonDefaults.colors(
+            containerColor = FrostColors.Primary,
+            contentColor = FrostColors.OnSurface,
+            focusedContainerColor = FrostColors.Primary,
+            focusedContentColor = FrostColors.OnSurface,
+            pressedContainerColor = FrostColors.Primary,
+            pressedContentColor = FrostColors.OnSurface,
+            disabledContainerColor = FrostColors.SurfaceAlt,
+            disabledContentColor = FrostColors.Muted,
+        ),
         border = ButtonDefaults.border(
-            focusedBorder = if (ring) Border(BorderStroke(3.dp, FrostColors.Ice)) else Border.None,
+            focusedBorder = if (ring) Border(BorderStroke(3.dp, FrostColors.Violet)) else Border.None,
         ),
     ) {
         Text(text, fontSize = 14.sp)
@@ -87,7 +97,7 @@ fun TvTextField(
         modifier
             .fillMaxWidth()
             .background(if (focused) FrostColors.SurfaceFocused else FrostColors.Surface, shape)
-            .border(if (focused && ringEnabled) 3.dp else 0.dp, FrostColors.Ice, shape)
+            .border(if (focused && ringEnabled) 3.dp else 0.dp, FrostColors.Violet, shape)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -99,7 +109,7 @@ fun TvTextField(
             onValueChange = onValueChange,
             singleLine = true,
             textStyle = TextStyle(color = FrostColors.OnSurface, fontSize = 14.sp),
-            cursorBrush = SolidColor(FrostColors.Ice),
+            cursorBrush = SolidColor(FrostColors.Violet),
             visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
             keyboardActions = KeyboardActions(onAny = { onImeAction() }),
@@ -116,5 +126,49 @@ fun TvTextField(
                     }
                 },
         )
+    }
+}
+
+/** A settings row that toggles on OK. Shows On/Off as text so state never relies on colour alone. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun TvToggleRow(
+    label: String,
+    description: String?,
+    checked: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    androidx.tv.material3.Surface(
+        onClick = { onToggle(!checked) },
+        modifier = modifier.fillMaxWidth(),
+        shape = cardShape(RoundedCornerShape(10.dp)),
+        border = focusRingBorder(RoundedCornerShape(10.dp)),
+        scale = cardScale(1f),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = FrostColors.Surface,
+            contentColor = FrostColors.OnSurface,
+            focusedContainerColor = FrostColors.SurfaceFocused,
+            focusedContentColor = FrostColors.OnSurface,
+        ),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 15.sp)
+                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
+            }
+            Text(
+                if (checked) "On" else "Off",
+                fontSize = 13.sp,
+                color = FrostColors.OnSurface,
+                modifier = Modifier
+                    .background(if (checked) FrostColors.Primary else FrostColors.SurfaceAlt, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 4.dp),
+            )
+        }
     }
 }

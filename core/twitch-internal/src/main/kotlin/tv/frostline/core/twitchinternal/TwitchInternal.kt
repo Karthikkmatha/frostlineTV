@@ -1,7 +1,6 @@
 package tv.frostline.core.twitchinternal
 
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 
 /** Result of probing Twitch's web GQL API with a user-supplied `auth-token` cookie. */
 sealed interface ProbeResult {
@@ -17,7 +16,7 @@ interface WebSessionValidator {
     suspend fun validate(authToken: String): ProbeResult
 }
 
-/** Twitch's internal realtime channel (the PubSub replacement). Stage 1 only defines the seam. */
+/** Twitch's internal realtime channel (the PubSub replacement). */
 interface HermesClient {
     fun events(topics: List<String>): Flow<HermesEvent>
 }
@@ -31,7 +30,14 @@ object TwitchInternal {
     /** Test hook: point the validator at another host. */
     fun webSessionValidator(gqlUrl: String): WebSessionValidator = GqlWebSessionValidator(gqlUrl)
 
-    fun hermes(): HermesClient = object : HermesClient {
-        override fun events(topics: List<String>): Flow<HermesEvent> = emptyFlow() // stage 2+
-    }
+    fun hermes(): HermesClient = HermesWebSocketClient()
+
+    /** Test hook: point Hermes at another websocket URL. */
+    fun hermes(url: String): HermesClient = HermesWebSocketClient(url = url, retryDelayMs = { 50L })
+
+    fun playback(): PlaybackResolver = TwitchPlaybackResolver()
+
+    /** Test hook: point the resolver at other hosts. */
+    fun playback(gqlUrl: String, usherBase: String): PlaybackResolver =
+        TwitchPlaybackResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 })
 }

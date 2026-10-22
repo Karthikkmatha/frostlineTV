@@ -13,5 +13,7 @@ class TwitchServices(config: TwitchConfig, vault: TokenVault) {
 
     val oauth = TwitchOAuth(http, config)
     val tokenManager = TokenManager(vault, oauth)
-    val helix = HelixRepository(createHelixApi(config, tokenManager, http))
+    /** App access token for guest mode (client credentials). */
+    val guestTokens = GuestTokenProvider(http, config)
+    val helix = HelixRepository(createHelixApi(config, tokenManager, http, guestTokens))
 }

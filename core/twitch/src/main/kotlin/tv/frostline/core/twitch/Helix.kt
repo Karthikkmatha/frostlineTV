@@ -77,6 +77,12 @@ interface HelixApi {
     @GET("users")
     suspend fun users(): Page<HelixUser>
 
+    @GET("users")
+    suspend fun usersByIds(@Query("id") ids: List<String>): Page<HelixUser>
+
+    @GET("users")
+    suspend fun usersByLogin(@Query("login") logins: List<String>): Page<HelixUser>
+
     @GET("streams/followed")
     suspend fun followedStreams(
         @Query("user_id") userId: String,
@@ -96,6 +102,7 @@ interface HelixApi {
         @Query("first") first: Int = 40,
         @Query("after") after: String? = null,
         @Query("game_id") gameId: String? = null,
+        @Query("user_login") userLogin: String? = null,
     ): Page<HelixStream>
 
     @GET("games/top")
@@ -120,9 +127,11 @@ interface HelixApi {
 internal class HelixAuthInterceptor(
     private val clientId: String,
     private val tokens: TokenManager,
+    private val guest: GuestTokenProvider? = null,
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = runBlocking { tokens.accessToken() }
+        // Signed in: the user token. Guest: an app access token (client credentials).
+        val token = runBlocking { tokens.accessToken() ?: guest?.token() }
         val b = chain.request().newBuilder().header("Client-Id", clientId)
         if (token != null) b.header("Authorization", "Bearer $token")
         return chain.proceed(b.build())
@@ -130,21 +139,32 @@ internal class HelixAuthInterceptor(
 }
 
 /** On a 401, refresh once and retry; a second 401 gives up. */
-internal class HelixAuthenticator(private val tokens: TokenManager) : Authenticator {
+internal class HelixAuthenticator(
+    private val tokens: TokenManager,
+    private val guest: GuestTokenProvider? = null,
+) : Authenticator {
     override fun authenticate(route: Route?, response: Response): Request? {
         if (response.priorResponse != null) return null
         val failed = response.request.header("Authorization")?.removePrefix("Bearer ")
-        val fresh = runBlocking { tokens.refreshAfter401(failed) } ?: return null
+        val fresh = runBlocking {
+            if (guest != null && failed != null && guest.owns(failed)) guest.refreshAfter401(failed)
+            else tokens.refreshAfter401(failed)
+        } ?: return null
         return response.request.newBuilder().header("Authorization", "Bearer $fresh").build()
     }
 }
 
-fun createHelixApi(config: TwitchConfig, tokens: TokenManager, base: OkHttpClient = OkHttpClient()): HelixApi {
+fun createHelixApi(
+    config: TwitchConfig,
+    tokens: TokenManager,
+    base: OkHttpClient = OkHttpClient(),
+    guest: GuestTokenProvider? = null,
+): HelixApi {
     val client = base.newBuilder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
-        .addInterceptor(HelixAuthInterceptor(config.clientId, tokens))
-        .authenticator(HelixAuthenticator(tokens))
+        .addInterceptor(HelixAuthInterceptor(config.clientId, tokens, guest))
+        .authenticator(HelixAuthenticator(tokens, guest))
         .build()
     return Retrofit.Builder()
         .baseUrl(config.helixBaseUrl)

@@ -44,12 +44,27 @@ class TokenVault(
 
     val webSessionExpired: Flow<Boolean> = store.data.map { it[WEB_EXPIRED] ?: false }
 
+    /** True when the user chose "Skip - watch as guest" instead of signing in. */
+    val guest: Flow<Boolean> = store.data.map { it[GUEST] ?: false }
+
+    /** A signed-in or guest session exists, so the app can go straight to Home. */
+    val sessionActive: Flow<Boolean> = store.data.map { prefs ->
+        (prefs[GUEST] ?: false) || open(prefs[TOKENS])?.let { runCatching { json.decodeFromString<TokenSet>(it) }.getOrNull() } != null
+    }
+
+    suspend fun setGuest(value: Boolean) {
+        store.edit { if (value) it[GUEST] = true else it.remove(GUEST) }
+    }
+
     suspend fun currentTokens(): TokenSet? = tokens.first()
     suspend fun currentWebSession(): String? = webSession.first()
 
     suspend fun saveTokens(tokens: TokenSet) {
         val sealed = seal(json.encodeToString(tokens))
-        store.edit { it[TOKENS] = sealed }
+        store.edit {
+            it[TOKENS] = sealed
+            it.remove(GUEST)
+        }
     }
 
     suspend fun clearTokens() {
@@ -80,6 +95,7 @@ class TokenVault(
             it.remove(TOKENS)
             it.remove(WEB_SESSION)
             it.remove(WEB_EXPIRED)
+            it.remove(GUEST)
         }
     }
 
@@ -96,6 +112,7 @@ class TokenVault(
     companion object {
         internal val TOKENS = stringPreferencesKey("tokens_v1")
         internal val WEB_SESSION = stringPreferencesKey("web_session_v1")
+        internal val GUEST = booleanPreferencesKey("guest_v1")
         internal val WEB_EXPIRED = booleanPreferencesKey("web_session_expired")
     }
 }

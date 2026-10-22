@@ -29,7 +29,7 @@ val CardShape = RoundedCornerShape(10.dp)
 fun focusRingBorder(shape: androidx.compose.ui.graphics.Shape = CardShape): ClickableSurfaceBorder {
     val enabled = LocalFocusRingEnabled.current
     return ClickableSurfaceDefaults.border(
-        focusedBorder = if (enabled) Border(BorderStroke(3.dp, FrostColors.Ice), shape = shape) else Border.None,
+        focusedBorder = if (enabled) Border(BorderStroke(3.dp, FrostColors.Violet), shape = shape) else Border.None,
     )
 }
 
@@ -50,7 +50,7 @@ class FocusMemory {
 }
 
 fun Modifier.rememberFocusIn(key: String, memory: FocusMemory): Modifier =
-    onFocusChanged { if (it.isFocused) memory.key = key }
+    onFocusChanged { if (it.hasFocus) memory.key = key }
 
 @Composable
 fun FocusRingScope(enabled: Boolean, content: @Composable () -> Unit) {

@@ -43,7 +43,8 @@ class TokenManager(
         refreshLocked(t)?.accessToken
     }
 
-    suspend fun signOut() = vault.clearTokens()
+    /** Clears the tokens, the web session and guest mode. */
+    suspend fun signOut() = vault.clearAll()
 
     /** Keeps the token fresh while the app runs. */
     fun startBackgroundRefresh(scope: CoroutineScope): Job = scope.launch {

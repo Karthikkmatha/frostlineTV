@@ -13,6 +13,20 @@ fun offlineChannels(all: List<FollowedChannel>, live: List<HelixStream>): List<F
 class HelixRepository(private val api: HelixApi) {
     suspend fun me(): HelixUser = api.users().data.first()
 
+    /** Profile image URL by user id, for up to 100 ids per request. */
+    suspend fun profileImages(ids: Collection<String>): Map<String, String> {
+        val out = HashMap<String, String>()
+        ids.distinct().chunked(100).forEach { chunk ->
+            api.usersByIds(chunk).data.forEach { out[it.id] = it.profileImageUrl }
+        }
+        return out
+    }
+
+    /** The live stream of [login], or null when the channel is offline. */
+    suspend fun streamByLogin(login: String): HelixStream? = api.streams(first = 1, userLogin = login).data.firstOrNull()
+
+    suspend fun userByLogin(login: String): HelixUser? = api.usersByLogin(listOf(login)).data.firstOrNull()
+
     suspend fun followedLive(userId: String): List<HelixStream> {
         val out = mutableListOf<HelixStream>()
         var cursor: String? = null

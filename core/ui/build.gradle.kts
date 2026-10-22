@@ -4,6 +4,7 @@ plugins {
 }
 android {
     namespace = "tv.frostline.core.ui"
+    testOptions { unitTests.isReturnDefaultValues = true }
     compileSdk = 37
     defaultConfig { minSdk = 28 }
     compileOptions {
@@ -18,4 +19,5 @@ dependencies {
     api(libs.androidx.tv.material)
     api(libs.coil.compose)
     api(libs.coil.network.okhttp)
+    testImplementation(libs.junit)
 }
