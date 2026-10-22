@@ -73,6 +73,7 @@ class ChatReplayPagerTest {
         var pos = 0L
         while (pos < 40_000) {
             pos += 200
+            now += 200
             val b = p.advance(pos)
             assertFalse("no reset while playing", b.reset)
             assertTrue(b.messages.all { it.offsetSeconds * 1000L <= pos })
@@ -190,5 +191,94 @@ class ChatReplayPagerTest {
         assertEquals(3, msg.parts.size)
         assertTrue(msg.parts[1] is Part.EmoteRef)
         assertNull(vc.copy(colorHex = null).toRaw().colorArgb)
+    }
+
+    // ---- realistic multi-page continuation (parsed from GQL-shaped JSON with cursors and hasNextPage) ----
+
+    /** Serves [all] as the real endpoint does: edges with cursor and node, pageInfo.hasNextPage, cursor requests continue. */
+    private class JsonEndpoint(val all: List<VodComment>, val pageSize: Int = 4, val cursorBroken: Boolean = false) : VideoCommentsApi {
+        val offsetCalls = mutableListOf<Int>()
+        val cursorCalls = mutableListOf<String>()
+
+        private fun json(from: Int): String {
+            val slice = all.drop(from).take(pageSize)
+            val edges = slice.joinToString(",") { c ->
+                """{"cursor":"cur-${c.id}","node":{"id":"${c.id}","contentOffsetSeconds":${c.offsetSeconds},
+                  "commenter":{"id":"${c.userId}","login":"${c.login}","displayName":"${c.displayName}"},
+                  "message":{"userColor":"#FF0000","userBadges":[{"setID":"subscriber","version":"3"}],
+                  "fragments":[{"text":"hello ","emote":null},{"text":"Kappa","emote":{"emoteID":"25"}}]}}}"""
+            }
+            val more = from + slice.size < all.size
+            return """{"data":{"video":{"id":"1","comments":{"edges":[$edges],"pageInfo":{"hasNextPage":$more,"hasPreviousPage":false}}}}}"""
+        }
+
+        override suspend fun byOffset(videoId: String, offsetSeconds: Int): CommentsPage {
+            offsetCalls += offsetSeconds
+            return tv.frostline.core.twitchinternal.CommentsParser.parse(json(all.indexOfFirst { it.offsetSeconds >= offsetSeconds }.let { if (it < 0) all.size else it }))
+        }
+
+        override suspend fun byCursor(videoId: String, cursor: String): CommentsPage {
+            cursorCalls += cursor
+            if (cursorBroken) throw IOException("Comments request failed (HTTP 400)")
+            return tv.frostline.core.twitchinternal.CommentsParser.parse(json(all.indexOfFirst { "cur-" + it.id == cursor } + 1))
+        }
+    }
+
+    private fun playThrough(p: ChatReplayPager, fromMs: Long, toMs: Long, tickMs: Long = 200): List<String> {
+        val out = ArrayList<String>()
+        var t = fromMs
+        runBlocking {
+            while (t <= toMs) {
+                now += tickMs
+                out += ids(p.advance(t))
+                t += tickMs
+            }
+        }
+        return out
+    }
+
+    @Test fun normalPlaybackContinuesAcrossManyPagesViaCursorsWithoutFailing() {
+        val api = JsonEndpoint(chat)
+        val p = pager(api)
+        val got = playThrough(p, 0, 204_000)
+        assertFalse(p.failing)
+        assertNull(p.lastError)
+        assertTrue("cursor paging was used: ${api.cursorCalls.size}", api.cursorCalls.size > 10)
+        assertEquals("every message exactly once, in order", chat.map { it.id }, got)
+        assertEquals(1, api.offsetCalls.size)
+    }
+
+    @Test fun theBufferStaysAboutAMinuteAheadAndRequestsAreSpaced() {
+        val api = JsonEndpoint(chat, pageSize = 4)
+        val p = pager(api)
+        playThrough(p, 0, 20_000)
+        // 20 s in, ~60 s ahead is wanted: 80 s / 2 s per message = 40 messages = at most ~11 requests, not one per tick.
+        assertTrue("requests: ${api.cursorCalls.size + api.offsetCalls.size}", api.cursorCalls.size + api.offsetCalls.size <= 14)
+        assertTrue("buffered: ${p.queued}", p.queued >= 20)
+    }
+
+    @Test fun aRejectedCursorFallsBackToOffsetPagingAndKeepsGoing() {
+        val api = JsonEndpoint(chat, cursorBroken = true)
+        val p = pager(api)
+        val got = playThrough(p, 0, 204_000)
+        assertFalse(p.failing)
+        assertEquals(chat.map { it.id }, got)
+        assertTrue(api.offsetCalls.size > 5)
+        assertTrue("cursor tried once per jump only", api.cursorCalls.size <= 2)
+    }
+
+    @Test fun failuresBackOffExponentiallyAndReportTheStatus() = runBlocking {
+        val api = FakeComments(chat)
+        val p = pager(api)
+        api.failNext = 100
+        p.advance(0)
+        assertTrue(p.failing)
+        assertTrue(p.lastError!!.contains("IOException"))
+        val calls = api.offsetCalls.size
+        now += 1_000; p.advance(0); assertEquals("still backing off", calls, api.offsetCalls.size)
+        now += 1_500; p.advance(0); assertEquals(calls + 1, api.offsetCalls.size)
+        now += 3_000; p.advance(0); assertEquals("second wait is longer", calls + 1, api.offsetCalls.size)
+        now += 2_000; p.advance(0); assertEquals(calls + 2, api.offsetCalls.size)
+        assertTrue(p.debugLine().startsWith("replay  ERR"))
     }
 }

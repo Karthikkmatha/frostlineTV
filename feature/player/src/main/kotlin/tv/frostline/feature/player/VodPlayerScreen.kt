@@ -78,6 +78,7 @@ fun VodPlayerScreen(
     val chatSettings = chat?.settings?.collectAsStateWithLifecycle()?.value
     val chatLines = chat?.lines?.collectAsStateWithLifecycle()?.value ?: emptyList()
     val chatStatus = chat?.status?.collectAsStateWithLifecycle()?.value ?: ""
+    val chatDebug = chat?.debug?.collectAsStateWithLifecycle()?.value.orEmpty()
     val chatVisible = chat != null && chatSettings?.enabled == true
     val chatController = rememberChatController()
     val playerRoot = remember { FocusRequester() }
@@ -204,7 +205,7 @@ fun VodPlayerScreen(
                         .background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp))
+            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOfNotNull(chatDebug.ifEmpty { null }))
             if (qualityOpen) {
                 QualitySheet(
                     variants = ui.variants,

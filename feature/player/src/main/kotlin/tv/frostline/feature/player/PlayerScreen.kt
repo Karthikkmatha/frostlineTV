@@ -234,7 +234,7 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
 
 /** [fps] is the measured UI frame rate (read here, so only the overlay recomposes), or null when that line is off. */
 @Composable
-internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier) {
+internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier, extra: List<String> = emptyList()) {
     Column(
         modifier.background(Color(0xB3050507), RoundedCornerShape(8.dp)).padding(10.dp).testTag("debug_overlay"),
     ) {
@@ -245,7 +245,7 @@ internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx
             "video    ${m.width}x${m.height} @ ${m.videoBitrate / 1000} kbps",
             "net      ${m.bandwidthBps / 1000} kbps",
             "latency  ${liveOffsetMs?.let { "$it ms" } ?: "-"}",
-        ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" })
+        ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }) + extra
         lines.forEach { Text(it, fontSize = 12.sp, color = FrostColors.Lavender, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) }
     }
 }

@@ -48,6 +48,10 @@ class ChatReplayViewModel(
     /** Empty, or why the replay is not showing messages. */
     val status: StateFlow<String> = _status.asStateFlow()
 
+    private val _debug = MutableStateFlow("")
+    /** One line for the debug overlay: queue size, or the last failure (class and HTTP status only). */
+    val debug: StateFlow<String> = _debug.asStateFlow()
+
     private val _playing = MutableStateFlow(true)
     val playing: StateFlow<Boolean> = _playing.asStateFlow()
 
@@ -135,6 +139,7 @@ class ChatReplayViewModel(
             pager.failing -> "Chat replay: retrying..."
             else -> ""
         }
+        _debug.value = pager.debugLine()
         if (changed) _lines.value = buffer.snapshot()
     }
 
