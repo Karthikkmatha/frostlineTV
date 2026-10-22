@@ -37,6 +37,19 @@ object TwitchInternal {
 
     fun playback(): PlaybackResolver = TwitchPlaybackResolver()
 
+    /** Past broadcasts and clips. */
+    fun vodPlayback(): VodPlaybackResolver = TwitchVodResolver()
+
+    /** Test hook: point the VOD resolver at other hosts. */
+    fun vodPlayback(gqlUrl: String, usherBase: String): VodPlaybackResolver =
+        TwitchVodResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 })
+
+    /** Chat replay of a past broadcast (GQL VideoCommentsByOffsetOrCursor). */
+    fun videoComments(): VideoCommentsApi = GqlVideoComments()
+
+    /** Test hook: point replay at another GQL URL. */
+    fun videoComments(gqlUrl: String): VideoCommentsApi = GqlVideoComments(gqlUrl = gqlUrl)
+
     /** Test hook: point the resolver at other hosts. */
     fun playback(gqlUrl: String, usherBase: String): PlaybackResolver =
         TwitchPlaybackResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 })
