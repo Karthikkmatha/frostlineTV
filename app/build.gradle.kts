@@ -41,7 +41,7 @@ fun q(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "tv.frostline.app"
-    compileSdk = 36
+    compileSdk = 37
     defaultConfig {
         applicationId = "tv.frostline.app"
         minSdk = 28

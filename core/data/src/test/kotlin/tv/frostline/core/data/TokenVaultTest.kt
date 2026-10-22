@@ -1,39 +1,26 @@
 package tv.frostline.core.data
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.TemporaryFolder
 import javax.crypto.KeyGenerator
 
 class TokenVaultTest {
-    @get:Rule val tmp = TemporaryFolder()
-    private lateinit var scope: CoroutineScope
     private lateinit var store: DataStore<Preferences>
     private val key = KeyGenerator.getInstance("AES").apply { init(256) }.generateKey()
     private val cipher = GcmKeyCipher { key }
 
     @Before fun setUp() {
-        scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-        store = PreferenceDataStoreFactory.create(scope = scope) { tmp.newFile("vault.preferences_pb") }
+        store = InMemoryPreferencesStore()
     }
-
-    @After fun tearDown() = scope.cancel()
 
     private val sample = TokenSet(
         accessToken = "access-PLAINTEXT-123",
