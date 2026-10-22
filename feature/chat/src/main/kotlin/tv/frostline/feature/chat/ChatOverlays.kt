@@ -120,6 +120,11 @@ internal fun ChatMenu(
             { actions.update { it.copy(timestamps = !it.timestamps) } },
             Modifier.testTag("chat_menu_time"),
         )
+        MenuRow(
+            "Animated emotes", if (settings.animatedEmotes) "On" else "Off (still)",
+            { actions.update { it.copy(animatedEmotes = !it.animatedEmotes) } },
+            Modifier.testTag("chat_menu_anim"),
+        )
         MenuRow("Jump to live", null, { onJumpToLive(); c.menuOpen = false }, Modifier.testTag("chat_menu_live"))
         MenuRow("Hide chat", null, { c.menuOpen = false; actions.hide() }, Modifier.testTag("chat_menu_hide"))
         MenuRow("Close", null, { c.menuOpen = false }, Modifier.focusProperties { down = stop }.testTag("chat_menu_close"))
@@ -237,7 +242,7 @@ internal fun EmotePicker(
                                 focusedContainerColor = FrostColors.SurfaceFocused,
                             ),
                         ) {
-                            AsyncImage(e.url, e.code, Modifier.fillMaxSize().padding(4.dp), contentScale = ContentScale.Fit)
+                            EmoteImage(e.url, e.code, Modifier.fillMaxSize().padding(4.dp))
                         }
                     }
                 }

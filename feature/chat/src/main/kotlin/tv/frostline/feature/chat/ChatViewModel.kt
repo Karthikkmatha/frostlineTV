@@ -82,6 +82,7 @@ class ChatViewModel(
     @Volatile private var ownId: String? = null
     private var ownLogin: String? = null
 
+    @Volatile private var visible = true
     private var started = false
     private var wanted = false
     private var eventsJob: Job? = null
@@ -98,6 +99,10 @@ class ChatViewModel(
         settingsJob = viewModelScope.launch(worker) {
             settingsStore.chat.collect {
                 rebuildContext(it)
+                // Hidden panel: keep buffering (so showing it again is instant) but stop publishing new lists.
+                val wasVisible = visible
+                visible = it.enabled
+                if (visible && !wasVisible) publish()
             }
         }
         viewModelScope.launch {
@@ -280,6 +285,7 @@ class ChatViewModel(
     }
 
     private fun publish() {
+        if (!visible) return
         _lines.value = buffer.snapshot()
     }
 

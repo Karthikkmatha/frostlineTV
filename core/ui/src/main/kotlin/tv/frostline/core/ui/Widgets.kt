@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -74,8 +75,9 @@ fun TvButton(
 }
 
 /**
- * A single focus stop that doubles as a text field. OK (center/enter) opens the keyboard, which on
- * Google TV is the phone keyboard. The ring follows [LocalFocusRingEnabled].
+ * A single focus stop that doubles as a text field. Focusing it never opens the keyboard: the field is read-only
+ * until OK (center/enter) is pressed, which makes it editable and shows the keyboard (on Google TV, the phone
+ * keyboard). Moving focus away makes it read-only again. The ring follows [LocalFocusRingEnabled].
  */
 @Composable
 fun TvTextField(
@@ -88,11 +90,19 @@ fun TvTextField(
     onImeAction: () -> Unit = {},
     /** Applied to the focusable text field itself (focus requesters, focus observers). */
     fieldModifier: Modifier = Modifier,
+    /** True while the keyboard is allowed (after OK, until focus leaves). */
+    onEditingChange: (Boolean) -> Unit = {},
 ) {
     var focused by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf(false) }
+    var okDown by remember { mutableStateOf(false) }
     val ringEnabled = LocalFocusRingEnabled.current
     val keyboard = LocalSoftwareKeyboardController.current
     val shape = RoundedCornerShape(10.dp)
+    LaunchedEffect(editing) {
+        onEditingChange(editing)
+        if (editing) keyboard?.show()
+    }
     Box(
         modifier
             .fillMaxWidth()
@@ -107,6 +117,8 @@ fun TvTextField(
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
+            // Read-only fields do not start an input session, so focus alone cannot raise the IME.
+            readOnly = !editing,
             singleLine = true,
             textStyle = TextStyle(color = FrostColors.OnSurface, fontSize = 14.sp),
             cursorBrush = SolidColor(FrostColors.Violet),
@@ -115,14 +127,21 @@ fun TvTextField(
             keyboardActions = KeyboardActions(onAny = { onImeAction() }),
             modifier = fieldModifier
                 .fillMaxWidth()
-                .onFocusChanged { focused = it.isFocused }
+                .onFocusChanged {
+                    focused = it.isFocused
+                    if (!it.isFocused) { editing = false; okDown = false }
+                }
                 .onPreviewKeyEvent { e ->
                     val ok = e.key == Key.DirectionCenter || e.key == Key.Enter || e.key == Key.NumPadEnter
-                    if (ok && e.type == KeyEventType.KeyUp) {
-                        keyboard?.show()
-                        true
-                    } else {
-                        ok && e.type == KeyEventType.KeyDown
+                    when {
+                        !ok -> false
+                        e.type == KeyEventType.KeyDown -> { okDown = true; true }
+                        // Only a press that started on this field opens the keyboard; the release of the
+                        // OK that moved focus here (from the list) must not.
+                        else -> {
+                            if (okDown) { okDown = false; if (editing) keyboard?.show() else editing = true }
+                            true
+                        }
                     }
                 },
         )

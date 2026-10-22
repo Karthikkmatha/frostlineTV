@@ -60,7 +60,7 @@ private fun render(m: ChatMessage, fontSp: Int, timestamps: Boolean): Rendered {
                     val id = "e${n++}"
                     val w = (emoteH * e.aspect).coerceIn(emoteH * 0.5f, emoteH * 4f)
                     inline[id] = InlineTextContent(Placeholder(w.sp, emoteH.sp, PlaceholderVerticalAlign.TextCenter)) {
-                        AsyncImage(e.url, e.code, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                        EmoteImage(e.url, e.code, Modifier.fillMaxSize())
                     }
                     appendInlineContent(id, e.code)
                 }

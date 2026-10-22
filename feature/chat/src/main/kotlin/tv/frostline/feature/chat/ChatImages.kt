@@ -14,6 +14,9 @@ import okio.Path.Companion.toOkioPath
  * streams frames instead of holding them all, and the caches are bounded so chat cannot grow memory.
  */
 object ChatImages {
+    /** Upper bound of the decoded-image memory cache. */
+    const val MEMORY_CACHE_BYTES = 32L * 1024 * 1024
+
     fun loader(context: Context): ImageLoader {
         val app = context.applicationContext
         val http = OkHttpClient.Builder().build()
@@ -22,7 +25,8 @@ object ChatImages {
                 add(OkHttpNetworkFetcherFactory(callFactory = { http }))
                 add(AnimatedImageDecoder.Factory())
             }
-            .memoryCache { MemoryCache.Builder().maxSizePercent(app, 0.2).build() }
+            // A fixed budget, not a share of the heap: decoded emotes and thumbnails must not grow with the device.
+            .memoryCache { MemoryCache.Builder().maxSizeBytes(MEMORY_CACHE_BYTES).build() }
             .diskCache {
                 DiskCache.Builder()
                     .directory(app.cacheDir.resolve("images").toOkioPath())

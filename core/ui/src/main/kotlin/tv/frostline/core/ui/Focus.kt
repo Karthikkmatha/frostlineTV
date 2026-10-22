@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Border
@@ -61,4 +62,10 @@ fun FocusRingScope(enabled: Boolean, content: @Composable () -> Unit) {
 fun rememberHasFocus(): Pair<Boolean, Modifier> {
     var focused by remember { mutableStateOf(false) }
     return focused to Modifier.onFocusChanged { focused = it.isFocused }
+}
+
+/** Requests focus and says whether it was granted (false while the target is not composed or attached yet). */
+fun FocusRequester.tryFocus(): Boolean {
+    val result: Any? = runCatching { requestFocus() }.getOrNull()
+    return result == true || result == Unit
 }

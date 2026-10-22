@@ -93,11 +93,18 @@ class ResolveContext(
 )
 
 object MessageBuilder {
-    fun build(raw: RawMessage, ctx: ResolveContext, mine: Boolean = false, fallback: Map<String, Emote> = emptyMap()): ChatMessage =
+    fun build(
+        raw: RawMessage,
+        ctx: ResolveContext,
+        mine: Boolean = false,
+        fallback: Map<String, Emote> = emptyMap(),
+        /** Replaces the wall-clock time label (chat replay shows the position in the video). */
+        timeLabel: String? = null,
+    ): ChatMessage =
         ChatMessage(
             key = raw.id,
             tsMs = raw.tsMs,
-            time = ChatText.time(raw.tsMs),
+            time = timeLabel ?: ChatText.time(raw.tsMs),
             userId = raw.userId,
             login = raw.login,
             displayName = raw.displayName,

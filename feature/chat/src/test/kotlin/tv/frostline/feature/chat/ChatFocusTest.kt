@@ -59,6 +59,7 @@ class ChatFocusTest {
         count: Int = 80,
         visible: Boolean = true,
         initial: ChatSettings = ChatSettings(),
+        replay: Boolean = false,
     ) {
         val lines = (count - 1 downTo 0).map { msg(it) }
         rule.setContent {
@@ -70,7 +71,7 @@ class ChatFocusTest {
                     chatVisible = visible,
                     model = ChatUiModel(
                         lines, ConnState.Connected, "Slow 5 s", canSend = signedIn, signedIn = signedIn,
-                        settings = s, picker = PickerData(twitch = emotes),
+                        settings = s, picker = PickerData(twitch = emotes), replay = replay,
                     ),
                     actions = ChatActions(
                         send = { sent += it; true },
@@ -318,7 +319,8 @@ class ChatFocusTest {
         show()
         rule.onNodeWithTag("chat_menu_btn").focus()
         press(Key.DirectionCenter)
-        press(Key.DirectionDown); press(Key.DirectionDown); press(Key.DirectionDown); focused("chat_menu_live")
+        press(Key.DirectionDown); press(Key.DirectionDown); press(Key.DirectionDown); focused("chat_menu_anim")
+        press(Key.DirectionDown); focused("chat_menu_live")
         press(Key.DirectionDown); focused("chat_menu_hide")
         press(Key.DirectionDown); focused("chat_menu_close")
         press(Key.DirectionDown); focused("chat_menu_close")
@@ -356,6 +358,69 @@ class ChatFocusTest {
         rule.onNodeWithTag("chat_menu_hide").focus()
         press(Key.DirectionCenter)
         assertEquals(1, hides)
+    }
+
+    @Test fun animatedEmotesCanBeToggledFromTheMenu() {
+        show()
+        assertTrue(settingsNow.animatedEmotes)
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag("chat_menu_anim").focus()
+        press(Key.DirectionCenter)
+        assertEquals(false, settingsNow.animatedEmotes)
+        press(Key.DirectionCenter)
+        assertEquals(true, settingsNow.animatedEmotes)
+    }
+
+    // ---- text field: the keyboard opens on OK only ----
+
+    @Test fun focusingTheFieldDoesNotAllowTheKeyboardUntilOk() {
+        show()
+        enter()
+        press(Key.DirectionDown); focused("chat_input")
+        assertFalse("focus alone must not open the IME", controller.inputEditing)
+        press(Key.DirectionDown); focused("chat_emotes_btn") // IME closed: Down goes to Emotes
+        assertFalse(controller.inputEditing)
+        press(Key.DirectionUp); focused("chat_input")
+        assertFalse(controller.inputEditing)
+        press(Key.DirectionCenter)
+        assertTrue("OK opens it", controller.inputEditing)
+        focused("chat_input")
+    }
+
+    @Test fun leavingTheFieldClosesEditingAgain() {
+        show()
+        rule.onNodeWithTag("chat_input").focus()
+        press(Key.DirectionCenter)
+        assertTrue(controller.inputEditing)
+        rule.onNodeWithTag("chat_emotes_btn").focus()
+        assertFalse(controller.inputEditing)
+    }
+
+    @Test fun directAccessToTheFieldViaTheListStillDoesNotOpenTheKeyboard() {
+        show()
+        enter()
+        press(Key.DirectionCenter) // OK on a live list moves to the field...
+        focused("chat_input")
+        assertFalse(controller.inputEditing) // ...but opening the keyboard is a second OK
+    }
+
+    // ---- chat replay ----
+
+    @Test fun replayPanelIsLabelledReadOnlyAndKeepsTheFocusModel() {
+        show(replay = true, signedIn = false)
+        rule.onNodeWithTag("chat_title").assertExists()
+        rule.onNodeWithTag("chat_replay_note").assertExists()
+        rule.onNodeWithTag("chat_input").assertDoesNotExistCompat()
+        enter(); focused("chat_list")
+        press(Key.DirectionDown); focused("chat_list") // nothing below the list to focus
+        press(Key.DirectionLeft)
+        assertEquals(1, leaves)
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag("chat_menu").assertExists()
+        back()
+        focused("chat_menu_btn")
     }
 
     // ---- emote picker ----

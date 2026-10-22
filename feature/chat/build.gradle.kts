@@ -20,6 +20,7 @@ dependencies {
     implementation(project(":core:ui"))
     api(project(":core:data"))
     api(project(":core:twitch"))
+    implementation(project(":core:twitch-internal"))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

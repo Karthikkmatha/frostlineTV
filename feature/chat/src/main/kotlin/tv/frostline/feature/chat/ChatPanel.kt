@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.getValue
@@ -29,6 +31,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -48,6 +51,7 @@ import tv.frostline.core.ui.TvButton
 import tv.frostline.core.ui.TvTextField
 
 /** Everything the panel draws. */
+@Immutable
 class ChatUiModel(
     val lines: List<ChatLine> = emptyList(),
     val connection: ConnState = ConnState.Idle,
@@ -56,8 +60,13 @@ class ChatUiModel(
     val signedIn: Boolean = false,
     val settings: ChatSettings = ChatSettings(),
     val picker: PickerData = PickerData(),
+    /** Chat replay of a past broadcast: labelled as such, read-only. */
+    val replay: Boolean = false,
+    /** False while the player is paused: animated emotes hold still. */
+    val playerPlaying: Boolean = true,
 )
 
+@Immutable
 class ChatActions(
     val send: (String) -> Boolean,
     val update: ((ChatSettings) -> ChatSettings) -> Unit,
@@ -91,8 +100,17 @@ internal fun ChatPanel(
 ) {
     val f = c.focus
     val fontSp = ChatOptions.fontSizesSp[model.settings.fontIndex.coerceIn(0, ChatOptions.fontSizesSp.lastIndex)]
+    // One clock for every animated emote in the panel; it only runs while the panel is composed, animation
+    // is on and the player is playing, and only while an emote is on screen.
+    val clockScope = rememberCoroutineScope()
+    val clock = remember { EmoteClock(clockScope) }
+    val animate = model.settings.animatedEmotes && model.playerPlaying
+    LaunchedEffect(animate) { clock.setActive(animate) }
+    CompositionLocalProvider(LocalEmoteClock provides if (model.settings.animatedEmotes) clock else null) {
     Column(
         modifier
+            // Its own layer: new lines and emote frames redraw this panel, not the rest of the window.
+            .graphicsLayer()
             .background(FrostColors.Surface)
             .onFocusChanged { c.panelFocused = it.hasFocus }
             .focusGroup()
@@ -109,7 +127,7 @@ internal fun ChatPanel(
                 Modifier.onDpad(Key.DirectionLeft) { actions.leave(); true }.focusRequester(f.menu).testTag("chat_menu_btn"),
             )
             Column(Modifier.weight(1f)) {
-                Text("Chat", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+                Text(if (model.replay) "Chat replay" else "Chat", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("chat_title"))
                 val status = when (val s = model.connection) {
                     is ConnState.Connected -> model.room
                     is ConnState.Reconnecting -> "Reconnecting..."
@@ -120,7 +138,14 @@ internal fun ChatPanel(
             }
         }
         MessageList(model, c, fontSp, actions, Modifier.weight(1f).fillMaxWidth())
-        if (model.signedIn) {
+        if (model.replay) {
+            Text(
+                "Chat replay. Sending is disabled.",
+                fontSize = 12.sp,
+                color = FrostColors.Muted,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag("chat_replay_note"),
+            )
+        } else if (model.signedIn) {
             InputArea(model, actions, c)
         } else {
             Text(
@@ -130,6 +155,7 @@ internal fun ChatPanel(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag("chat_guest_note"),
             )
         }
+    }
     }
 }
 
@@ -247,6 +273,7 @@ private fun InputArea(model: ChatUiModel, actions: ChatActions, c: ChatControlle
                 .onDpad(Key.DirectionDown) { runCatching { f.emotes.requestFocus() }; true }
                 .focusRequester(f.input)
                 .testTag("chat_input"),
+            onEditingChange = { c.inputEditing = it },
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TvButton(

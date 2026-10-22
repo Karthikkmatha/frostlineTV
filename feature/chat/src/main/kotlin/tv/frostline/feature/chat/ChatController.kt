@@ -31,6 +31,8 @@ class ChatController(val listState: LazyListState) {
     var menuOpen by mutableStateOf(false)
     var pickerOpen by mutableStateOf(false)
     var draft by mutableStateOf("")
+    /** True only after OK on the text field (the keyboard is allowed); focusing the field never sets it. */
+    var inputEditing by mutableStateOf(false)
     /** True = pinned to the newest message. Only an explicit Up on the list clears it. */
     var following by mutableStateOf(true)
     var panelFocused by mutableStateOf(false)
