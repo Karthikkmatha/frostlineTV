@@ -28,6 +28,11 @@ class AppContainer(context: Context) {
     val webCookies = AndroidWebCookies()
     val playback = TwitchInternal.playback()
     val hermes = TwitchInternal.hermes()
+    val vodPlayback = TwitchInternal.vodPlayback()
+    val videoComments = TwitchInternal.videoComments()
+
+    /** Outlives screens: the last playback position is written after the player screen has gone. */
+    val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
     /** The only place an ExoPlayer is ever created, so two can never be alive at once. */
     val playerSlot = createPlayerSlot(context)

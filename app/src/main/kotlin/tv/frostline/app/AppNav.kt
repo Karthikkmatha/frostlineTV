@@ -27,13 +27,23 @@ import tv.frostline.feature.auth.SignInScreen
 import tv.frostline.feature.home.HomeScreen
 import tv.frostline.feature.home.HomeViewModel
 import tv.frostline.feature.chat.ChatViewModel
+import tv.frostline.feature.channel.ChannelScreen
+import tv.frostline.feature.channel.ChannelViewModel
+import tv.frostline.feature.channel.asChannelSource
+import tv.frostline.feature.chat.ChatReplayViewModel
+import tv.frostline.feature.player.PlayTarget
 import tv.frostline.feature.player.PlayerScreen
 import tv.frostline.feature.player.PlayerViewModel
+import tv.frostline.feature.player.VodPlayerScreen
+import tv.frostline.feature.player.VodPlayerViewModel
 
 private const val SIGN_IN = "signin"
 private const val HOME = "home"
 private const val LINK_WEB = "linkweb"
 private const val PLAYER = "player/{login}"
+private const val CHANNEL = "channel/{login}"
+private const val VOD = "vod/{id}"
+private const val CLIP = "clip/{slug}"
 
 @Composable
 fun AppNav(container: AppContainer) {
@@ -61,6 +71,26 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
         val current = nav.currentDestination?.route
         if (!signedIn && current != null && current != SIGN_IN && current != LINK_WEB) {
             nav.navigate(SIGN_IN) { popUpTo(nav.graph.id) { inclusive = true } }
+        }
+    }
+
+    // The channel page and the player can lead to each other. When the page we want is the one just below on
+    // the stack, go back to it instead of stacking a second copy.
+    fun openChannel(login: String) {
+        val prev = nav.previousBackStackEntry
+        if (prev?.destination?.route == CHANNEL && prev.arguments?.getString("login").equals(login, ignoreCase = true)) {
+            nav.popBackStack()
+        } else {
+            nav.navigate("channel/$login")
+        }
+    }
+
+    fun watchLive(login: String) {
+        val prev = nav.previousBackStackEntry
+        if (prev?.destination?.route == PLAYER && prev.arguments?.getString("login").equals(login, ignoreCase = true)) {
+            nav.popBackStack()
+        } else {
+            nav.navigate("player/$login") { popUpTo(CHANNEL) { inclusive = true } }
         }
     }
 
@@ -106,6 +136,8 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                 HomeScreen(
                     viewModel = vm,
                     onOpenChannel = { login -> nav.navigate("player/$login") },
+                    onOpenChannelPage = { login -> nav.navigate("channel/$login") },
+                    onOpenVod = { id -> nav.navigate("vod/$id") },
                     settingsContent = {
                         val account: AccountViewModel = viewModel(
                             factory = viewModelFactory {
@@ -147,7 +179,63 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         }
                     },
                 )
-                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() })
+                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel)
+            }
+        }
+        composable(CHANNEL, arguments = listOf(navArgument("login") { type = NavType.StringType })) { entry ->
+            val login = entry.arguments?.getString("login").orEmpty()
+            Settled {
+                val vm: ChannelViewModel = viewModel(
+                    factory = viewModelFactory { initializer { ChannelViewModel(login, container.twitch.helix.asChannelSource()) } },
+                )
+                ChannelScreen(
+                    vm,
+                    onWatchLive = ::watchLive,
+                    onOpenVod = { id -> nav.navigate("vod/$id") },
+                    onOpenClip = { slug -> nav.navigate("clip/$slug") },
+                )
+            }
+        }
+        composable(VOD, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val id = entry.arguments?.getString("id").orEmpty()
+            Settled {
+                val vm: VodPlayerViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            VodPlayerViewModel(
+                                PlayTarget.Vod(id), container.playerSlot, container.vodPlayback, container.twitch.helix,
+                                container.vault, container.settings, container.database.resumeDao(), container.ioScope,
+                            )
+                        }
+                    },
+                )
+                val chat: ChatReplayViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            ChatReplayViewModel(
+                                id, container.emoteRepository, container.twitch.helix, container.settings,
+                                position = { vm.replayPosition() }, api = container.videoComments,
+                            )
+                        }
+                    },
+                )
+                VodPlayerScreen(vm, chat, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel)
+            }
+        }
+        composable(CLIP, arguments = listOf(navArgument("slug") { type = NavType.StringType })) { entry ->
+            val slug = entry.arguments?.getString("slug").orEmpty()
+            Settled {
+                val vm: VodPlayerViewModel = viewModel(
+                    factory = viewModelFactory {
+                        initializer {
+                            VodPlayerViewModel(
+                                PlayTarget.Clip(slug), container.playerSlot, container.vodPlayback, container.twitch.helix,
+                                container.vault, container.settings, container.database.resumeDao(), container.ioScope,
+                            )
+                        }
+                    },
+                )
+                VodPlayerScreen(vm, chat = null, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel)
             }
         }
     }

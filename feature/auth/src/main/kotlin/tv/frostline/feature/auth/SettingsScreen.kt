@@ -41,6 +41,7 @@ fun SettingsScreen(
         onUnlink = viewModel::unlinkWebSession,
         onFollowRaids = viewModel::setFollowRaids,
         onDebugOverlay = viewModel::setDebugOverlay,
+        onShowFps = viewModel::setShowFps,
         onChatChange = viewModel::updateChat,
     )
 }
@@ -56,6 +57,7 @@ fun SettingsContent(
     onFollowRaids: (Boolean) -> Unit,
     onDebugOverlay: (Boolean) -> Unit,
     onChatChange: ((ChatSettings) -> ChatSettings) -> Unit = {},
+    onShowFps: (Boolean) -> Unit = {},
 ) {
     LazyColumn(
         // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
@@ -141,6 +143,15 @@ fun SettingsContent(
             )
         }
         item {
+            TvChoiceRow(
+                label = "Animated emotes",
+                value = if (ui.chat.animatedEmotes) "On" else "Off (still frame)",
+                description = "Animated emotes play at about 12 frames a second, and only while chat is shown and the video is playing.",
+                onClick = { onChatChange { it.copy(animatedEmotes = !it.animatedEmotes) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_animated"),
+            )
+        }
+        item {
             TvToggleRow(
                 label = "7TV emotes",
                 description = null,
@@ -177,6 +188,15 @@ fun SettingsContent(
                 checked = ui.debugOverlay,
                 onToggle = onDebugOverlay,
                 modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_debug"),
+            )
+        }
+        item {
+            TvToggleRow(
+                label = "Show UI frame rate",
+                description = "Adds the measured UI frame rate to the debug overlay, to check that an idle screen stays idle.",
+                checked = ui.showFps,
+                onToggle = onShowFps,
+                modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_fps"),
             )
         }
 

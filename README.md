@@ -31,3 +31,17 @@ Two zones, one focus at a time: PLAYER (the bare player and its controls) and CH
 
 Implemented with `FocusRequester`s (`ChatFocus`), `focusProperties` and key handlers; covered by
 `ChatFocusTest` (chat side) and `ChatEntryTest` (player side).
+
+Stage 4 additions:
+
+- The chat text field never opens the keyboard on focus. Focus alone only highlights it; OK (a press that began on the
+  field) starts editing, and leaving the field ends it. Down from the field with the keyboard closed goes to Emotes.
+- VOD and clip playback use the same player. With controls hidden, Left/Right do not seek; seeking is done with the
+  -10 s / +30 s buttons, whose held or repeated presses accumulate into one "+MM:SS" counter and are applied once after
+  about 600 ms idle. Resume is offered ("Resume from MM:SS / Start over") past 30 s and before 95%.
+- Chat replay (VODs) uses the same panel and focus model as live chat, labelled "Chat replay", with sending disabled.
+- Channel page: tabs row, then the kind or period chips, then the grid. Back from the player returns to the card that
+  opened it (and from a channel to the card in its grid).
+- Animated emotes run on one shared 12-15 fps clock and stop when off screen, hidden or paused; Settings can turn them
+  into still frames. Settings also has a UI frame-rate overlay toggle.
+

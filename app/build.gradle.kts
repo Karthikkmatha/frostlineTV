@@ -83,6 +83,7 @@ dependencies {
     implementation(project(":feature:auth"))
     implementation(project(":feature:player"))
     implementation(project(":feature:chat"))
+    implementation(project(":feature:channel"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.navigation.compose)
