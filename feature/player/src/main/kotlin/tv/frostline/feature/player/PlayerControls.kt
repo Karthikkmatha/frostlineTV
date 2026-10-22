@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -21,6 +23,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import tv.frostline.core.twitch.Durations
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -59,7 +66,30 @@ object ControlTags {
     const val PlayPause = "ctl_playpause"
     const val Refresh = "ctl_refresh"
     const val Chat = "ctl_chat"
+    const val SkipBack = "ctl_skip_back"
+    const val SkipForward = "ctl_skip_fwd"
+    const val SkipCounter = "skip_counter"
+    const val SeekBar = "seek_bar"
+    const val Elapsed = "seek_elapsed"
+    const val Total = "seek_total"
 }
+
+/**
+ * Extra controls of a past broadcast or clip: skip buttons, a seek bar with elapsed/total time and the skip
+ * counter. The bar only shows progress: skipping is done with the buttons, never with Left/Right.
+ */
+class VodControls(
+    val kindLabel: String,
+    /** Where the bar points: the playhead, or the target of a skip in progress. */
+    val positionMs: Long,
+    val durationMs: Long,
+    /** "+00:30" while a skip is pending, else null. */
+    val skipCounter: String?,
+    /** [deltaMs] is the step; [repeat] marks the auto-repeat events of a held button. */
+    val onSkip: (deltaMs: Long, repeat: Boolean) -> Unit,
+)
+
+private fun isSelect(key: Key) = key == Key.DirectionCenter || key == Key.Enter || key == Key.NumPadEnter
 
 private fun isOk(key: Key) = key == Key.DirectionCenter || key == Key.Enter || key == Key.NumPadEnter || key == Key.MediaPlayPause
 
@@ -96,6 +126,10 @@ fun PlayerChrome(
     rootRequester: FocusRequester? = null,
     /** False while an overlay owns focus, so the bare player cannot take it by a stray D-pad move. */
     rootFocusable: Boolean = true,
+    /** Non-null for a past broadcast or clip. */
+    vod: VodControls? = null,
+    /** False hides the chat toggle (clips have no chat). */
+    showChatToggle: Boolean = true,
 ) {
     val root = rootRequester ?: remember { FocusRequester() }
     val play = remember { FocusRequester() }
@@ -103,6 +137,8 @@ fun PlayerChrome(
     val gear = remember { FocusRequester() }
     val refresh = remember { FocusRequester() }
     val chat = remember { FocusRequester() }
+    val skipBack = remember { FocusRequester() }
+    val skipForward = remember { FocusRequester() }
     var interaction by remember { mutableIntStateOf(0) }
 
     // Back hides the controls first; with them hidden (or something else open) it falls through to the screen.
@@ -163,7 +199,8 @@ fun PlayerChrome(
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(channelName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (title.isNotBlank()) Text(title, fontSize = 14.sp, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        LiveBadgeView(badge)
+                        if (vod == null) LiveBadgeView(badge)
+                        else Text(vod.kindLabel, fontSize = 13.sp, color = FrostColors.Lavender, modifier = Modifier.testTag("vod_kind"))
                     }
                     TvButton(
                         "Channel",
@@ -178,33 +215,120 @@ fun PlayerChrome(
                     )
                 }
             }
-            IconControl(
-                if (playing) R.drawable.ic_pause else R.drawable.ic_play,
-                if (playing) "Pause" else "Play",
-                onPlayPause, 72,
-                enterChat.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
-                    .focusProperties { up = channel; down = refresh; left = stop; right = stop },
-            )
+            if (vod == null) {
+                IconControl(
+                    if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+                    if (playing) "Pause" else "Play",
+                    onPlayPause, 72,
+                    enterChat.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
+                        .focusProperties { up = channel; down = refresh; left = stop; right = stop },
+                )
+            } else {
+                Row(
+                    Modifier.align(Alignment.Center),
+                    horizontalArrangement = Arrangement.spacedBy(20.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SkipButton(
+                        "\u221210 s", "Back 10 seconds", { r -> vod.onSkip(SkipController.BACK_MS, r) },
+                        Modifier.focusRequester(skipBack).testTag(ControlTags.SkipBack)
+                            .focusProperties { up = channel; down = refresh; left = stop; right = play },
+                    )
+                    IconControl(
+                        if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+                        if (playing) "Pause" else "Play",
+                        onPlayPause, 72,
+                        Modifier.focusRequester(play).testTag(ControlTags.PlayPause)
+                            .focusProperties { up = channel; down = refresh; left = skipBack; right = skipForward },
+                    )
+                    SkipButton(
+                        "+30 s", "Forward 30 seconds", { r -> vod.onSkip(SkipController.FORWARD_MS, r) },
+                        enterChat.focusRequester(skipForward).testTag(ControlTags.SkipForward)
+                            .focusProperties { up = channel; down = if (showChatToggle) chat else refresh; left = play; right = stop },
+                    )
+                }
+            }
             Box(
                 Modifier.fillMaxWidth().align(Alignment.BottomCenter)
                     .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC050507))))
                     .padding(horizontal = 48.dp, vertical = 27.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconControl(
-                        R.drawable.ic_refresh, "Refresh stream", onRefresh, 44,
-                        Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
-                            .focusProperties { up = play; down = stop; left = stop; right = chat },
-                    )
-                    IconControl(
-                        R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 44,
-                        enterChat.focusRequester(chat).testTag(ControlTags.Chat)
-                            .focusProperties { up = play; down = stop; left = refresh; right = stop },
-                        active = chatVisible,
-                    )
-                    Text(if (chatVisible) "Chat on" else "Chat off", fontSize = 13.sp, color = FrostColors.Muted)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (vod != null) {
+                        vod.skipCounter?.let { c ->
+                            Text(
+                                c, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface,
+                                modifier = Modifier.align(Alignment.CenterHorizontally).testTag(ControlTags.SkipCounter),
+                            )
+                        }
+                        SeekBar(vod.positionMs, vod.durationMs)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconControl(
+                            R.drawable.ic_refresh, "Refresh stream", onRefresh, 44,
+                            Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
+                                .focusProperties { up = play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
+                        )
+                        if (showChatToggle) {
+                            IconControl(
+                                R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 44,
+                                enterChat.focusRequester(chat).testTag(ControlTags.Chat)
+                                    .focusProperties { up = play; down = stop; left = refresh; right = stop },
+                                active = chatVisible,
+                            )
+                            Text(if (chatVisible) "Chat on" else "Chat off", fontSize = 13.sp, color = FrostColors.Muted)
+                        }
+                    }
                 }
-            }
+            }        }
+    }
+}
+
+@Composable
+private fun SeekBar(positionMs: Long, durationMs: Long) {
+    val fraction = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else 0f
+    Row(
+        Modifier.fillMaxWidth().testTag(ControlTags.SeekBar),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(Durations.clock(positionMs), fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Elapsed))
+        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x66FFFFFF))) {
+            Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FrostColors.Violet))
+        }
+        Text(Durations.clock(durationMs), fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
+    }
+}
+
+/**
+ * A text button that accumulates presses. OK on the key (including the repeats of a held key) is handled here, in
+ * the preview pass, so the surface never also fires its own click for the same press; [onClick] serves pointer input.
+ */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+private fun SkipButton(label: String, description: String, onPress: (repeat: Boolean) -> Unit, modifier: Modifier) {
+    Surface(
+        onClick = { onPress(false) },
+        modifier = modifier
+            .height(44.dp)
+            .semantics { contentDescription = description }
+            .onPreviewKeyEvent { e ->
+                if (!isSelect(e.key)) return@onPreviewKeyEvent false
+                if (e.type == KeyEventType.KeyDown) onPress(e.nativeKeyEvent.repeatCount > 0)
+                true
+            },
+        shape = cardShape(CircleShape),
+        border = focusRingBorder(CircleShape),
+        scale = cardScale(1.08f),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color(0xCC1B1726),
+            contentColor = FrostColors.OnSurface,
+            focusedContainerColor = FrostColors.Primary,
+            focusedContentColor = FrostColors.OnSurface,
+        ),
+    ) {
+        Box(Modifier.fillMaxHeight().padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
+            Text(label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

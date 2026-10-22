@@ -39,6 +39,7 @@ import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.rememberUiFps
 import tv.frostline.feature.chat.ChatActions
 import tv.frostline.feature.chat.ChatLayout
 import tv.frostline.feature.chat.ChatUiModel
@@ -47,13 +48,21 @@ import tv.frostline.feature.chat.rememberChatController
 
 @OptIn(UnstableApi::class)
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel, chat: ChatViewModel, onBack: () -> Unit) {
+fun PlayerScreen(
+    viewModel: PlayerViewModel,
+    chat: ChatViewModel,
+    onBack: () -> Unit,
+    /** Opens the channel page of the given login. */
+    onOpenChannel: (String) -> Unit = {},
+) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val player by viewModel.player.collectAsStateWithLifecycle()
     val aspect by viewModel.videoAspect.collectAsStateWithLifecycle()
     val raid by viewModel.raid.notice.collectAsStateWithLifecycle()
     val debug by viewModel.debugOverlay.collectAsStateWithLifecycle(initialValue = false)
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
+    val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
+    val fps = rememberUiFps(debug && showFps)
 
     var controlsVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
@@ -85,7 +94,10 @@ fun PlayerScreen(viewModel: PlayerViewModel, chat: ChatViewModel, onBack: () -> 
         onDispose { chat.stop() }
     }
     LaunchedEffect(ui.login) { chat.setChannel(ui.login) }
-    val chatModel = ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker)
+    val chatPlaying = ui.playing
+    val chatModel = remember(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying) {
+        ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying)
+    }
     val chatActions = remember(chat) {
         ChatActions(
             send = chat::send,
@@ -142,7 +154,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, chat: ChatViewModel, onBack: () -> 
                 onPlayPause = viewModel::togglePlay,
                 onRefresh = viewModel::refresh,
                 onToggleChat = { chat.setEnabled(!chatVisible) },
-                onChannel = { viewModel.showNotice("Channel page arrives in a later update") },
+                onChannel = { onOpenChannel(ui.login) },
                 onQuality = { qualityOpen = true },
                 focusLocked = qualityOpen || raid != null || ui.error != null || chatHasFocus,
                 onEnterChat = if (chatVisible) {
@@ -161,7 +173,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, chat: ChatViewModel, onBack: () -> 
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))
@@ -220,8 +232,9 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
     }
 }
 
+/** [fps] is the measured UI frame rate (read here, so only the overlay recomposes), or null when that line is off. */
 @Composable
-private fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, modifier: Modifier) {
+internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier) {
     Column(
         modifier.background(Color(0xB3050507), RoundedCornerShape(8.dp)).padding(10.dp).testTag("debug_overlay"),
     ) {
@@ -232,7 +245,7 @@ private fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, modifier: Modi
             "video    ${m.width}x${m.height} @ ${m.videoBitrate / 1000} kbps",
             "net      ${m.bandwidthBps / 1000} kbps",
             "latency  ${liveOffsetMs?.let { "$it ms" } ?: "-"}",
-        )
+        ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" })
         lines.forEach { Text(it, fontSize = 12.sp, color = FrostColors.Lavender, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) }
     }
 }

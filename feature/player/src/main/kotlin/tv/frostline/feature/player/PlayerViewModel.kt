@@ -8,7 +8,6 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
-import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -72,6 +71,7 @@ class PlayerViewModel(
 
     val metrics = PlaybackMetrics()
     val debugOverlay = settings.debugOverlay
+    val showFps = settings.showFps
 
     private val channelId = MutableStateFlow<String?>(null)
     private var loadJob: Job? = null
@@ -177,28 +177,12 @@ class PlayerViewModel(
     private fun applyQuality(id: String) {
         val p = player.value ?: return
         if (id == AUTO) {
-            p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-                .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build()
+            QualityTracks.clear(p)
             pendingQuality = null
             return
         }
         val v = currentVariants.firstOrNull { it.groupId == id } ?: return
-        val group = p.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 } ?: return
-        var best = -1
-        var bestScore = Long.MAX_VALUE
-        for (i in 0 until group.length) {
-            val f = group.getTrackFormat(i)
-            val heightPenalty = if (v.height > 0 && f.height != v.height) 1_000_000_000L else 0L
-            val score = heightPenalty + kotlin.math.abs((f.bitrate.takeIf { it > 0 } ?: 0).toLong() - v.bandwidth)
-            if (score < bestScore) {
-                bestScore = score
-                best = i
-            }
-        }
-        if (best < 0) return
-        p.trackSelectionParameters = p.trackSelectionParameters.buildUpon()
-            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(best))).build()
-        pendingQuality = null
+        if (QualityTracks.pin(p, v)) pendingQuality = null
     }
 
     private fun load(login: String) {
