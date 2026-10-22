@@ -172,3 +172,45 @@ fun TvToggleRow(
         }
     }
 }
+
+/** A settings row that cycles through choices on OK, showing the current one as text. */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun TvChoiceRow(
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+) {
+    androidx.tv.material3.Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = cardShape(RoundedCornerShape(10.dp)),
+        border = focusRingBorder(RoundedCornerShape(10.dp)),
+        scale = cardScale(1f),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = FrostColors.Surface,
+            contentColor = FrostColors.OnSurface,
+            focusedContainerColor = FrostColors.SurfaceFocused,
+            focusedContentColor = FrostColors.OnSurface,
+        ),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 15.sp)
+                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
+            }
+            Text(
+                value,
+                fontSize = 13.sp,
+                color = FrostColors.OnSurface,
+                modifier = Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
+            )
+        }
+    }
+}

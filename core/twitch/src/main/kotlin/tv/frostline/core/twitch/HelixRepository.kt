@@ -52,6 +52,23 @@ class HelixRepository(private val api: HelixApi) {
         return out
     }
 
+    suspend fun globalBadges(): List<BadgeSet> = api.globalBadges().data
+    suspend fun channelBadges(broadcasterId: String): List<BadgeSet> = api.channelBadges(broadcasterId).data
+
+    /** The user's usable Twitch emotes, at most [limit] (the list can run to thousands). */
+    suspend fun userEmotes(userId: String, limit: Int = 1500): List<HelixEmote> {
+        val out = ArrayList<HelixEmote>()
+        var cursor: String? = null
+        var pages = 0
+        do {
+            val page = api.userEmotes(userId, cursor)
+            out += page.data
+            cursor = page.pagination?.cursor
+            pages++
+        } while (cursor != null && out.size < limit && pages < 30)
+        return if (out.size > limit) out.subList(0, limit) else out
+    }
+
     suspend fun topStreams(): List<HelixStream> = api.streams(first = 48).data
     suspend fun topCategories(): List<HelixGame> = api.topGames(first = 48).data
     suspend fun categoryStreams(gameId: String): List<HelixStream> = api.streams(first = 48, gameId = gameId).data

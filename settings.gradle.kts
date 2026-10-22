@@ -22,4 +22,5 @@ include(
     ":feature:home",
     ":feature:auth",
     ":feature:player",
+    ":feature:chat",
 )

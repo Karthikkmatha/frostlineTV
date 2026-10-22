@@ -73,7 +73,42 @@ data class SearchChannel(
     @SerialName("thumbnail_url") val thumbnailUrl: String = "",
 )
 
+@Serializable
+data class BadgeVersion(
+    val id: String,
+    @SerialName("image_url_1x") val url1x: String = "",
+    @SerialName("image_url_2x") val url2x: String = "",
+    @SerialName("image_url_4x") val url4x: String = "",
+)
+
+@Serializable
+data class BadgeSet(
+    @SerialName("set_id") val setId: String,
+    val versions: List<BadgeVersion> = emptyList(),
+)
+
+@Serializable
+data class HelixEmote(
+    val id: String,
+    val name: String,
+    @SerialName("emote_type") val emoteType: String = "",
+    @SerialName("emote_set_id") val emoteSetId: String = "",
+)
+
 interface HelixApi {
+    @GET("chat/badges/global")
+    suspend fun globalBadges(): Page<BadgeSet>
+
+    @GET("chat/badges")
+    suspend fun channelBadges(@Query("broadcaster_id") broadcasterId: String): Page<BadgeSet>
+
+    /** Every emote the user may use in chat (needs the user:read:emotes scope). Paginated. */
+    @GET("chat/emotes/user")
+    suspend fun userEmotes(
+        @Query("user_id") userId: String,
+        @Query("after") after: String? = null,
+    ): Page<HelixEmote>
+
     @GET("users")
     suspend fun users(): Page<HelixUser>
 
