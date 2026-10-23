@@ -20,6 +20,10 @@ object PlayerProfile {
     @Volatile var liveMode: LiveMode = LiveMode.Stable
     /** True for a live stream, false for a VOD or clip (always the stable buffer profile). */
     @Volatile var forLive: Boolean = true
+    /** The last throughput the player measured (bits/s), 0 = none yet. Seeds the next player's estimate. */
+    @Volatile var lastBandwidthBps: Long = 0L
+    /** Start estimate when nothing was measured yet: high, so playback starts at Source and steps down if the link cannot hold it. */
+    const val DEFAULT_START_BPS = 25_000_000L
 }
 
 /** Memory budget of the buffer: about 8-15 s of a 1080p60 stream. */
@@ -46,7 +50,11 @@ internal fun buildLoadControl(lowLatency: Boolean): DefaultLoadControl =
  */
 @OptIn(UnstableApi::class)
 internal fun steadyAdaptation(context: Context): Pair<DefaultTrackSelector, DefaultBandwidthMeter> {
-    val meter = DefaultBandwidthMeter.Builder(context).setSlidingWindowMaxWeight(4_000).build()
+    val meter = DefaultBandwidthMeter.Builder(context)
+        .setSlidingWindowMaxWeight(4_000)
+        // Start at the best quality the last measurement supports (Source when unknown), not at 480p.
+        .setInitialBitrateEstimate(PlayerProfile.lastBandwidthBps.takeIf { it > 0 } ?: PlayerProfile.DEFAULT_START_BPS)
+        .build()
     val factory = AdaptiveTrackSelection.Factory(
         /* minDurationForQualityIncreaseMs = */ 12_000,
         /* maxDurationForQualityDecreaseMs = */ 8_000,

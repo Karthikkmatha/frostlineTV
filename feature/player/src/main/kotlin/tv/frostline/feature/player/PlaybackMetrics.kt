@@ -127,6 +127,7 @@ class PlaybackMetrics(private val acc: MetricsAccumulator = MetricsAccumulator()
         bitrateEstimate: Long,
     ) {
         acc.onBandwidth(bitrateEstimate)
+        if (bitrateEstimate > 0) PlayerProfile.lastBandwidthBps = bitrateEstimate
         publish()
     }
 
