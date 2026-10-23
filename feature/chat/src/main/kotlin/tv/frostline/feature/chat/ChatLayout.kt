@@ -19,6 +19,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import tv.frostline.core.ui.tryFocus
@@ -32,12 +33,12 @@ import tv.frostline.core.ui.tryFocus
  *    calls ChatController.enter(), which focuses the message list.
  *  - CHAT -> PLAYER: Left from the leftmost element of each row (menu, list, field, Emotes) or Back from the
  *    panel calls ChatActions.leave(); the host puts focus back on the player root with controls hidden.
- *  - Inside CHAT: Menu -> list -> field -> [Emotes][Send] top to bottom. Up/Down on the list scroll history;
- *    Down at the live edge moves on to the field, Up at the oldest line moves to Menu; OK on the list jumps to live.
- *  - Header row: Menu and Rewards (signed in), Left/Right between them, Down to the first banner (prediction, then poll)
- *    or the list. Banners sit above the list; Up from the list reaches the last banner. Banners never take focus on their own.
- *  - Overlays (menu, picker, rewards, prediction, poll) trap focus: every outward edge is closed; Back/Close returns focus to the button
- *    that opened them.
+ *  - Inside CHAT everything focusable is at the bottom: list, then banners, field, and the button row
+ *    (Emotes, Send, Rewards, Menu; guest: Menu, Sign in; replay: Menu). Up/Down on the list scroll history and
+ *    Down at the newest line moves to the bottom section; Up from its top returns to the list, following live.
+ *  - Sheets (menu, emotes, rewards, prediction, poll) anchor above the button row and trap focus; Back returns
+ *    to the button or banner that opened them. "Resize panel" (menu) enters resize mode: Left/Right change the
+ *    width, OK saves, Back reverts.
  *
  * The video box keeps one position in the Row; only its weight changes with the panel, so the SurfaceView
  * inside is resized but never recreated.
@@ -51,12 +52,20 @@ fun ChatLayout(
     modifier: Modifier = Modifier,
     video: @Composable BoxScope.() -> Unit,
 ) {
-    val frac = ChatOptions.widthFractions[model.settings.widthIndex.coerceIn(0, ChatOptions.widthFractions.lastIndex)]
+    // Resize mode previews live; after saving, the saved value holds until the settings flow catches up.
+    val savedPct = model.settings.widthPct
+    LaunchedEffect(savedPct, controller.widthOverride) {
+        if (controller.widthOverride == savedPct) controller.widthOverride = null
+    }
+    val pct = if (controller.resizing) controller.resizePct else controller.widthOverride ?: savedPct
+    val frac = ChatOptions.clampWidth(pct) / 100f
     val scope = rememberCoroutineScope()
     val f = controller.focus
 
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panelWidth = maxWidth * frac
+        // Sheets anchor just above the bottom button row.
+        val anchorBottom = with(LocalDensity.current) { controller.buttonRowHeightPx.toDp() }.coerceAtLeast(40.dp) + 8.dp
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(if (chatVisible) 1f - frac else 1f).fillMaxHeight(), content = video)
             if (chatVisible) ChatPanel(model, actions, controller, Modifier.weight(frac).fillMaxHeight())
@@ -65,18 +74,18 @@ fun ChatLayout(
             ChatMenu(
                 model.settings, controller, actions,
                 onJumpToLive = { scope.launch { controller.resumeLive() } },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = panelWidth + 8.dp).width(280.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = panelWidth + 8.dp, bottom = anchorBottom).width(280.dp),
             )
         }
         if (chatVisible && controller.pickerOpen) {
             EmotePicker(
                 model.picker, controller,
-                Modifier.align(Alignment.CenterEnd).width(if (panelWidth > 380.dp) panelWidth else 380.dp).fillMaxHeight(),
+                Modifier.align(Alignment.BottomEnd).padding(bottom = anchorBottom).fillMaxHeight().width(if (panelWidth > 380.dp) panelWidth else 380.dp),
             )
         }
 
         val eng = model.engagement
-        val sheetModifier = Modifier.align(Alignment.CenterEnd).width(if (panelWidth > 420.dp) panelWidth else 420.dp).fillMaxHeight()
+        val sheetModifier = Modifier.align(Alignment.BottomEnd).padding(bottom = anchorBottom).fillMaxHeight().width(if (panelWidth > 420.dp) panelWidth else 420.dp)
         if (chatVisible && controller.rewardsOpen) RewardsSheet(eng, actions.engagement, controller, sheetModifier)
         if (chatVisible && controller.predictionOpen) PredictionSheet(eng, actions.engagement, controller, sheetModifier)
         if (chatVisible && controller.pollOpen) PollSheet(eng, actions.engagement, controller, sheetModifier)
@@ -84,13 +93,20 @@ fun ChatLayout(
         // Closing an overlay returns focus to its opener.
         var menuWas by remember { mutableStateOf(false) }
         LaunchedEffect(controller.menuOpen) {
-            if (!controller.menuOpen && menuWas) runCatching { f.menu.requestFocus() }
+            if (!controller.menuOpen && menuWas && !controller.resizing) runCatching { f.menu.requestFocus() }
             menuWas = controller.menuOpen
         }
         var pickerWas by remember { mutableStateOf(false) }
         LaunchedEffect(controller.pickerOpen) {
             if (!controller.pickerOpen && pickerWas) runCatching { f.emotes.requestFocus() }
             pickerWas = controller.pickerOpen
+        }
+
+        var resizingWas by remember { mutableStateOf(false) }
+        LaunchedEffect(controller.resizing) {
+            // Save or cancel hands focus back to the Menu button that opened resize mode.
+            if (!controller.resizing && resizingWas) f.menu.tryFocus()
+            resizingWas = controller.resizing
         }
 
         var rewardsWas by remember { mutableStateOf(false) }
@@ -113,6 +129,7 @@ fun ChatLayout(
         // Composed after the video (and its controls), so it wins over their Back handlers while chat has focus.
         BackHandler(enabled = chatVisible && (controller.hasFocus || controller.overlayOpen)) {
             when {
+                controller.resizing -> controller.cancelResize()
                 controller.rewardsOpen -> controller.backFromRewards(eng, actions.engagement)
                 controller.predictionOpen -> controller.backFromPrediction(eng, actions.engagement)
                 controller.pollOpen -> controller.backFromPoll(eng, actions.engagement)

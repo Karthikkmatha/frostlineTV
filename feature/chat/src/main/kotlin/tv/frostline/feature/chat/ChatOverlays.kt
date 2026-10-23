@@ -79,7 +79,7 @@ private fun Modifier.trapHorizontal(): Modifier = onPreviewKeyEvent {
 }
 
 /**
- * The chat menu: hide chat, cycle width and font size, timestamps, jump to live, close. Items stay open after
+ * The chat menu: hide chat, resize the panel, font size, timestamps, jump to live, close. Items stay open after
  * a change so the effect shows in the panel next to it. Back or "Close" returns focus to the Menu button.
  */
 @Composable
@@ -106,8 +106,8 @@ internal fun ChatMenu(
     ) {
         Text("Chat", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
         MenuRow(
-            "Width", ChatOptions.widthNames[settings.widthIndex.coerceIn(0, 3)],
-            { actions.update { it.copy(widthIndex = ChatOptions.nextIndex(it.widthIndex, ChatOptions.widthFractions.size)) } },
+            "Resize panel", "${settings.widthPct}%",
+            { c.menuOpen = false; c.startResize(settings.widthPct) },
             Modifier.focusRequester(first).focusProperties { up = stop }.testTag("chat_menu_width"),
         )
         MenuRow(

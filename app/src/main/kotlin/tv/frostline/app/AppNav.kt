@@ -190,7 +190,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         }
                     },
                 )
-                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel, engagement = engagementVm)
+                PlayerScreen(vm, chatVm, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel, onSignIn = { nav.navigate(SIGN_IN) }, engagement = engagementVm)
             }
         }
         composable(CHANNEL, arguments = listOf(navArgument("login") { type = NavType.StringType })) { entry ->

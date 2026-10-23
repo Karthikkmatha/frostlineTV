@@ -42,6 +42,7 @@ class ChatFocusTest {
     private lateinit var controller: ChatController
     private var leaves = 0
     private var hides = 0
+    private var signIns = 0
     private val sent = mutableListOf<String>()
     private var settingsNow = ChatSettings()
     private var created = 0
@@ -79,6 +80,7 @@ class ChatFocusTest {
                         hide = { hides++ },
                         loadPicker = {},
                         leave = { leaves++ },
+                        signIn = { signIns++ },
                     ),
                     controller = controller,
                 ) {
@@ -124,12 +126,13 @@ class ChatFocusTest {
         show()
         enter(); press(Key.DirectionLeft)
         assertEquals(1, leaves)
-        rule.onNodeWithTag("chat_menu_btn").focus(); press(Key.DirectionLeft)
-        assertEquals(2, leaves)
         rule.onNodeWithTag("chat_input").focus(); press(Key.DirectionLeft)
-        assertEquals(3, leaves)
+        assertEquals(2, leaves)
         rule.onNodeWithTag("chat_emotes_btn").focus(); press(Key.DirectionLeft)
-        assertEquals(4, leaves)
+        assertEquals(3, leaves)
+        rule.onNodeWithTag("chat_menu_btn").focus(); press(Key.DirectionLeft) // Menu is last: Left steps to Send
+        assertEquals(3, leaves)
+        focused("chat_send_btn")
     }
 
     @Test fun backFromThePanelReturnsToThePlayer() {
@@ -177,7 +180,7 @@ class ChatFocusTest {
         focused("chat_input") // at live, Down moves on to the field
     }
 
-    @Test fun upAtTheOldestLineMovesFocusToTheMenuButton() {
+    @Test fun nothingAboveTheListIsFocusable() {
         show(count = 30)
         enter()
         var guard = 0
@@ -185,8 +188,8 @@ class ChatFocusTest {
         assertFalse(controller.listState.canScrollForward)
         focused("chat_list")
         press(Key.DirectionUp)
-        focused("chat_menu_btn")
-        press(Key.DirectionDown)
+        focused("chat_list") // the oldest line: Up does nothing
+        press(Key.DirectionRight)
         focused("chat_list")
     }
 
@@ -257,12 +260,38 @@ class ChatFocusTest {
         show()
         enter()
         press(Key.DirectionDown); focused("chat_input")
-        press(Key.DirectionRight); focused("chat_emotes_btn")
+        press(Key.DirectionRight); focused("chat_input") // the field has nothing to its right
+        press(Key.DirectionDown); focused("chat_emotes_btn")
         press(Key.DirectionRight); focused("chat_send_btn")
-        press(Key.DirectionRight); focused("chat_send_btn") // nothing further right
+        press(Key.DirectionRight); focused("chat_menu_btn")
+        press(Key.DirectionRight); focused("chat_menu_btn") // nothing further right
+        press(Key.DirectionLeft); focused("chat_send_btn")
         press(Key.DirectionLeft); focused("chat_emotes_btn")
         press(Key.DirectionUp); focused("chat_input")
         press(Key.DirectionUp); focused("chat_list")
+        assertTrue(controller.following)
+    }
+
+    @Test fun upFromTheListEdgeReturnsToTheNewestLineFollowingLive() {
+        show()
+        enter()
+        press(Key.DirectionUp); press(Key.DirectionUp)
+        assertFalse(controller.following)
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionUp); focused("chat_input")
+        press(Key.DirectionUp); focused("chat_list")
+        assertTrue(controller.following)
+        assertEquals(0, index())
+    }
+
+    @Test fun backFromAnywhereInChatReturnsToThePlayer() {
+        show()
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        back()
+        assertEquals(1, leaves)
+        rule.onNodeWithTag("chat_input").focus()
+        back()
+        assertEquals(2, leaves)
     }
 
     @Test fun sendButtonSendsTheDraftAndClearsIt() {
@@ -281,13 +310,24 @@ class ChatFocusTest {
         assertTrue(sent.isEmpty())
     }
 
-    @Test fun guestsSeeASignInNoteAndNoInput() {
+    @Test fun guestsGetMenuAndSignInOnly() {
         show(signedIn = false)
         rule.onNodeWithTag("chat_guest_note").assertExists()
         rule.onNodeWithTag("chat_input").assertDoesNotExistCompat()
+        rule.onNodeWithTag("chat_emotes_btn").assertDoesNotExistCompat()
+        rule.onNodeWithTag("chat_send_btn").assertDoesNotExistCompat()
         enter()
         press(Key.DirectionDown)
-        focused("chat_list")
+        focused("chat_menu_btn") // first of the bottom section
+        press(Key.DirectionRight)
+        focused("chat_signin_btn")
+        press(Key.DirectionCenter)
+        assertEquals(1, signIns)
+        press(Key.DirectionRight); focused("chat_signin_btn")
+        press(Key.DirectionUp); focused("chat_list")
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionLeft)
+        assertEquals(1, leaves)
     }
 
     // ---- menu ----
@@ -298,8 +338,6 @@ class ChatFocusTest {
         press(Key.DirectionCenter)
         rule.onNodeWithTag("chat_menu").assertExists()
         focused("chat_menu_width")
-        press(Key.DirectionCenter)
-        assertEquals(2, settingsNow.widthIndex)
         press(Key.DirectionRight); focused("chat_menu_width") // sideways is closed
         press(Key.DirectionLeft); focused("chat_menu_width")
         press(Key.DirectionUp); focused("chat_menu_width") // first row: up is closed
@@ -329,13 +367,43 @@ class ChatFocusTest {
         focused("chat_menu_btn")
     }
 
-    @Test fun widthCyclesThroughAllPresetsAndWraps() {
+    @Test fun resizePanelStepsTheWidthSavesWithOkAndBackReverts() {
         show()
         rule.onNodeWithTag("chat_menu_btn").focus()
         press(Key.DirectionCenter)
-        val seen = mutableListOf(settingsNow.widthIndex)
-        repeat(4) { press(Key.DirectionCenter); seen += settingsNow.widthIndex }
-        assertEquals(listOf(1, 2, 3, 0, 1), seen)
+        press(Key.DirectionCenter) // Resize panel
+        rule.onNodeWithTag("chat_menu").assertDoesNotExistCompat()
+        rule.onNodeWithTag("chat_resize_hint").assertExists()
+        focused("chat_resize_hint")
+        assertEquals(28, controller.resizePct)
+        press(Key.DirectionLeft); assertEquals(30, controller.resizePct) // Left widens
+        press(Key.DirectionRight); press(Key.DirectionRight); assertEquals(26, controller.resizePct)
+        assertEquals(28, settingsNow.widthPct) // not saved yet
+        press(Key.DirectionUp); press(Key.DirectionDown); focused("chat_resize_hint") // trapped
+        press(Key.DirectionCenter)
+        assertEquals(26, settingsNow.widthPct)
+        rule.onNodeWithTag("chat_resize_hint").assertDoesNotExistCompat()
+        focused("chat_menu_btn")
+
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionCenter); press(Key.DirectionCenter)
+        press(Key.DirectionLeft); press(Key.DirectionLeft)
+        assertEquals(30, controller.resizePct)
+        back()
+        rule.onNodeWithTag("chat_resize_hint").assertDoesNotExistCompat()
+        assertEquals(26, settingsNow.widthPct)
+        focused("chat_menu_btn")
+        assertEquals(0, leaves)
+    }
+
+    @Test fun resizeIsClampedToTwentyAndFortyFivePercent() {
+        show()
+        rule.onNodeWithTag("chat_menu_btn").focus()
+        press(Key.DirectionCenter); press(Key.DirectionCenter)
+        repeat(20) { press(Key.DirectionRight) }
+        assertEquals(20, controller.resizePct)
+        repeat(20) { press(Key.DirectionLeft) }
+        assertEquals(45, controller.resizePct)
     }
 
     @Test fun jumpToLiveFromTheMenu() {
@@ -412,8 +480,11 @@ class ChatFocusTest {
         rule.onNodeWithTag("chat_title").assertExists()
         rule.onNodeWithTag("chat_replay_note").assertExists()
         rule.onNodeWithTag("chat_input").assertDoesNotExistCompat()
+        rule.onNodeWithTag("chat_signin_btn").assertDoesNotExistCompat()
         enter(); focused("chat_list")
-        press(Key.DirectionDown); focused("chat_list") // nothing below the list to focus
+        press(Key.DirectionDown); focused("chat_menu_btn") // Menu is the only button
+        press(Key.DirectionRight); focused("chat_menu_btn")
+        press(Key.DirectionUp); focused("chat_list")
         press(Key.DirectionLeft)
         assertEquals(1, leaves)
         rule.onNodeWithTag("chat_menu_btn").focus()
@@ -489,8 +560,9 @@ class ChatFocusTest {
         assertEquals(1, created)
         rule.onNodeWithTag("chat_menu_btn").focus()
         press(Key.DirectionCenter)
-        repeat(3) { press(Key.DirectionCenter) } // cycle the width through the presets
-        back()
+        press(Key.DirectionCenter)
+        repeat(3) { press(Key.DirectionLeft) } // live resize
+        press(Key.DirectionCenter)
         assertEquals(1, created)
         assertEquals(0, disposed)
     }

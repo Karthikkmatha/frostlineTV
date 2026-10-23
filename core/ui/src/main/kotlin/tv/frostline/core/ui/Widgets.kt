@@ -233,3 +233,57 @@ fun TvChoiceRow(
         }
     }
 }
+
+/**
+ * A settings row with a value that Left/Right change (stepper). OK does nothing; the hold-to-repeat count is passed
+ * on so callers can accelerate. Shows the value between arrows so the control is visible without colour.
+ */
+@OptIn(ExperimentalTvMaterial3Api::class)
+@Composable
+fun TvStepperRow(
+    label: String,
+    value: String,
+    onStep: (dir: Int, repeat: Int) -> Unit,
+    modifier: Modifier = Modifier,
+    description: String? = null,
+) {
+    androidx.tv.material3.Surface(
+        onClick = {},
+        modifier = modifier
+            .fillMaxWidth()
+            .onPreviewKeyEvent { e ->
+                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                when (e.key) {
+                    Key.DirectionLeft -> { onStep(-1, e.nativeKeyEvent.repeatCount); true }
+                    Key.DirectionRight -> { onStep(+1, e.nativeKeyEvent.repeatCount); true }
+                    else -> false
+                }
+            },
+        shape = cardShape(RoundedCornerShape(10.dp)),
+        border = focusRingBorder(RoundedCornerShape(10.dp)),
+        scale = cardScale(1f),
+        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
+            containerColor = FrostColors.Surface,
+            contentColor = FrostColors.OnSurface,
+            focusedContainerColor = FrostColors.SurfaceFocused,
+            focusedContentColor = FrostColors.OnSurface,
+        ),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Text(label, fontSize = 15.sp)
+                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
+            }
+            Text(
+                "\u25C0  $value  \u25B6",
+                fontSize = 13.sp,
+                color = FrostColors.OnSurface,
+                modifier = Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
+            )
+        }
+    }
+}

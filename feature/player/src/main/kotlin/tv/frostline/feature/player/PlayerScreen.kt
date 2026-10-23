@@ -19,6 +19,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,6 +59,8 @@ fun PlayerScreen(
     onBack: () -> Unit,
     /** Opens the channel page of the given login. */
     onOpenChannel: (String) -> Unit = {},
+    /** Guests: the chat's Sign in button. */
+    onSignIn: () -> Unit = {},
     /** Channel points, rewards, predictions and polls (signed in only). Null = none of it. */
     engagement: EngagementViewModel? = null,
 ) {
@@ -109,6 +112,7 @@ fun PlayerScreen(
     val chatModel = remember(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying, engUi) {
         ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying, engagement = engUi)
     }
+    val signIn by rememberUpdatedState(onSignIn)
     val chatActions = remember(chat, engagement) {
         ChatActions(
             send = chat::send,
@@ -117,6 +121,7 @@ fun PlayerScreen(
             loadPicker = chat::ensurePickerLoaded,
             leave = { returnToPlayer() },
             engagement = engagement?.engine?.actions() ?: EngagementActions(),
+            signIn = { signIn() },
         )
     }
     val chatHasFocus = chatVisible && chatController.hasFocus

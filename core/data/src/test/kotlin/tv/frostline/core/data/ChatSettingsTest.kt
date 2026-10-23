@@ -1,5 +1,6 @@
 package tv.frostline.core.data
 
+import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -12,16 +13,16 @@ class ChatSettingsTest {
         assertEquals(ChatSettings(), s)
         assertTrue(s.enabled && s.show7tv && s.showBttv && s.showFfz)
         assertEquals(false, s.timestamps)
-        assertEquals(1, s.widthIndex)
+        assertEquals(28, s.widthPct)
         assertEquals(1, s.fontIndex)
     }
 
     @Test fun updatesPersistAndClampIndices() = runTest {
         val store = SettingsStore(InMemoryPreferencesStore())
-        store.updateChat { it.copy(enabled = false, widthIndex = 9, fontIndex = -3, timestamps = true, showBttv = false) }
+        store.updateChat { it.copy(enabled = false, widthPct = 90, fontIndex = -3, timestamps = true, showBttv = false) }
         val s = store.chat.first()
         assertEquals(false, s.enabled)
-        assertEquals(3, s.widthIndex)
+        assertEquals(45, s.widthPct)
         assertEquals(0, s.fontIndex)
         assertEquals(true, s.timestamps)
         assertEquals(false, s.showBttv)
@@ -29,11 +30,24 @@ class ChatSettingsTest {
     }
 
     @Test fun optionListsMatchTheIndexRange() {
-        assertEquals(4, ChatOptions.widthFractions.size)
-        assertEquals(4, ChatOptions.widthNames.size)
         assertEquals(4, ChatOptions.fontSizesSp.size)
         assertEquals(4, ChatOptions.fontNames.size)
         assertEquals(0, ChatOptions.nextIndex(3, 4))
+    }
+
+    @Test fun widthStepsInTwoPercentAndClamps() {
+        assertEquals(30, ChatOptions.stepWidth(28, +1))
+        assertEquals(26, ChatOptions.stepWidth(28, -1))
+        assertEquals(20, ChatOptions.stepWidth(20, -1))
+        assertEquals(45, ChatOptions.stepWidth(44, +1))
+        assertEquals(32, ChatOptions.stepWidth(28, +1, repeat = 12)) // holding accelerates
+        assertEquals(36, ChatOptions.stepWidth(28, +1, repeat = 30))
+    }
+
+    @Test fun legacyPresetIndexMigratesToPercent() = runTest {
+        val prefs = InMemoryPreferencesStore()
+        prefs.edit { it[androidx.datastore.preferences.core.intPreferencesKey("chat_width_v1")] = 2 }
+        assertEquals(36, SettingsStore(prefs).chat.first().widthPct)
     }
 }
 

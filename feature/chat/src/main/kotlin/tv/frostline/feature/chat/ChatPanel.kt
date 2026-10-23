@@ -40,6 +40,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -81,6 +82,8 @@ class ChatActions(
     /** Focus goes back to the player. */
     val leave: () -> Unit,
     val engagement: EngagementActions = EngagementActions(),
+    /** Guests: opens the sign-in screen (the Sign in button). */
+    val signIn: () -> Unit = {},
 )
 
 internal fun isOkKey(k: Key) = k == Key.DirectionCenter || k == Key.Enter || k == Key.NumPadEnter
@@ -90,12 +93,16 @@ internal fun Modifier.onDpad(key: Key, block: () -> Boolean): Modifier =
     onPreviewKeyEvent { if (it.type == KeyEventType.KeyDown && it.key == key) block() else false }
 
 /**
- * The chat panel. Focus map (all D-pad):
+ * The chat panel. Everything you interact with sits at the bottom; nothing above the list is focusable.
  *
- *     [Menu]            Left -> player      Down -> list
- *     [ message list ]  Up/Down scroll history (Down at live moves on), OK jumps to live, Left -> player
- *     [ text field  ]   OK opens the keyboard, Left -> player, Up -> list
- *     [Emotes] [Send]   Left from Emotes -> player
+ *     Chat / Chat replay, room modes, points balance     display only
+ *     [ message list ]   Up/Down scroll history; Down at the newest line moves to the bottom section
+ *     [prediction] [poll] banners, only while active; OK opens the sheet
+ *     [ message field ]  OK opens the keyboard
+ *     [Emotes] [Send] [Rewards] [Menu]     Left/Right between them (guest: Menu, Sign in; replay: Menu)
+ *
+ * Up from the top of the bottom section returns to the list at the newest line, following live. Left or Back
+ * from anywhere in chat returns to the player.
  */
 @Composable
 internal fun ChatPanel(
@@ -117,9 +124,34 @@ internal fun ChatPanel(
     val showRewards = eng.available && eng.rewardsLoad != RewardsLoad.Failed
     val pred = eng.prediction
     val poll = eng.poll
-    // Where Down from the header, and Up from the list, lead: banners sit between the header and the list.
-    val firstBanner = if (pred != null) f.bannerPrediction else if (poll != null) f.bannerPoll else f.list
-    val lastBanner = if (poll != null) f.bannerPoll else if (pred != null) f.bannerPrediction else f.menu
+    val hasInput = model.signedIn && !model.replay
+
+    // The button row, left to right. Variants: guest = Menu, Sign in; replay = Menu; signed in = Emotes, Send, Rewards, Menu.
+    val rowOrder: List<FocusRequester> = when {
+        model.replay -> listOf(f.menu)
+        !model.signedIn -> listOf(f.menu, f.signIn)
+        else -> buildList { add(f.emotes); add(f.send); if (showRewards) add(f.rewards); add(f.menu) }
+    }
+    val toList: () -> Unit = { c.following = true; c.bannerFocused = null; f.list.tryFocus() }
+    // Above the button row: the field, else the last banner, else the list.
+    val aboveRow: FocusRequester = when {
+        hasInput -> f.input
+        poll != null -> f.bannerPoll
+        pred != null -> f.bannerPrediction
+        else -> f.list
+    }
+    val belowBanners: FocusRequester = if (hasInput) f.input else rowOrder.first()
+    val firstBottom: FocusRequester = when {
+        pred != null -> f.bannerPrediction
+        poll != null -> f.bannerPoll
+        else -> belowBanners
+    }
+    val upFromField: FocusRequester? = when {
+        poll != null -> f.bannerPoll
+        pred != null -> f.bannerPrediction
+        else -> null
+    }
+
     // A banner that held focus and went away hands focus to the list instead of dropping it.
     LaunchedEffect(pred == null) {
         if (pred == null && c.bannerFocused == Banner.Prediction && !c.overlayOpen) { c.bannerFocused = null; f.list.tryFocus() }
@@ -127,6 +159,8 @@ internal fun ChatPanel(
     LaunchedEffect(poll == null) {
         if (poll == null && c.bannerFocused == Banner.Poll && !c.overlayOpen) { c.bannerFocused = null; f.list.tryFocus() }
     }
+    LaunchedEffect(c.resizing) { if (c.resizing) f.resize.tryFocus() }
+
     CompositionLocalProvider(LocalEmoteClock provides if (model.settings.animatedEmotes) clock else null) {
     Box(
         modifier
@@ -138,10 +172,15 @@ internal fun ChatPanel(
             .testTag("chat_panel"),
     ) {
     Column(Modifier.fillMaxSize()) {
-        val titleBlock: @Composable (Modifier) -> Unit = { mod ->
-            Column(mod) {
+        // Top: display only. Never focusable.
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
                 Text(if (model.replay) "Chat replay" else "Chat", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("chat_title"))
-                val status = when (val s = model.connection) {
+                val status = when (model.connection) {
                     is ConnState.Connected -> model.room
                     is ConnState.Reconnecting -> "Reconnecting..."
                     ConnState.Connecting -> "Connecting..."
@@ -149,59 +188,19 @@ internal fun ChatPanel(
                 }
                 if (status.isNotEmpty()) Text(status, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("chat_status"))
             }
+            eng.points?.let { PointsBadge(it) }
         }
-        val menuButton: @Composable () -> Unit = {
-            TvButton(
-                "Menu",
-                { c.menuOpen = true },
-                Modifier
-                    .onDpad(Key.DirectionLeft) { actions.leave(); true }
-                    .onDpad(Key.DirectionRight) { if (showRewards) f.rewards.tryFocus(); true }
-                    .focusProperties { down = firstBanner }
-                    .onFocusChanged { if (it.isFocused) c.lastHeader = f.menu }
-                    .focusRequester(f.menu).testTag("chat_menu_btn"),
-            )
-        }
-        if (!eng.available) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                menuButton()
-                titleBlock(Modifier.weight(1f))
-            }
-        } else {
-            Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    menuButton()
-                    if (showRewards) {
-                        TvButton(
-                            "Rewards",
-                            { c.openRewards(act) },
-                            Modifier
-                                .onDpad(Key.DirectionLeft) { f.menu.tryFocus(); true }
-                                .onDpad(Key.DirectionRight) { true }
-                                .focusProperties { down = firstBanner; up = FocusRequester.Cancel }
-                                .onFocusChanged { if (it.isFocused) c.lastHeader = f.rewards }
-                                .focusRequester(f.rewards).testTag("chat_rewards_btn"),
-                        )
-                    }
-                }
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    titleBlock(Modifier.weight(1f))
-                    eng.points?.let { PointsBadge(it) }
-                }
-            }
-        }
+        MessageList(model, c, fontSp, actions, firstBottom, Modifier.weight(1f).fillMaxWidth())
+
+        // Bottom section: banners, message field, button row.
         if (pred != null) {
             PredictionBanner(
                 pred,
                 Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     .onDpad(Key.DirectionLeft) { c.bannerFocused = null; actions.leave(); true }
                     .onDpad(Key.DirectionRight) { true }
-                    .onDpad(Key.DirectionUp) { c.bannerFocused = null; c.lastHeader.tryFocus(); true }
-                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; (if (poll != null) f.bannerPoll else f.list).tryFocus(); true }
+                    .onDpad(Key.DirectionUp) { toList(); true }
+                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; (if (poll != null) f.bannerPoll else belowBanners).tryFocus(); true }
                     .onFocusChanged { if (it.isFocused) c.bannerFocused = Banner.Prediction }
                     .focusRequester(f.bannerPrediction),
                 onOpen = { c.openPrediction(act) },
@@ -213,45 +212,99 @@ internal fun ChatPanel(
                 Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     .onDpad(Key.DirectionLeft) { c.bannerFocused = null; actions.leave(); true }
                     .onDpad(Key.DirectionRight) { true }
-                    .onDpad(Key.DirectionUp) { c.bannerFocused = null; (if (pred != null) f.bannerPrediction else c.lastHeader).tryFocus(); true }
-                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; f.list.tryFocus(); true }
+                    .onDpad(Key.DirectionUp) { c.bannerFocused = null; (if (pred != null) f.bannerPrediction else f.list).also { if (pred == null) c.following = true }.tryFocus(); true }
+                    .onDpad(Key.DirectionDown) { c.bannerFocused = null; belowBanners.tryFocus(); true }
                     .onFocusChanged { if (it.isFocused) c.bannerFocused = Banner.Poll }
                     .focusRequester(f.bannerPoll),
                 onOpen = { c.openPoll(act) },
             )
         }
-        MessageList(model, c, fontSp, actions, lastBanner, Modifier.weight(1f).fillMaxWidth())
         if (model.replay) {
             Text(
                 "Chat replay. Sending is disabled.",
                 fontSize = 12.sp,
                 color = FrostColors.Muted,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag("chat_replay_note"),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).testTag("chat_replay_note"),
             )
-        } else if (model.signedIn) {
-            InputArea(model, actions, c)
-        } else {
+        } else if (!model.signedIn) {
             Text(
                 "Sign in to chat",
                 fontSize = 12.sp,
                 color = FrostColors.Muted,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp).testTag("chat_guest_note"),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).testTag("chat_guest_note"),
             )
+        }
+        if (hasInput) {
+            InputField(model, actions, c, upFromField, toList, f.emotes)
+        }
+        val rowButton: @Composable (String, FocusRequester, String, () -> Unit) -> Unit = { label, req, tag, onClick ->
+            val idx = rowOrder.indexOf(req)
+            TvButton(
+                label,
+                onClick,
+                Modifier
+                    .onDpad(Key.DirectionLeft) { if (idx <= 0) actions.leave() else rowOrder[idx - 1].tryFocus(); true }
+                    .onDpad(Key.DirectionRight) { if (idx in 0 until rowOrder.lastIndex) rowOrder[idx + 1].tryFocus(); true }
+                    .onDpad(Key.DirectionUp) { if (aboveRow == f.list) toList() else aboveRow.tryFocus(); true }
+                    .onDpad(Key.DirectionDown) { true }
+                    .focusRequester(req).testTag(tag),
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height },
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (req in rowOrder) when (req) {
+                f.emotes -> rowButton("Emotes", req, "chat_emotes_btn") { actions.loadPicker(); c.pickerOpen = true }
+                f.send -> rowButton("Send", req, "chat_send_btn") { if (c.draft.isNotBlank() && actions.send(c.draft)) c.draft = "" }
+                f.rewards -> rowButton("Rewards", req, "chat_rewards_btn") { c.openRewards(act) }
+                f.signIn -> rowButton("Sign in", req, "chat_signin_btn") { actions.signIn() }
+                else -> rowButton("Menu", req, "chat_menu_btn") { c.menuOpen = true }
+            }
         }
     }
     eng.toast?.let { PointsToast(it, Modifier.align(Alignment.TopCenter).padding(top = 8.dp)) }
+    if (c.resizing) ResizeHint(c, onSave = { val w = c.finishResize(); actions.update { s -> s.copy(widthPct = w) } }, Modifier.align(Alignment.TopCenter).padding(top = 6.dp))
     }
     }
 }
 
+/** On-panel hint of resize mode. It holds focus: Left widens, Right narrows, OK saves; Back (the layout) reverts. */
 @Composable
-private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, actions: ChatActions, upTarget: FocusRequester, modifier: Modifier) {
+private fun ResizeHint(c: ChatController, onSave: () -> Unit, modifier: Modifier) {
+    Text(
+        "\u25C0 \u25B6 to resize \u00B7 OK to save \u00B7 Back to cancel   ${c.resizePct}%",
+        fontSize = 12.sp,
+        color = FrostColors.OnSurface,
+        modifier = modifier
+            .background(FrostColors.Primary, RoundedCornerShape(10.dp))
+            .border(2.dp, FrostColors.Violet, RoundedCornerShape(10.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .onPreviewKeyEvent { e ->
+                val down = e.type == KeyEventType.KeyDown
+                when {
+                    e.key == Key.DirectionLeft -> { if (down) c.resizeStep(+1, e.nativeKeyEvent.repeatCount); true }
+                    e.key == Key.DirectionRight -> { if (down) c.resizeStep(-1, e.nativeKeyEvent.repeatCount); true }
+                    e.key == Key.DirectionUp || e.key == Key.DirectionDown -> true
+                    isOkKey(e.key) -> { if (down) onSave(); true }
+                    else -> false
+                }
+            }
+            .focusRequester(c.focus.resize)
+            .focusable()
+            .testTag("chat_resize_hint"),
+    )
+}
+
+@Composable
+private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, actions: ChatActions, downTarget: FocusRequester, modifier: Modifier) {
     val state = c.listState
     val scope = rememberCoroutineScope()
     val f = c.focus
     var focused by remember { mutableStateOf(false) }
     val following = c.following
     val step = with(LocalDensity.current) { (fontSp * 4.8f).sp.toPx() }
+    val hasInput = model.signedIn && !model.replay
 
     // Following live is the default: keep the newest line pinned to the bottom, even if item sizes
     // change after the first frame (images loading, the first system line).
@@ -277,13 +330,11 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when {
-                    e.key == Key.DirectionUp -> if (state.canScrollForward) {
-                        c.following = false // the one thing that pauses live
-                        scope.launch { state.scrollBy(step) }
-                        true
-                    } else {
-                        // Nothing older: on to the banner above the list, or the header.
-                        upTarget.tryFocus()
+                    e.key == Key.DirectionUp -> {
+                        if (state.canScrollForward) {
+                            c.following = false // the one thing that pauses live
+                            scope.launch { state.scrollBy(step) }
+                        } // else: at the oldest line, nothing above the list is focusable
                         true
                     }
                     e.key == Key.DirectionDown -> if (!following) {
@@ -292,17 +343,19 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                             if (state.firstVisibleItemIndex == 0 && state.firstVisibleItemScrollOffset < step) c.resumeLive()
                         }
                         true
-                    } else if (model.signedIn) {
-                        runCatching { f.input.requestFocus() }
+                    } else {
+                        // At the newest message: on to the bottom section (banner, field, button row).
+                        downTarget.tryFocus()
                         true
-                    } else false
+                    }
                     e.key == Key.DirectionLeft -> {
                         actions.leave()
                         true
                     }
+                    e.key == Key.DirectionRight -> true
                     isOkKey(e.key) -> {
                         if (!following) scope.launch { c.resumeLive() }
-                        else if (model.signedIn) runCatching { f.input.requestFocus() }
+                        else if (hasInput) f.input.tryFocus()
                         true
                     }
                     else -> false
@@ -342,47 +395,33 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
 }
 
 @Composable
-private fun InputArea(model: ChatUiModel, actions: ChatActions, c: ChatController) {
+private fun InputField(
+    model: ChatUiModel,
+    actions: ChatActions,
+    c: ChatController,
+    upTarget: FocusRequester?,
+    toList: () -> Unit,
+    downTarget: FocusRequester,
+) {
     val f = c.focus
     fun submit() {
         if (c.draft.isNotBlank() && actions.send(c.draft)) c.draft = ""
     }
-    Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        TvTextField(
-            value = c.draft,
-            onValueChange = { c.draft = it.take(500) },
-            placeholder = if (model.canSend) "Send a message" else "Connecting...",
-            imeAction = ImeAction.Send,
-            onImeAction = ::submit,
-            // A focused text field eats Left/Right as cursor moves, so route them explicitly.
-            fieldModifier = Modifier
-                .onDpad(Key.DirectionLeft) { actions.leave(); true }
-                .onDpad(Key.DirectionRight) { runCatching { f.emotes.requestFocus() }; true }
-                .onDpad(Key.DirectionUp) { runCatching { f.list.requestFocus() }; true }
-                .onDpad(Key.DirectionDown) { runCatching { f.emotes.requestFocus() }; true }
-                .focusRequester(f.input)
-                .testTag("chat_input"),
-            onEditingChange = { c.inputEditing = it },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TvButton(
-                "Emotes",
-                {
-                    actions.loadPicker()
-                    c.pickerOpen = true
-                },
-                Modifier.onDpad(Key.DirectionLeft) { actions.leave(); true }
-                    .onDpad(Key.DirectionRight) { runCatching { f.send.requestFocus() }; true }
-                    .onDpad(Key.DirectionUp) { runCatching { f.input.requestFocus() }; true }
-                    .focusRequester(f.emotes).testTag("chat_emotes_btn"),
-            )
-            TvButton(
-                "Send", ::submit,
-                Modifier.onDpad(Key.DirectionLeft) { runCatching { f.emotes.requestFocus() }; true }
-                    .onDpad(Key.DirectionUp) { runCatching { f.input.requestFocus() }; true }
-                    .onDpad(Key.DirectionRight) { true }
-                    .focusRequester(f.send).testTag("chat_send_btn"),
-            )
-        }
-    }
+    TvTextField(
+        value = c.draft,
+        onValueChange = { c.draft = it.take(500) },
+        placeholder = if (model.canSend) "Send a message" else "Connecting...",
+        imeAction = ImeAction.Send,
+        onImeAction = ::submit,
+        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+        // A focused text field eats Left/Right as cursor moves, so route them explicitly.
+        fieldModifier = Modifier
+            .onDpad(Key.DirectionLeft) { actions.leave(); true }
+            .onDpad(Key.DirectionRight) { true }
+            .onDpad(Key.DirectionUp) { if (upTarget != null) upTarget.tryFocus() else toList(); true }
+            .onDpad(Key.DirectionDown) { downTarget.tryFocus(); true }
+            .focusRequester(f.input)
+            .testTag("chat_input"),
+        onEditingChange = { c.inputEditing = it },
+    )
 }

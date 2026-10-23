@@ -148,24 +148,28 @@ class EngagementFocusTest {
 
     // ---- header: Menu <-> Rewards ----
 
-    @Test fun headerReachesRewardsFromMenuAndBack() {
+    @Test fun buttonRowReachesRewardsFromMenuAndBack() {
         show()
         rule.onNodeWithTag("chat_menu_btn").focus()
         press(Key.DirectionRight)
+        focused("chat_menu_btn") // Menu is the last button
+        press(Key.DirectionLeft)
         focused("chat_rewards_btn")
         press(Key.DirectionRight)
-        focused("chat_rewards_btn")
-        press(Key.DirectionLeft)
         focused("chat_menu_btn")
+        press(Key.DirectionLeft); press(Key.DirectionLeft); press(Key.DirectionLeft)
+        focused("chat_emotes_btn")
         assertEquals(0, leaves)
         press(Key.DirectionLeft)
         assertEquals(1, leaves)
     }
 
-    @Test fun downFromHeaderGoesToTheListWhenThereIsNoBanner() {
+    @Test fun upFromTheButtonRowGoesToTheFieldThenTheListWhenThereIsNoBanner() {
         show()
         rule.onNodeWithTag("chat_rewards_btn").focus()
-        press(Key.DirectionDown)
+        press(Key.DirectionUp)
+        focused("chat_input")
+        press(Key.DirectionUp)
         focused("chat_list")
     }
 
@@ -181,8 +185,8 @@ class EngagementFocusTest {
         gone("points_balance")
         gone("banner_prediction")
         rule.onNodeWithTag("chat_menu_btn").focus()
-        press(Key.DirectionRight)
-        focused("chat_menu_btn")
+        press(Key.DirectionLeft)
+        focused("chat_send_btn") // Rewards is not in the row
     }
 
     @Test fun rewardsButtonIsHiddenWhenRewardsFailToLoad() {
@@ -305,35 +309,38 @@ class EngagementFocusTest {
         focused("chat_list")
     }
 
-    @Test fun downFromMenuAndUpFromTheListReachTheBanner() {
+    @Test fun downFromTheListReachesTheBannerThenTheFieldAndBack() {
         show(signedIn.copy(prediction = prediction()))
-        rule.onNodeWithTag("chat_menu_btn").focus()
+        enter()
         press(Key.DirectionDown)
         focused("banner_prediction")
         press(Key.DirectionDown)
+        focused("chat_input")
+        press(Key.DirectionUp)
+        focused("banner_prediction")
+        press(Key.DirectionUp)
         focused("chat_list")
-        press(Key.DirectionUp)
-        focused("banner_prediction")
-        press(Key.DirectionUp)
-        focused("chat_menu_btn")
+        assertTrue(controller.following)
     }
 
-    @Test fun downFromRewardsReachesTheBannerAndUpComesBackToRewards() {
+    @Test fun upFromTheButtonRowGoesToTheFieldAndOnToTheBanner() {
         show(signedIn.copy(prediction = prediction()))
         rule.onNodeWithTag("chat_rewards_btn").focus()
-        press(Key.DirectionDown)
-        focused("banner_prediction")
         press(Key.DirectionUp)
-        focused("chat_rewards_btn")
+        focused("chat_input")
+        press(Key.DirectionUp)
+        focused("banner_prediction")
     }
 
-    @Test fun predictionThenPollBannersChainDownToTheList() {
+    @Test fun predictionThenPollBannersChainBetweenTheListAndTheField() {
         show(signedIn.copy(prediction = prediction(), poll = poll()))
-        rule.onNodeWithTag("chat_menu_btn").focus()
+        enter()
         press(Key.DirectionDown); focused("banner_prediction")
         press(Key.DirectionDown); focused("banner_poll")
-        press(Key.DirectionDown); focused("chat_list")
+        press(Key.DirectionDown); focused("chat_input")
         press(Key.DirectionUp); focused("banner_poll")
+        press(Key.DirectionUp); focused("banner_prediction")
+        press(Key.DirectionUp); focused("chat_list")
     }
 
     @Test fun bannerShowsTitleOutcomesPercentagesAndTotals() {

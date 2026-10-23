@@ -11,26 +11,34 @@ anonymous `justinfan` for guests, the stored OAuth token when signed in (sending
 commands capabilities, PING/PONG, reconnect with 1 s to 30 s backoff, a silence watchdog, JOIN/PART on channel change.
 Emotes: Twitch (from tags), 7TV, BTTV and FFZ, global plus channel, cached per channel. Badges come from Helix.
 The backlog is capped at 200 lines; the message list is the only lazy list in chat (newest-first, `reverseLayout`,
-stable keys). Settings: Show chat, panel width, font size, timestamps, 7TV/BTTV/FFZ.
+stable keys). Settings: Show chat, panel width (a percentage), font size, timestamps, 7TV/BTTV/FFZ.
 
 ### Focus model (remote only)
 
-Two zones, one focus at a time: PLAYER (the bare player and its controls) and CHAT (panel plus overlays).
+Two zones, one focus at a time: PLAYER (the bare player and its controls) and CHAT (panel plus sheets).
 
 - PLAYER to CHAT: Right on the bare player, or Right on the controls' play/pause, gear or Chat button, calls
-  `ChatController.enter()` and focuses the message list (controls hide).
-- CHAT to PLAYER: Left from the left-most element of a row (Menu, list, text field, Emotes), or Back from the panel,
-  calls `ChatActions.leave()`; the player puts focus back on its root with controls hidden.
-- Inside CHAT, top to bottom: `Menu`, message list, text field, `Emotes` / `Send`. On the list, Up/Down scroll history
-  (Down at the live edge moves on to the field, Up at the oldest line moves to Menu), OK jumps back to live (or, already
-  live, opens the field). OK on the field opens the keyboard.
-- Overlays (chat menu, emote picker) trap focus: every outward edge is closed; OK picks, Back or Close dismisses and
-  focus returns to the button that opened them. Hiding or resizing the panel never recreates the video `SurfaceView`
-  (the video box keeps its place in the layout; only its weight changes).
+  `ChatController.enter()` and focuses the message list, following live (controls hide).
+- CHAT to PLAYER: Left from the list, the field, a banner or the left-most button, or Back from the panel, calls
+  `ChatActions.leave()`; the player puts focus back on its root with controls hidden.
+- Everything you interact with sits at the bottom; nothing above the list is focusable.
+  - Top (display only): "Chat" / "Chat replay", room modes, the points balance.
+  - Middle: the message list. Up/Down scroll history (Up at the oldest line does nothing); Down at the newest line
+    moves to the bottom section; OK jumps back to live (or, already live, focuses the field).
+  - Bottom, top to bottom: prediction banner, poll banner (only while active; OK opens the sheet), the message field
+    (OK opens the keyboard), then the button row `Emotes · Send · Rewards · Menu`, Left/Right between them.
+    Guest: `Menu · Sign in`. VOD replay: `Menu`. Rewards is hidden without a web session.
+  - Up from the top of the bottom section returns to the list at the newest line, following live.
+- Sheets (Menu, Emotes, Rewards, prediction, poll) open anchored above the button row and trap focus: every outward
+  edge is closed; OK picks, Back or Close dismisses and focus returns to the opener (button or banner).
+- Resize: Menu > "Resize panel" enters resize mode with an on-panel hint ("◀ ▶ to resize · OK to save · Back to
+  cancel"). Left widens and Right narrows in 2 % steps (holding repeats and accelerates) between 20 % and 45 % of the
+  screen width; the video box only changes weight, so its `SurfaceView` is never recreated. OK saves the percentage
+  (DataStore, used by live, VOD replay and Settings), Back reverts.
 - While focus is in CHAT the player's controls neither auto-hide nor take focus back (`focusLocked`).
 
 Implemented with `FocusRequester`s (`ChatFocus`), `focusProperties` and key handlers; covered by
-`ChatFocusTest` (chat side) and `ChatEntryTest` (player side).
+`ChatFocusTest` and `EngagementFocusTest` (chat side) and `ChatEntryTest` (player side).
 
 Stage 4 additions:
 
@@ -68,15 +76,8 @@ Bits settings are never read.
 
 ### Focus model additions
 
-```
-[Menu] [Rewards]        Left/Right between them; Left from Menu -> player; Down -> first banner, else the list
-[prediction banner]     Up -> the header button that was last focused; Down -> poll banner, else list; Left -> player
-[poll banner]           Up -> prediction banner, else the header; Down -> list
-[ message list ]        Up at the oldest line -> last banner, else Menu
-```
-
-- Banners sit above the list and never take focus when they appear. If the focused banner goes away, focus moves to the list.
-- Rewards, prediction and poll sheets trap focus (`exit` is cancelled; every edge is closed). Back steps out of a confirm or
-  result step first, then closes the sheet; focus returns to the element that opened it (Rewards button, or the banner;
-  the list if the banner is gone).
-- Covered by `EngagementFocusTest` (header to Rewards, Rewards sheet to redeem confirm, banner to prediction sheet, Back).
+Banners sit in the bottom section between the list and the message field (see the focus model above) and never take
+focus when they appear. If the focused banner goes away, focus moves to the list. Rewards, prediction and poll sheets
+trap focus (`exit` is cancelled; every edge is closed). Back steps out of a confirm or result step first, then closes
+the sheet; focus returns to the element that opened it (Rewards button, or the banner; the list if the banner is gone).
+Covered by `EngagementFocusTest`.

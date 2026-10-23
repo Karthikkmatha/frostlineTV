@@ -8,10 +8,11 @@ import androidx.datastore.preferences.core.intPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-/** Chat panel preferences. Indices refer to the option lists in :feature:chat (width presets, font sizes). */
+/** Chat panel preferences. The font index refers to ChatOptions.fontSizesSp. */
 data class ChatSettings(
     val enabled: Boolean = true,
-    val widthIndex: Int = 1,
+    /** Panel width in percent of the screen (20-45), set by the resize control. */
+    val widthPct: Int = ChatOptions.DEFAULT_WIDTH_PCT,
     val fontIndex: Int = 1,
     val timestamps: Boolean = false,
     val show7tv: Boolean = true,
@@ -35,34 +36,13 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     /** Shows the measured UI frame rate in the debug overlay. Default off. */
     val showFps: Flow<Boolean> = store.data.map { it[SHOW_FPS] ?: false }
 
-    val chat: Flow<ChatSettings> = store.data.map { p ->
-        ChatSettings(
-            enabled = p[CHAT_ENABLED] ?: true,
-            widthIndex = (p[CHAT_WIDTH] ?: 1).coerceIn(0, 3),
-            fontIndex = (p[CHAT_FONT] ?: 1).coerceIn(0, 3),
-            timestamps = p[CHAT_TIME] ?: false,
-            show7tv = p[CHAT_7TV] ?: true,
-            showBttv = p[CHAT_BTTV] ?: true,
-            showFfz = p[CHAT_FFZ] ?: true,
-            animatedEmotes = p[CHAT_ANIMATED] ?: true,
-        )
-    }
+    val chat: Flow<ChatSettings> = store.data.map { it.toChat() }
 
     suspend fun updateChat(transform: (ChatSettings) -> ChatSettings) {
         store.edit { p ->
-            val cur = ChatSettings(
-                enabled = p[CHAT_ENABLED] ?: true,
-                widthIndex = (p[CHAT_WIDTH] ?: 1).coerceIn(0, 3),
-                fontIndex = (p[CHAT_FONT] ?: 1).coerceIn(0, 3),
-                timestamps = p[CHAT_TIME] ?: false,
-                show7tv = p[CHAT_7TV] ?: true,
-                showBttv = p[CHAT_BTTV] ?: true,
-                showFfz = p[CHAT_FFZ] ?: true,
-                animatedEmotes = p[CHAT_ANIMATED] ?: true,
-            )
-            val n = transform(cur)
+            val n = transform(p.toChat())
             p[CHAT_ENABLED] = n.enabled
-            p[CHAT_WIDTH] = n.widthIndex.coerceIn(0, 3)
+            p[CHAT_WIDTH_PCT] = ChatOptions.clampWidth(n.widthPct)
             p[CHAT_FONT] = n.fontIndex.coerceIn(0, 3)
             p[CHAT_TIME] = n.timestamps
             p[CHAT_7TV] = n.show7tv
@@ -71,6 +51,17 @@ class SettingsStore(private val store: DataStore<Preferences>) {
             p[CHAT_ANIMATED] = n.animatedEmotes
         }
     }
+
+    private fun Preferences.toChat() = ChatSettings(
+        enabled = this[CHAT_ENABLED] ?: true,
+        widthPct = ChatOptions.clampWidth(this[CHAT_WIDTH_PCT] ?: ChatOptions.fromLegacyIndex(this[CHAT_WIDTH] ?: 1)),
+        fontIndex = (this[CHAT_FONT] ?: 1).coerceIn(0, 3),
+        timestamps = this[CHAT_TIME] ?: false,
+        show7tv = this[CHAT_7TV] ?: true,
+        showBttv = this[CHAT_BTTV] ?: true,
+        showFfz = this[CHAT_FFZ] ?: true,
+        animatedEmotes = this[CHAT_ANIMATED] ?: true,
+    )
 
     suspend fun setFollowRaids(value: Boolean) {
         store.edit { it[FOLLOW_RAIDS] = value }
@@ -95,7 +86,9 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         val FOLLOW_RAIDS = booleanPreferencesKey("follow_raids_v1")
         val DEBUG_OVERLAY = booleanPreferencesKey("debug_overlay_v1")
         val CHAT_ENABLED = booleanPreferencesKey("chat_enabled_v1")
+        /** Legacy preset index; read once to migrate to CHAT_WIDTH_PCT. */
         val CHAT_WIDTH = intPreferencesKey("chat_width_v1")
+        val CHAT_WIDTH_PCT = intPreferencesKey("chat_width_pct_v2")
         val CHAT_FONT = intPreferencesKey("chat_font_v1")
         val CHAT_TIME = booleanPreferencesKey("chat_timestamps_v1")
         val CHAT_7TV = booleanPreferencesKey("chat_7tv_v1")

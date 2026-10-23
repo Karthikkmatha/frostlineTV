@@ -21,6 +21,7 @@ import tv.frostline.core.data.ChatOptions
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.ui.TvButton
 import tv.frostline.core.ui.TvChoiceRow
+import tv.frostline.core.ui.TvStepperRow
 import tv.frostline.core.ui.TvToggleRow
 import tv.frostline.core.ui.brandName
 
@@ -120,10 +121,11 @@ fun SettingsContent(
             )
         }
         item {
-            TvChoiceRow(
+            TvStepperRow(
                 label = "Panel width",
-                value = ChatOptions.widthNames[ui.chat.widthIndex.coerceIn(0, 3)],
-                onClick = { onChatChange { it.copy(widthIndex = ChatOptions.nextIndex(it.widthIndex, ChatOptions.widthFractions.size)) } },
+                value = "${ui.chat.widthPct}%",
+                description = "Left and Right resize the chat panel (20-45% of the screen). Also in the chat Menu > Resize panel.",
+                onStep = { dir, repeat -> onChatChange { it.copy(widthPct = ChatOptions.stepWidth(it.widthPct, dir, repeat)) } },
                 modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_width"),
             )
         }

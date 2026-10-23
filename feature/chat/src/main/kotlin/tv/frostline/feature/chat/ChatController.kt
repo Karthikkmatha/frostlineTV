@@ -5,11 +5,13 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.focus.FocusRequester
+import tv.frostline.core.data.ChatOptions
 import tv.frostline.core.twitchinternal.CustomReward
 
 enum class Banner { Prediction, Poll }
@@ -26,6 +28,9 @@ class ChatFocus {
     val rewards = FocusRequester()
     val bannerPrediction = FocusRequester()
     val bannerPoll = FocusRequester()
+    val signIn = FocusRequester()
+    /** The resize hint, which takes focus (and the Left/Right keys) while the panel is being resized. */
+    val resize = FocusRequester()
 }
 
 /**
@@ -51,8 +56,6 @@ class ChatController(val listState: LazyListState) {
     /** Poll sheet: the choice on the confirm step (null = browsing). */
     var pollChoice by mutableStateOf<String?>(null)
     /** Which banner holds focus, so it can be handed on when that banner goes away. */
-    /** The header button that last had focus (Menu or Rewards): Up from a banner returns there. */
-    var lastHeader: FocusRequester = focus.menu
     var bannerFocused by mutableStateOf<Banner?>(null)
     var draft by mutableStateOf("")
     /** True only after OK on the text field (the keyboard is allowed); focusing the field never sets it. */
@@ -64,10 +67,45 @@ class ChatController(val listState: LazyListState) {
     /** True while focus is anywhere in the panel or its overlays. */
     val hasFocus: Boolean get() = panelFocused || overlayFocused
 
-    val overlayOpen: Boolean get() = menuOpen || pickerOpen || rewardsOpen || predictionOpen || pollOpen
+    val overlayOpen: Boolean get() = resizing || menuOpen || pickerOpen || rewardsOpen || predictionOpen || pollOpen
 
     /** Moves focus into the chat list (the entry point from the player). False if the panel is not composed. */
-    fun enter(): Boolean = runCatching { focus.list.requestFocus() }.isSuccess
+    fun enter(): Boolean {
+        following = true // entering the list always follows live
+        return runCatching { focus.list.requestFocus() }.isSuccess
+    }
+
+    // ---- resize mode (Chat menu > Resize panel) ----
+    /** True while the panel is being resized with Left/Right; the hint is showing and the video follows [resizePct]. */
+    var resizing by mutableStateOf(false)
+    var resizePct by mutableIntStateOf(ChatOptions.DEFAULT_WIDTH_PCT)
+    /** The width just saved, used until the settings flow catches up so the layout does not jump back. */
+    var widthOverride by mutableStateOf<Int?>(null)
+    private var resizeOrigin = ChatOptions.DEFAULT_WIDTH_PCT
+    /** Height of the bottom button row (px): sheets anchor above it. */
+    var buttonRowHeightPx by mutableIntStateOf(0)
+
+    fun startResize(currentPct: Int) {
+        resizeOrigin = currentPct
+        resizePct = currentPct
+        resizing = true
+    }
+
+    /** Left makes the panel wider, Right narrower (the panel's left edge follows the key). */
+    fun resizeStep(dir: Int, repeat: Int) { resizePct = ChatOptions.stepWidth(resizePct, dir, repeat) }
+
+    /** OK: returns the width to save. */
+    fun finishResize(): Int {
+        resizing = false
+        widthOverride = resizePct
+        return resizePct
+    }
+
+    /** Back: reverts to the width the resize started from. */
+    fun cancelResize() {
+        resizePct = resizeOrigin
+        resizing = false
+    }
 
     fun insertEmote(code: String) {
         val sep = if (draft.isEmpty() || draft.endsWith(" ")) "" else " "
