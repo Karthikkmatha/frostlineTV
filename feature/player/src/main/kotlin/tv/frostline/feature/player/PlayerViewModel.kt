@@ -38,6 +38,8 @@ data class PlayerUi(
     val title: String = "",
     val loading: Boolean = true,
     val error: String? = null,
+    /** Debug overlay only: status and parameter names of a refused playlist request (never a token). */
+    val errorDetail: String? = null,
     val offline: Boolean = false,
     val playing: Boolean = false,
     val variants: List<StreamVariant> = emptyList(),
@@ -224,6 +226,8 @@ class PlayerViewModel(
                 throw e
             } catch (e: ChannelOfflineException) {
                 _ui.update { it.copy(loading = false, offline = true, error = "${it.displayName} is offline") }
+            } catch (e: tv.frostline.core.twitchinternal.StreamRestrictedException) {
+                _ui.update { it.copy(loading = false, error = e.message, errorDetail = e.detail) }
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.message ?: "Could not start playback") }
             }

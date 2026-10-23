@@ -102,6 +102,7 @@ class ChatViewModel(
                 // Hidden panel: keep buffering (so showing it again is instant) but stop publishing new lists.
                 val wasVisible = visible
                 visible = it.enabled
+                EmoteEngine.current?.setChatActive(visible)
                 if (visible && !wasVisible) publish()
             }
         }
@@ -281,7 +282,8 @@ class ChatViewModel(
     private fun scheduleFlush() {
         if (!flushScheduled.compareAndSet(false, true)) return
         viewModelScope.launch(worker) {
-            delay(flushMs)
+            // Fast chat is batched harder: fewer list updates, fewer recompositions.
+            delay(when (EmoteEngine.current?.mode) { EmoteMode.Fast -> maxOf(flushMs, 500L); EmoteMode.Busy -> maxOf(flushMs, 300L); else -> flushMs })
             flushScheduled.set(false)
             publish()
         }

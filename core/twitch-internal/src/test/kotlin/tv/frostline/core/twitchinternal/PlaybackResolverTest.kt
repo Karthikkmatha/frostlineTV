@@ -76,9 +76,10 @@ class PlaybackResolverTest {
     @Test fun failureNamesParamsButNotTokenOrSig() = runBlocking {
         gql.enqueue(tokenReply())
         usher.enqueue(MockResponse().setResponseCode(403)); usher.enqueue(MockResponse().setResponseCode(403))
-        val msg = runCatching { resolver().resolve("ch", null, lowLatency = false) }.exceptionOrNull()!!.message!!
-        assertTrue(msg.contains("HTTP 403") && msg.contains("allow_source"))
-        assertFalse(msg.contains("sig,") || msg.contains("token,"))
+        val ex = runCatching { resolver().resolve("ch", null, lowLatency = false) }.exceptionOrNull() as StreamRestrictedException
+        assertTrue(ex.message!!.contains("outside Twitch's own apps"))
+        assertTrue(ex.detail.contains("HTTP 403") && ex.detail.contains("allow_source"))
+        assertFalse(ex.detail.contains("sig,") || ex.detail.contains("token,"))
         Unit
     }
 

@@ -102,10 +102,10 @@ fun EmoteImage(
     val clock = LocalEmoteClock.current
     val gate = LocalEmoteGate.current
     val entry = remember(url, engine) { engine?.entry(url) }
-    LaunchedEffect(entry, clock != null) {
+    LaunchedEffect(entry, clock != null, engine?.active) {
         if (engine != null && entry != null) {
             engine.ensureStill(entry, EmoteEngine.PRIO_VISIBLE)
-            if (clock != null && engine.mode != EmoteMode.Fast) engine.ensureAnimation(entry, priority)
+            if (clock != null && engine.active && engine.mode != EmoteMode.Fast) engine.ensureAnimation(entry, priority)
         }
     }
     val version = entry?.version // composition reads it: a finished decode recomposes this emote only

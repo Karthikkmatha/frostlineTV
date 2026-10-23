@@ -26,6 +26,9 @@ class ResolvedStream(val masterUrl: String, val variants: List<StreamVariant>) {
 class ChannelOfflineException(login: String) : IOException("$login is offline")
 
 /** Twitch refused the linked web session (401). The caller should flag it expired and retry anonymously. */
+/** Usher refused every variant (403): a stream Twitch only lets its own apps play. [detail] is for the debug overlay. */
+class StreamRestrictedException(val detail: String) : IOException("This stream can't be played outside Twitch's own apps")
+
 class WebSessionRejectedException : IOException("Web session rejected")
 
 interface PlaybackResolver {
@@ -79,6 +82,8 @@ internal class TwitchPlaybackResolver(
                 lastError = e
             }
         }
+        val msg = lastError?.message.orEmpty()
+        if (msg.contains("HTTP 403")) throw StreamRestrictedException(msg)
         throw lastError ?: IOException("Playlist request failed")
     }
 

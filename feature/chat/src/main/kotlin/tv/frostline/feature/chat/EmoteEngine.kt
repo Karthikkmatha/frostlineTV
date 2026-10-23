@@ -9,7 +9,7 @@ import android.graphics.drawable.Animatable2
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.os.Handler
-import android.os.Looper
+import android.os.HandlerThread
 import android.os.SystemClock
 import java.util.concurrent.CountDownLatch
 import androidx.compose.runtime.getValue
@@ -97,6 +97,27 @@ class EmoteEngine(
     private val stillPool = pool(3, "emote-still", Thread.MIN_PRIORITY + 1)
     private val animPool = pool(2, "emote-anim", Thread.MIN_PRIORITY)
 
+    /** Two low-priority looper threads drive the animated drawables while they are sampled: nothing runs on the main thread. */
+    private val samplers: Array<Handler> = Array(2) { i ->
+        val t = HandlerThread("emote-sample-$i", android.os.Process.THREAD_PRIORITY_BACKGROUND).also { it.start() }
+        Handler(t.looper)
+    }
+    private val samplerNext = AtomicInteger()
+
+    /** Chat on screen? False stops all animation work and frees the frame strips. */
+    var active: Boolean by mutableStateOf(true)
+        private set
+
+    fun setChatActive(value: Boolean) {
+        if (active == value) return
+        active = value
+        if (!value) {
+            channelJob?.cancel()
+            userJob?.cancel()
+            strips.clear()
+        }
+    }
+
     /** Compose state: read it in a draw block and the canvas redraws when the mode flips. */
     var mode: EmoteMode by mutableStateOf(EmoteMode.Slow)
         private set
@@ -154,6 +175,7 @@ class EmoteEngine(
 
     /** Makes sure an animated [e] has its pre-decoded frames (no-op for plain images). */
     fun ensureAnimation(e: EmoteEntry, priority: Int = PRIO_HOT) {
+        if (!active) return
         if (e.strip != null) { strips.get(e.url); return }
         if (e.animated == false) return
         if (clockMs() - e.failedAt < RETRY_MS && e.failedAt != 0L) return
@@ -169,7 +191,7 @@ class EmoteEngine(
             usage.getOrPut(url) { AtomicInteger() }.incrementAndGet()
             val e = entry(url)
             ensureStill(e, PRIO_VISIBLE)
-            if (mode != EmoteMode.Fast) ensureAnimation(e, PRIO_HOT) else if (e.strip != null) strips.get(url)
+            if (active && mode != EmoteMode.Fast) ensureAnimation(e, PRIO_HOT) else if (e.strip != null) strips.get(url)
         }
     }
 
@@ -205,6 +227,7 @@ class EmoteEngine(
         val todo = list.filter { it.animated != false }.toMutableList()
         while (todo.isNotEmpty() && isActiveJob()) {
             if (strips.bytes >= animBudget) break
+            if (!active) break
             if (mode == EmoteMode.Fast || animPool.queue.size >= 2) { delay(400); continue }
             val next = todo.maxByOrNull { usage[it.url]?.get() ?: 0 } ?: break
             todo.remove(next)
@@ -267,7 +290,7 @@ class EmoteEngine(
     private fun sample(d: AnimatedImageDrawable): FrameStrip? {
         val w = d.intrinsicWidth.coerceAtLeast(1)
         val h = d.intrinsicHeight.coerceAtLeast(1)
-        val main = Handler(Looper.getMainLooper())
+        val main = samplers[(samplerNext.getAndIncrement() and 1)]
         val done = CountDownLatch(1)
         val frames = ArrayList<Bitmap>(32)
         val finished = AtomicBoolean(false)
@@ -408,15 +431,16 @@ class EmoteEngine(
     companion object {
         const val DIR_NAME = "emotes"
         /** Display height of decoded frames (px). Emotes are drawn at most about this tall in chat. */
-        const val TARGET_H = 56
+        const val TARGET_H = 48
         const val FRAME_MS = 67L
-        const val MAX_FRAMES = 60
+        const val MAX_FRAMES = 40
         const val MAX_SAMPLE_MS = 4_000L
         const val BUSY_LINES = 12
-        const val STILL_CAP_BYTES = 15L * 1024 * 1024
-        const val HOT_CAP_BYTES = 40L * 1024 * 1024
-        const val GLOBAL_ANIM_BYTES = 15L * 1024 * 1024
-        const val DISK_CAP_BYTES = 96L * 1024 * 1024
+        const val STILL_CAP_BYTES = 8L * 1024 * 1024
+        /** Strips + stills together stay within 24 MB. */
+        const val HOT_CAP_BYTES = 16L * 1024 * 1024
+        const val GLOBAL_ANIM_BYTES = 8L * 1024 * 1024
+        const val DISK_CAP_BYTES = 64L * 1024 * 1024
         const val RETRY_MS = 60_000L
         const val PRIO_VISIBLE = 0
         const val PRIO_HOT = 1
