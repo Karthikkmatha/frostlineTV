@@ -62,10 +62,10 @@ class VodPlaybackTest {
 
     @Test fun missingTokenOrForbiddenPlaylistIsUnavailable() = runBlocking {
         gql.enqueue(MockResponse().setBody("""{"data":{"videoPlaybackAccessToken":null}}"""))
-        try { resolver().vod("1", null); fail() } catch (e: VodUnavailableException) { }
+        try { resolver().vod("1", null); fail() } catch (e: VodUnavailableException) { assertEquals("Deleted or private", e.message) }
         gql.enqueue(MockResponse().setBody("""{"data":{"videoPlaybackAccessToken":{"value":"v","signature":"s"}}}"""))
         usher.enqueue(MockResponse().setResponseCode(403))
-        try { resolver().vod("1", null); fail() } catch (e: VodUnavailableException) { }
+        try { resolver().vod("1", null); fail() } catch (e: VodUnavailableException) { assertEquals("Subscriber-only video", e.message) }
     }
 
     @Test fun rejectedWebSessionIsReported() = runBlocking {
@@ -92,5 +92,16 @@ class VodPlaybackTest {
     @Test fun deletedClipIsUnavailable() = runBlocking {
         gql.enqueue(MockResponse().setBody("""{"data":{"clip":null}}"""))
         try { resolver().clip("x", null); fail() } catch (e: VodUnavailableException) { }
+    }
+}
+
+class VodReasonsTest {
+    @Test fun gqlAndPlaylistReasonsBecomeViewerFacingText() {
+        assertEquals("Subscriber-only video", VodReasons.classify(null, "This video is for subscribers only").message)
+        assertEquals("Subscriber-only video", VodReasons.classify(403, "").message)
+        assertEquals("This video is unavailable in your region", VodReasons.classify(403, "not available in your region").message)
+        assertEquals("Deleted or private", VodReasons.classify(404, "").message)
+        assertEquals("Deleted or private", VodReasons.classify(null, "").message)
+        assertEquals(VodRestriction.Unknown, VodReasons.classify(500, ""))
     }
 }

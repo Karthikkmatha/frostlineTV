@@ -34,6 +34,8 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -360,6 +362,23 @@ private fun Badge(text: String, modifier: Modifier) {
     )
 }
 
+/** A small padlock: this video is restricted (subscriber-only). */
+@Composable
+private fun LockBadge(modifier: Modifier) {
+    androidx.compose.foundation.Canvas(
+        modifier.padding(6.dp).background(androidx.compose.ui.graphics.Color(0xCC050507), RoundedCornerShape(4.dp)).padding(4.dp).size(12.dp)
+            .semantics { contentDescription = "Restricted video" },
+    ) {
+        val c = FrostColors.OnSurface
+        val w = size.width
+        val h = size.height
+        // shackle
+        drawArc(c, 180f, 180f, false, androidx.compose.ui.geometry.Offset(w * 0.22f, 0f), androidx.compose.ui.geometry.Size(w * 0.56f, h * 0.7f), style = androidx.compose.ui.graphics.drawscope.Stroke(w * 0.14f))
+        // body
+        drawRoundRect(c, androidx.compose.ui.geometry.Offset(0f, h * 0.38f), androidx.compose.ui.geometry.Size(w, h * 0.62f), androidx.compose.ui.geometry.CornerRadius(w * 0.12f))
+    }
+}
+
 @Composable
 private fun CardText(title: String, sub: String) {
     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -376,6 +395,7 @@ fun VideoCard(video: HelixVideo, offlineImage: String?, channelName: String, mod
                 // A live archive has a blank thumbnail: the channel's offline image stands in, else a placeholder.
                 Thumb(Thumbnails.videoOrOffline(video.thumbnailUrl, offlineImage, 440, 248), video.id, Modifier.fillMaxSize(), channelName)
                 if (video.durationMs > 0) Badge(Durations.clock(video.durationMs), Modifier.align(Alignment.BottomEnd))
+                if (video.restricted) LockBadge(Modifier.align(Alignment.TopStart).testTag("lock_${video.id}"))
             }
             CardText(video.title, listOf(Counts.date(video.createdAt), "${Counts.compact(video.viewCount)} views").filter { it.isNotBlank() }.joinToString("  ·  "))
         }

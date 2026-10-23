@@ -279,6 +279,7 @@ class VodPlayerViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: VodUnavailableException) {
+                if (e.restriction == tv.frostline.core.twitchinternal.VodRestriction.SubscriberOnly) (target as? PlayTarget.Vod)?.let { tv.frostline.core.twitch.VodRestrictions.markSubscriberOnly(it.videoId) }
                 _ui.update { it.copy(loading = false, error = e.message) }
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.message ?: "Could not start playback") }

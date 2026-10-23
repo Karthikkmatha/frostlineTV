@@ -23,8 +23,13 @@ data class HelixVideo(
     val type: String = "",
     /** Helix format: "3h2m1s", "45m10s", "12s". Empty or odd while a broadcast is still being recorded. */
     val duration: String = "",
+    /** Helix says "public" for every video it lists; anything else would mean a restricted one. */
+    val viewable: String = "public",
 ) {
     val durationMs: Long get() = Durations.parseHelix(duration)
+
+    /** Locked: Helix says so, or playing it already failed as subscriber-only in this session. */
+    val restricted: Boolean get() = (viewable.isNotEmpty() && viewable != "public") || VodRestrictions.isSubscriberOnly(id)
 }
 
 @Serializable
@@ -131,4 +136,11 @@ object Counts {
         java.time.format.DateTimeFormatter.ofPattern("MMM d, yyyy", java.util.Locale.US)
             .format(Instant.parse(iso).atOffset(ZoneOffset.UTC))
     }.getOrDefault(iso)
+}
+
+/** Videos that failed to play as subscriber-only in this session, so the channel grid can show a lock on them. */
+object VodRestrictions {
+    private val subOnly = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun markSubscriberOnly(id: String) { subOnly.add(id) }
+    fun isSubscriberOnly(id: String): Boolean = id in subOnly
 }

@@ -20,8 +20,36 @@ import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
+/** Why a video cannot be played, in words a viewer can act on. */
+enum class VodRestriction(val message: String?) {
+    SubscriberOnly("Subscriber-only video"),
+    Region("This video is unavailable in your region"),
+    Gone("Deleted or private"),
+    /** Twitch gave no reason. */
+    Unknown(null),
+}
+
 /** The video or clip cannot be played (deleted, subscriber-only, or Twitch refused a token). */
-class VodUnavailableException(what: String) : IOException("$what is not available")
+class VodUnavailableException(what: String, val restriction: VodRestriction = VodRestriction.Unknown) :
+    IOException(restriction.message ?: "$what is not available")
+
+/** Turns what Twitch said (GQL error text, or the playlist's status and body) into a [VodRestriction]. */
+object VodReasons {
+    /** [text] is the GQL `errors` messages or the playlist response body, [http] the playlist status if there was one. */
+    fun classify(http: Int?, text: String): VodRestriction {
+        val t = text.lowercase()
+        return when {
+            "subscri" in t || "sub only" in t || "sub_only" in t || "subonly" in t -> VodRestriction.SubscriberOnly
+            "region" in t || "geo" in t || "country" in t || "your location" in t -> VodRestriction.Region
+            "not found" in t || "deleted" in t || "private" in t || "unauthorized" in t && http == null -> VodRestriction.Gone
+            http == 404 -> VodRestriction.Gone
+            // A bare 403 from the VOD playlist is, in practice, a subscriber-only broadcast.
+            http == 403 -> VodRestriction.SubscriberOnly
+            http == null -> VodRestriction.Gone // no token and nothing else said: deleted or private
+            else -> VodRestriction.Unknown
+        }
+    }
+}
 
 /** One progressive MP4 quality of a clip. [url] carries a signed token: never log it. */
 class ClipQuality(val quality: String, val frameRate: Double, val url: String) {
@@ -56,10 +84,11 @@ internal class TwitchVodResolver(
     override suspend fun vod(videoId: String, webSession: String?): ResolvedStream = withContext(Dispatchers.IO) {
         val id = videoId.trim()
         val root = gql(VOD_OPERATION, VOD_QUERY, buildJsonObject { put("vodID", id) }, webSession)
-        val node = root.obj("data")?.obj("videoPlaybackAccessToken") ?: throw VodUnavailableException("This video")
+        val node = root.obj("data")?.obj("videoPlaybackAccessToken")
+            ?: throw VodUnavailableException("This video", VodReasons.classify(null, errorText(root)))
         val value = node["value"]?.jsonPrimitive?.contentOrNull
         val sig = node["signature"]?.jsonPrimitive?.contentOrNull
-        if (value.isNullOrEmpty() || sig.isNullOrEmpty()) throw VodUnavailableException("This video")
+        if (value.isNullOrEmpty() || sig.isNullOrEmpty()) throw VodUnavailableException("This video", VodReasons.classify(null, errorText(root)))
         val url = usherBase.toHttpUrl().newBuilder()
             .addPathSegments("vod/$id.m3u8")
             .addQueryParameter("sig", sig)
@@ -73,7 +102,8 @@ internal class TwitchVodResolver(
             .build()
         val text = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
             when {
-                r.code == 403 || r.code == 404 -> throw VodUnavailableException("This video")
+                r.code == 403 || r.code == 404 ->
+                    throw VodUnavailableException("This video", VodReasons.classify(r.code, runCatching { r.body.string().take(400) }.getOrDefault("")))
                 r.code !in 200..299 -> throw IOException("Playlist request failed (HTTP ${r.code})")
                 else -> r.body.string()
             }
@@ -99,6 +129,10 @@ internal class TwitchVodResolver(
         if (qualities.isEmpty()) throw VodUnavailableException("This clip")
         ResolvedClip(qualities)
     }
+
+    /** The GQL `errors[].message` texts joined (they carry no tokens), or empty. */
+    private fun errorText(root: JsonObject): String =
+        (root["errors"] as? JsonArray).orEmpty().joinToString(" ") { (it as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull.orEmpty() }
 
     private fun JsonObject?.obj(key: String): JsonObject? = this?.get(key) as? JsonObject
 
