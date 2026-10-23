@@ -74,7 +74,12 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
                     add(header("h:resume", "Continue watching"))
                     add(
                         GridEntry("resume:row", fullSpan = true) { m ->
-                            LazyRow(m.focusGroup(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            // Same start inset as the Live now cards (16 dp), plus room for the focus ring and scale so the first card is not clipped.
+                            LazyRow(
+                                m.focusGroup(),
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            ) {
                                 items(resume, key = { it.videoId }) { r ->
                                     ResumeCard(r, Modifier.width(220.dp)) { vm.onLeaving(); onOpenVod(r.videoId) }
                                 }
