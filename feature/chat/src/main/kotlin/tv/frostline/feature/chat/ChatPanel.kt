@@ -368,7 +368,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
             }
             .focusRequester(f.list)
             .onFocusChanged { focused = it.isFocused }
-            .border(2.dp, if (focused) FrostColors.Violet else Color.Transparent, RoundedCornerShape(8.dp))
+            .border(3.dp, if (focused) FrostColors.Violet else Color.Transparent, RoundedCornerShape(8.dp))
             .focusable()
             .testTag("chat_list"),
     ) {

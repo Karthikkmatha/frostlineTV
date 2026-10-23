@@ -41,6 +41,11 @@ private fun note(key: String, text: String) =
         Text(text, fontSize = 14.sp, color = FrostColors.Muted)
     }
 
+/** Placeholder cards while a grid loads, so the page has its shape before the data arrives. */
+private fun skeletons(key: String, n: Int = 8) = (0 until n).map { i ->
+    GridEntry("$key:sk$i", focusable = false) { m -> tv.frostline.core.ui.SkeletonCard(m) }
+}
+
 private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridEntry> = listOf(
     note("$key:err", message),
     GridEntry("$key:retry", fullSpan = true) { m -> TvButton("Retry", onRetry, m) },
@@ -60,7 +65,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
                 add(header("h:live", "Live now"))
                 when {
                     st.error != null -> addAll(retry("f", st.error!!, vm::loadFollowing))
-                    st.live.isEmpty() && st.loading -> add(note("f:loading", "Loading your follows..."))
+                    st.live.isEmpty() && st.loading -> { add(note("f:loading", "Loading your follows...")); addAll(skeletons("f", 4)) }
                     st.live.isEmpty() -> add(note("f:none", "None of the channels you follow are live."))
                     else -> st.live.forEach { s ->
                         add(
@@ -172,15 +177,15 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (
                 st.error != null -> addAll(retry("t", st.error!!, vm::loadTop))
                 st.category != null -> {
                     add(header("h:cat", st.category!!.name, FrostColors.Lavender))
-                    if (st.categoryStreams.isEmpty()) add(note("t:loading", if (st.loading) "Loading..." else "Nobody is live in this category."))
+                    if (st.categoryStreams.isEmpty()) { add(note("t:loading", if (st.loading) "Loading..." else "Nobody is live in this category.")); if (st.loading) addAll(skeletons("c")) }
                     st.categoryStreams.forEach { s -> add(GridEntry("cs:${s.id}") { m -> StreamCard(s, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) } }) }
                 }
                 st.tab == TopTab.Streams -> {
-                    if (st.streams.isEmpty() && st.loading) add(note("t:loading", "Loading..."))
+                    if (st.streams.isEmpty() && st.loading) addAll(skeletons("ts"))
                     st.streams.forEach { s -> add(GridEntry("ts:${s.id}") { m -> StreamCard(s, m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) } }) }
                 }
                 else -> {
-                    if (st.categories.isEmpty() && st.loading) add(note("t:loading", "Loading..."))
+                    if (st.categories.isEmpty() && st.loading) addAll(skeletons("tc", 12))
                     st.categories.forEach { g -> add(GridEntry("tc:${g.id}") { m -> CategoryCard(g, m) { vm.openCategory(g) } }) }
                 }
             }

@@ -16,7 +16,21 @@ class IrcMessage(
 object IrcParser {
     /** Splits a frame that may hold several CRLF-separated lines and parses each; blank/garbled lines are skipped. */
     fun parseFrame(frame: String): List<IrcMessage> =
-        frame.split("\r\n", "\n").mapNotNull { if (it.isBlank()) null else parse(it) }
+        parseFrameLines(frame)
+
+    private fun parseFrameLines(frame: String): List<IrcMessage> {
+        var out: ArrayList<IrcMessage>? = null
+        var start = 0
+        val n = frame.length
+        while (start <= n) {
+            var end = frame.indexOf('\n', start)
+            if (end < 0) end = n
+            val line = frame.substring(start, end)
+            if (line.isNotBlank()) parse(line)?.let { (out ?: ArrayList<IrcMessage>(4).also { o -> out = o }).add(it) }
+            start = end + 1
+        }
+        return out ?: emptyList()
+    }
 
     fun parse(raw: String): IrcMessage? {
         var s = raw.trimEnd('\r', '\n')
@@ -44,10 +58,23 @@ object IrcParser {
         } else {
             s
         }
-        val parts = head.split(' ').filter { it.isNotEmpty() }
-        if (parts.isEmpty()) return null
+        // Hot path (every chat line): one scan, no intermediate lists. Tokens are space-separated; empty ones are skipped.
+        var command: String? = null
+        var params: ArrayList<String>? = null
+        var i = 0
+        val n = head.length
+        while (i < n) {
+            while (i < n && head[i] == ' ') i++
+            if (i >= n) break
+            var j = i
+            while (j < n && head[j] != ' ') j++
+            if (command == null) command = head.substring(i, j).uppercase()
+            else (params ?: ArrayList<String>(2).also { params = it }).add(head.substring(i, j))
+            i = j
+        }
+        if (command == null) return null
         // A line like ":tmi PING" with no space-colon trailing is fine; "PING :tmi.twitch.tv" has trailing.
-        return IrcMessage(tags, prefix, parts[0].uppercase(), parts.drop(1), trailing)
+        return IrcMessage(tags, prefix, command, params ?: emptyList(), trailing)
     }
 
     fun parseTags(raw: String): Map<String, String> {
