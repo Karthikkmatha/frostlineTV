@@ -85,6 +85,8 @@ android {
 }
 
 dependencies {
+    // Installs the baseline profile (assets/dexopt/baseline.prof) on first launch so the app starts AOT-compiled, not interpreted.
+    implementation(libs.androidx.profileinstaller)
     implementation(project(":core:ui"))
     implementation(project(":core:data"))
     implementation(project(":core:twitch"))

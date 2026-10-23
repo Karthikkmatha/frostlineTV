@@ -17,6 +17,9 @@
         android:theme="@style/Theme.FrostlineTV"
         android:usesCleartextTraffic="false">
 
+        <!-- Lets simpleperf/Perfetto sample this release build from adb shell; no debugging or data access. -->
+        <profileable android:shell="true" />
+
         <activity
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode"

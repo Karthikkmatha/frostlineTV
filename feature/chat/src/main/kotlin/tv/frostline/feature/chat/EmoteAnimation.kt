@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
@@ -122,22 +123,26 @@ fun EmoteImage(
         val e = entry ?: return@ComposeCanvas
         e.version // draw-phase read: a decode that lands later redraws without recomposing
         val strip = e.strip
-        val image = if (strip != null && clock != null && gate.allows(seq)) {
-            strip.images[frameIndex(clock.tick, strip.images.size)]
+        // Animated: a src rect into the strip's single atlas. Otherwise the still frame (or the strip's first frame).
+        val frame = if (strip != null && clock != null && gate.allows(seq)) frameIndex(clock.tick, strip.count) else 0
+        val image: ImageBitmap
+        val srcY: Int
+        val iw: Int
+        val ih: Int
+        if (strip != null && (clock != null && gate.allows(seq) || e.still == null)) {
+            image = strip.atlas; srcY = frame * strip.frameH; iw = strip.frameW; ih = strip.frameH
         } else {
-            e.still ?: strip?.images?.firstOrNull()
-        } ?: return@ComposeCanvas
+            image = e.still ?: return@ComposeCanvas; srcY = 0; iw = image.width; ih = image.height
+        }
         val w = size.width.toInt()
         val h = size.height.toInt()
         if (w <= 0 || h <= 0) return@ComposeCanvas
-        val iw = image.width
-        val ih = image.height
         val s = minOf(w.toFloat() / iw, h.toFloat() / ih)
         val dw = (iw * s).toInt().coerceAtLeast(1)
         val dh = (ih * s).toInt().coerceAtLeast(1)
         drawImage(
             image,
-            srcOffset = IntOffset.Zero,
+            srcOffset = IntOffset(0, srcY),
             srcSize = IntSize(iw, ih),
             dstOffset = IntOffset((w - dw) / 2, (h - dh) / 2),
             dstSize = IntSize(dw, dh),

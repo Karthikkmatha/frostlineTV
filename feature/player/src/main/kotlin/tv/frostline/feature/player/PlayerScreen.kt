@@ -81,6 +81,15 @@ fun PlayerScreen(
         value = ""
     }
 
+    // PSS breakdown every 5 s while the debug overlay is on (Debug.getMemoryInfo is not free).
+    val memLine by produceState("", debug) {
+        while (debug) {
+            value = memoryBreakdown()
+            kotlinx.coroutines.delay(5_000)
+        }
+        value = ""
+    }
+
     var controlsVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
 
@@ -199,7 +208,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))
@@ -274,4 +283,12 @@ internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx
         ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }) + extra
         lines.forEach { Text(it, fontSize = 12.sp, color = FrostColors.Lavender, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) }
     }
+}
+
+/** "memory   PSS 300 MB: java 53, native 60, graphics 114, code 52" from Debug.getMemoryInfo. */
+internal fun memoryBreakdown(): String {
+    val info = android.os.Debug.MemoryInfo()
+    android.os.Debug.getMemoryInfo(info)
+    fun mb(key: String) = ((info.getMemoryStat(key)?.toLongOrNull() ?: 0L) / 1024)
+    return "memory   PSS ${info.totalPss / 1024} MB: java ${mb("summary.java-heap")}, native ${mb("summary.native-heap")}, graphics ${mb("summary.graphics")}, code ${mb("summary.code")}"
 }

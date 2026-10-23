@@ -1,0 +1,5 @@
+# Broad baseline profile: everything in our packages is compiled ahead of time on first launch (ProfileInstaller).
+# Library profiles (Compose, Media3, Coil, OkHttp) are merged in automatically from their AARs.
+HSPLtv/frostline/**->**(**)**
+HSPLtv/frostline/**-><init>(**)V
+Ltv/frostline/**;

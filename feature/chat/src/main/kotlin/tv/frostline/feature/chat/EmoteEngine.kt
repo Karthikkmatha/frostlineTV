@@ -40,10 +40,28 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.roundToInt
 
-/** All animation frames of one emote at display size. Played by index from the shared clock; never decoded again per frame. */
-class FrameStrip(val frames: Array<Bitmap>) {
-    val images: Array<ImageBitmap> = Array(frames.size) { frames[it].asImageBitmap() }
-    val bytes: Long = frames.sumOf { it.allocationByteCount.toLong() }
+/**
+ * All animation frames of one emote at display size, packed top to bottom into ONE atlas bitmap (one GPU texture
+ * per emote instead of one per frame). Played by index from the shared clock; never decoded again per frame.
+ * The sampled frames are copied in and recycled, so only the atlas stays alive.
+ */
+class FrameStrip(frames: Array<Bitmap>) {
+    val count: Int = frames.size
+    val frameW: Int = frames[0].width
+    val frameH: Int = frames[0].height
+    val atlas: ImageBitmap
+    val bytes: Long
+
+    init {
+        val a = Bitmap.createBitmap(frameW, frameH * count, Bitmap.Config.ARGB_8888)
+        val c = Canvas(a)
+        frames.forEachIndexed { i, f ->
+            c.drawBitmap(f, 0f, (i * frameH).toFloat(), null)
+            f.recycle()
+        }
+        atlas = a.asImageBitmap()
+        bytes = a.allocationByteCount.toLong()
+    }
 }
 
 /** One emote image: its still frame (always wanted) and, when animated and hot, its [FrameStrip]. */
@@ -439,7 +457,8 @@ class EmoteEngine(
         const val MAX_FRAMES = 40
         const val MAX_SAMPLE_MS = 4_000L
         const val BUSY_LINES = 12
-        const val STILL_CAP_BYTES = 8L * 1024 * 1024
+        /** About 300 stills at 48 px. */
+        const val STILL_CAP_BYTES = 4L * 1024 * 1024
         /** Strips + stills together stay within 24 MB. */
         const val HOT_CAP_BYTES = 16L * 1024 * 1024
         const val GLOBAL_ANIM_BYTES = 8L * 1024 * 1024
