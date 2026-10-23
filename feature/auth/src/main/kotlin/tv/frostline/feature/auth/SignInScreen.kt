@@ -16,6 +16,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -41,17 +43,9 @@ import tv.frostline.core.ui.brandName
 fun SignInScreen(viewModel: AuthViewModel, onSignedIn: () -> Unit, onGuest: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     LaunchedEffect(ui.step) { if (ui.step == Step.Done) onSignedIn() }
-    val webUrl = ui.webUrl
-    if ((ui.step == Step.WebLogin || ui.step == Step.WebAuthorize) && webUrl != null) {
-        // The landing content is not composed while the WebView is up, so D-pad focus cannot leak behind it.
-        WebSignInOverlay(
-            url = webUrl,
-            authorizing = ui.step == Step.WebAuthorize,
-            canSkip = true,
-            onClose = viewModel::closeWeb,
-            onSkip = viewModel::skipLogin,
-        )
-    } else {
+    WebSignInHost(viewModel.ui, visible = ui.webVisible(), canSkip = true, onClose = viewModel::closeWeb, onSkip = viewModel::skipLogin)
+    // While the WebView window is up the landing content is not composed, so D-pad focus cannot leak behind it.
+    if (!ui.webVisible()) {
         SignInLanding(
             ui = ui,
             onWebSignIn = viewModel::webSignIn,
@@ -65,15 +59,15 @@ fun SignInScreen(viewModel: AuthViewModel, onSignedIn: () -> Unit, onGuest: () -
 @Composable
 fun LinkWebSessionScreen(viewModel: AuthViewModel, onDone: () -> Unit) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
+    // Landing is the starting step: only treat it as "cancelled" after the WebView has actually been shown.
+    var shown by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { viewModel.webSignIn() }
     LaunchedEffect(ui.step) {
+        if (ui.step == Step.WebLogin) shown = true
         if (ui.step == Step.Done) onDone()
-        if (ui.step == Step.Landing) onDone() // Back / Cancel
+        if (ui.step == Step.Landing && shown) onDone() // Back / Cancel
     }
-    val url = ui.webUrl
-    if (url != null && ui.step == Step.WebLogin) {
-        WebSignInOverlay(url = url, authorizing = false, canSkip = false, onClose = viewModel::closeWeb, onSkip = {})
-    }
+    WebSignInHost(viewModel.ui, visible = ui.webVisible(), canSkip = false, onClose = viewModel::closeWeb, onSkip = {})
 }
 
 @Composable
