@@ -161,6 +161,8 @@ internal class GqlEngagementApi(
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
+    /** Integrity token + device id captured from the web page; sent with every call. */
+    private val integrity: IntegrityProvider = IntegrityProvider.None,
 ) : EngagementApi {
 
     override suspend fun pointsContext(login: String, authToken: String): PointsInfo =
@@ -232,8 +234,12 @@ internal class GqlEngagementApi(
     private suspend fun run(operation: String, queries: List<String>, variables: JsonObject, authToken: String): JsonObject {
         var last: EngagementException? = null
         for (q in queries) {
-            val root = post(operation, q, variables, authToken)
-            val errors = EngagementParser.gqlErrors(root)
+            var root = post(operation, q, variables, authToken, false)
+            var errors = EngagementParser.gqlErrors(root)
+            if (IntegrityTokens.isIntegrityError(errors)) { // refresh the credentials once and retry
+                root = post(operation, q, variables, authToken, true)
+                errors = EngagementParser.gqlErrors(root)
+            }
             if (errors.isEmpty()) return root
             // A mutation that returned data plus a soft error still counts as an answer.
             if (root["data"].obj()?.values?.any { it !is JsonNull } == true && errors.none(::isSchemaError)) return root
@@ -246,7 +252,8 @@ internal class GqlEngagementApi(
     private fun isSchemaError(m: String) =
         m.contains("Cannot query field", true) || m.contains("Unknown type", true) || m.contains("Unknown argument", true) || m.contains("validation", true)
 
-    private suspend fun post(operation: String, query: String, variables: JsonObject, authToken: String): JsonObject = withContext(Dispatchers.IO) {
+    private suspend fun post(operation: String, query: String, variables: JsonObject, authToken: String, refreshIntegrity: Boolean): JsonObject = withContext(Dispatchers.IO) {
+        val creds = runCatching { integrity.current(refreshIntegrity) }.getOrNull()
         val body = buildJsonObject {
             put("operationName", operation)
             put("query", query)
@@ -254,8 +261,14 @@ internal class GqlEngagementApi(
         }.toString().toRequestBody("application/json".toMediaType())
         val req = Request.Builder()
             .url(gqlUrl)
-            .header("Client-Id", GqlWebSessionValidator.WEB_CLIENT_ID)
+            .header("Client-Id", creds?.clientId ?: GqlWebSessionValidator.WEB_CLIENT_ID)
             .header("Authorization", "OAuth $authToken")
+            .apply {
+                if (creds != null) {
+                    header("Client-Integrity", creds.token)
+                    header("X-Device-Id", creds.deviceId)
+                }
+            }
             .post(body)
             .build()
         val text = try {

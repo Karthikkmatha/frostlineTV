@@ -47,6 +47,15 @@ internal object HermesProtocol {
             put("timestamp", timestamp)
         }.toString()
 
+    /** `ok`, or the server's result/error string of a subscribeResponse (short, no tokens). */
+    fun subscribeResult(text: String): String {
+        val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return "unreadable"
+        val r = root["subscribeResponse"] as? JsonObject ?: return "no body"
+        val result = r["result"]?.jsonPrimitive?.contentOrNull ?: "unknown"
+        val err = r["error"]?.jsonPrimitive?.contentOrNull
+        return (if (err != null) "$result $err" else result).take(80)
+    }
+
     fun parse(text: String): Message? {
         val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
         return when (val type = root["type"]?.jsonPrimitive?.contentOrNull) {
@@ -112,18 +121,23 @@ internal class HermesWebSocketClient(
     private val retryDelayMs: (Int) -> Long = { attempt -> minOf(30_000L, 1_000L shl minOf(attempt, 5)) },
 ) : HermesClient {
 
+    private val _status = kotlinx.coroutines.flow.MutableStateFlow("idle")
+    override val status: kotlinx.coroutines.flow.StateFlow<String> = _status
+
     override fun events(topics: List<String>): Flow<HermesEvent> = events(topics, null)
 
     override fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> = channelFlow {
         var attempt = 0
         while (isActive) {
             val ended = CompletableDeferred<Boolean>()
+            _status.value = "connecting"
             val byId = HashMap<String, String>()
             val socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     when (val m = HermesProtocol.parse(text)) {
                         HermesProtocol.Message.Welcome -> {
                             attempt = 0
+                            _status.value = "welcome, subscribing ${topics.size}"
                             topics.forEach { topic ->
                                 val sub = UUID.randomUUID().toString()
                                 byId[sub] = topic
@@ -138,12 +152,19 @@ internal class HermesWebSocketClient(
                             val topic = byId[m.subscriptionId] ?: return
                             trySend(HermesEvent(topic, m.payload))
                         }
+                        is HermesProtocol.Message.Other -> if (m.type == "subscribeResponse") {
+                            val res = HermesProtocol.subscribeResult(text)
+                            _status.value = if (res == "ok") "subscribed" else "subscribe rejected: $res"
+                        }
                         else -> Unit
                     }
                 }
 
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { ended.complete(true) }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { ended.complete(true) }
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { _status.value = "closed $code"; ended.complete(true) }
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    _status.value = "failed ${t.javaClass.simpleName}" + (response?.let { " HTTP ${it.code}" } ?: "")
+                    ended.complete(true)
+                }
             })
             try {
                 ended.await()

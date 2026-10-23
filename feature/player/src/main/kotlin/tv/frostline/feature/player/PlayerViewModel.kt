@@ -90,7 +90,10 @@ class PlayerViewModel(
     val raid = RaidCountdown(viewModelScope) { target -> switchChannel(target) }
 
     private val listener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) = _ui.update { it.copy(playing = isPlaying) }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) tv.frostline.core.twitchinternal.IntegrityGate.streamStarted()
+            _ui.update { it.copy(playing = isPlaying) }
+        }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width > 0 && videoSize.height > 0) {
                 _aspect.value = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
@@ -198,6 +201,7 @@ class PlayerViewModel(
     private fun load(login: String) {
         val p = player.value ?: return
         loadJob?.cancel()
+        tv.frostline.core.twitchinternal.IntegrityGate.streamStarting() // the hidden integrity WebView waits for playback + 10 s
         _ui.update { it.copy(loading = true, error = null, offline = false) }
         metrics.onLoadStart()
         loadJob = viewModelScope.launch {

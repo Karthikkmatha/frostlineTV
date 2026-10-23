@@ -18,6 +18,9 @@ interface WebSessionValidator {
 
 /** Twitch's internal realtime channel (the PubSub replacement). */
 interface HermesClient {
+    /** Connection state for the debug overlay: connecting, welcome, subscribed, or the real failure (class / HTTP status). */
+    val status: kotlinx.coroutines.flow.StateFlow<String> get() = kotlinx.coroutines.flow.MutableStateFlow("idle")
+
     fun events(topics: List<String>): Flow<HermesEvent>
 
     /** For topics that need the viewer's web session. [authToken] is only ever put in the subscribe frame. */
@@ -42,6 +45,16 @@ object TwitchInternal {
 
     /** Channel points, rewards, predictions and polls (GQL). */
     fun engagement(): EngagementApi = GqlEngagementApi()
+
+    /** Same, sending the integrity token and device id that [integrity] captured. */
+    fun engagement(integrity: IntegrityProvider): EngagementApi = GqlEngagementApi(integrity = integrity)
+
+    /** Test hook: another GQL URL plus an integrity source. */
+    fun engagement(gqlUrl: String, integrity: IntegrityProvider): EngagementApi = GqlEngagementApi(gqlUrl = gqlUrl, integrity = integrity)
+
+    /** Headless-WebView integrity capture; [session] returns the linked web session's auth-token. */
+    fun integrity(context: android.content.Context, session: suspend () -> String?): IntegrityProvider =
+        WebViewIntegrityProvider(context, session)
 
     /** Test hook: point the engagement client at another GQL URL. */
     fun engagement(gqlUrl: String): EngagementApi = GqlEngagementApi(gqlUrl = gqlUrl)

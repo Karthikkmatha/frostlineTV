@@ -94,6 +94,7 @@ fun PlayerScreen(
     val chatPicker by chat.picker.collectAsStateWithLifecycle()
     val chatVisible = chatSettings.enabled
     val engUi by remember(engagement) { engagement?.engine?.ui ?: MutableStateFlow(EngagementUi()) }.collectAsStateWithLifecycle()
+    val integrityLine by tv.frostline.core.twitchinternal.IntegrityStatus.line.collectAsStateWithLifecycle()
     val engDebug by remember(engagement) { engagement?.engine?.debug ?: MutableStateFlow(emptyList<String>()) }.collectAsStateWithLifecycle()
     val chatController = rememberChatController()
     val playerRoot = remember { FocusRequester() }
@@ -198,7 +199,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))

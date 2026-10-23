@@ -181,10 +181,16 @@ class EngagementEngine(
     private suspend fun userTopic(s: EngagementSession) {
         try {
             setDebug("hermes", "connecting")
-            hermes.events(listOf(PointsEvents.topic(s.userId)), s.authToken).collect { ev ->
-                lastUserEventAt = clock()
-                setDebug("hermes", "ok (user topic)")
-                PointsEvents.parse(ev.payload)?.let(::onPoints)
+            kotlinx.coroutines.coroutineScope {
+                var gotEvent = false
+                // Real connection state (welcome, subscribed, rejected, failure class / HTTP status) until an event arrives.
+                launch { hermes.status.collect { st -> if (!gotEvent && st != "idle") setDebug("hermes", st) } }
+                hermes.events(listOf(PointsEvents.topic(s.userId)), s.authToken).collect { ev ->
+                    gotEvent = true
+                    lastUserEventAt = clock()
+                    setDebug("hermes", "ok (user topic)")
+                    PointsEvents.parse(ev.payload)?.let(::onPoints)
+                }
             }
         } catch (e: Throwable) {
             fail("hermes-points", e)

@@ -28,7 +28,9 @@ class AppContainer(context: Context) {
     val webCookies = AndroidWebCookies()
     val playback = TwitchInternal.playback()
     val hermes = TwitchInternal.hermes()
-    val engagement = TwitchInternal.engagement()
+    /** Integrity token + device id for the engagement calls, captured by a headless WebView from the linked session. */
+    val integrity = TwitchInternal.integrity(context) { vault.currentWebSession() }
+    val engagement = TwitchInternal.engagement(integrity)
     val vodPlayback = TwitchInternal.vodPlayback()
     val videoComments = TwitchInternal.videoComments()
 

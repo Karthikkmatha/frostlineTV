@@ -1,0 +1,187 @@
+package tv.frostline.core.twitchinternal
+
+import android.annotation.SuppressLint
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
+
+/**
+ * What Twitch's web page sends with its GQL calls to prove it is a real client: the integrity token and the device id
+ * it is bound to. Held in memory only. [toString] never shows the values.
+ */
+class IntegrityCreds(val token: String, val deviceId: String, val clientId: String, val expiresAtMs: Long) {
+    override fun toString() = "IntegrityCreds(expiresAtMs=$expiresAtMs)"
+}
+
+/** Source of [IntegrityCreds]. Implementations must never log the values. */
+interface IntegrityProvider {
+    /** Cached credentials while they are fresh; otherwise captures new ones. Null when none could be had. */
+    suspend fun current(forceRefresh: Boolean = false): IntegrityCreds?
+
+    object None : IntegrityProvider {
+        override suspend fun current(forceRefresh: Boolean): IntegrityCreds? = null
+    }
+}
+
+/** Debug overlay line ("integrity ..."): state, age and the last error. Never a value. */
+object IntegrityStatus {
+    private val _line = MutableStateFlow("idle")
+    val line: StateFlow<String> = _line.asStateFlow()
+    internal fun set(text: String) { _line.value = text }
+}
+
+/** The player tells the integrity capture when a stream is starting, so the hidden WebView never competes with it. */
+object IntegrityGate {
+    @Volatile private var startingAtMs = 0L
+    @Volatile private var startedAtMs = 0L
+
+    fun streamStarting() { startingAtMs = System.currentTimeMillis() }
+    fun streamStarted() { startedAtMs = System.currentTimeMillis() }
+
+    /** False while a stream is starting (for at most 60 s) and for [settleMs] after playback began. */
+    internal fun mayRun(now: Long, settleMs: Long = 10_000L): Boolean {
+        val startingNow = startingAtMs > startedAtMs && now - startingAtMs < 60_000L
+        return !startingNow && now - startedAtMs >= settleMs
+    }
+}
+
+internal object IntegrityTokens {
+    const val DEFAULT_TTL_MS = 12 * 60 * 60 * 1000L
+
+    /** Expiry (epoch ms) read from the token's payload (`"exp"`), or now + 12 h. Never throws. */
+    fun expiryMs(token: String, now: Long): Long {
+        val fallback = now + DEFAULT_TTL_MS
+        return runCatching {
+            val body = token.split('.').getOrNull(2) ?: return fallback
+            val bytes = java.util.Base64.getUrlDecoder().decode(body.padEnd((body.length + 3) / 4 * 4, '='))
+            val text = String(bytes, Charsets.ISO_8859_1)
+            val raw = Regex("\"exp\"\\s*:\\s*\"?(\\d{9,13})").find(text)?.groupValues?.get(1)?.toLong() ?: return fallback
+            val ms = if (raw < 100_000_000_000L) raw * 1000 else raw
+            ms.coerceIn(now + 60_000L, fallback)
+        }.getOrDefault(fallback)
+    }
+
+    fun isIntegrityError(messages: List<String>) = messages.any { it.contains("integrity", ignoreCase = true) }
+}
+
+/**
+ * Captures the integrity token with a headless WebView: it loads twitch.tv with the linked session's cookie, and
+ * `shouldInterceptRequest` reads the headers of the page's own gql.twitch.tv calls. The WebView is 1x1, never attached
+ * to a window, and fully destroyed after each run (or after [timeoutMs]). Runs at first use, when the credentials
+ * expire, on an integrity error, with backoff after failures, and never while a stream is starting.
+ */
+class WebViewIntegrityProvider(
+    context: Context,
+    private val session: suspend () -> String?,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val timeoutMs: Long = 30_000L,
+) : IntegrityProvider {
+    private val appContext = context.applicationContext
+    private val mutex = Mutex()
+    @Volatile private var cached: IntegrityCreds? = null
+    private var capturedAtMs = 0L
+    private var failures = 0
+    private var retryNotBeforeMs = 0L
+
+    override suspend fun current(forceRefresh: Boolean): IntegrityCreds? {
+        val c = cached
+        if (!forceRefresh && c != null && clock() < c.expiresAtMs - 5 * 60_000L) return c
+        return mutex.withLock {
+            val again = cached
+            if (!forceRefresh && again != null && clock() < again.expiresAtMs - 5 * 60_000L) return@withLock again
+            if (forceRefresh && again != null && clock() - capturedAtMs < 30_000L) return@withLock again // just captured
+            val token = session()?.trim()?.takeIf { it.isNotEmpty() } ?: run { status("no web session"); return@withLock null }
+            if (clock() < retryNotBeforeMs) { status("backing off after $failures failure(s)"); return@withLock cached }
+            while (!IntegrityGate.mayRun(clock())) { status("waiting for the stream to settle"); delay(1_000) }
+            status("capturing")
+            val got = capture(token)
+            if (got != null) {
+                cached = got; capturedAtMs = clock(); failures = 0; retryNotBeforeMs = 0
+                status("ok")
+            } else {
+                failures++
+                retryNotBeforeMs = clock() + minOf(10 * 60_000L, 30_000L shl minOf(failures - 1, 5))
+            }
+            cached
+        }
+    }
+
+    private fun status(state: String, error: String? = null) {
+        val c = cached
+        val age = if (c != null) ", age ${(clock() - capturedAtMs) / 60_000} min" else ""
+        IntegrityStatus.set(state + age + (error?.let { ", last error: $it" } ?: ""))
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private suspend fun capture(authToken: String): IntegrityCreds? {
+        val result = CompletableDeferred<IntegrityCreds?>()
+        val main = Handler(Looper.getMainLooper())
+        var web: WebView? = null
+        val destroy = Runnable {
+            web?.let { w ->
+                runCatching { w.stopLoading(); w.webViewClient = WebViewClient(); w.loadUrl("about:blank"); w.removeAllViews(); w.destroy() }
+            }
+            web = null
+        }
+        main.post {
+            try {
+                val cm = CookieManager.getInstance()
+                cm.setAcceptCookie(true)
+                val value = authToken.removePrefix("auth-token=").trim('"', '\'', ' ', ';')
+                cm.setCookie("https://www.twitch.tv", "auth-token=$value; Domain=.twitch.tv; Path=/; Secure")
+                cm.flush()
+                val w = WebView(appContext)
+                web = w
+                w.settings.javaScriptEnabled = true
+                w.settings.domStorageEnabled = true
+                w.settings.mediaPlaybackRequiresUserGesture = true
+                w.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                w.layout(0, 0, 1, 1)
+                w.webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
+                        val r = request ?: return null
+                        if (r.url.host == "gql.twitch.tv" && !result.isCompleted) {
+                            val h = r.requestHeaders
+                            val tok = h.entries.firstOrNull { it.key.equals("Client-Integrity", true) }?.value
+                            if (!tok.isNullOrEmpty()) {
+                                val dev = h.entries.firstOrNull { it.key.equals("X-Device-Id", true) || it.key.equals("Device-Id", true) }?.value
+                                    ?: deviceIdCookie()
+                                val cid = h.entries.firstOrNull { it.key.equals("Client-Id", true) }?.value ?: GqlWebSessionValidator.WEB_CLIENT_ID
+                                if (!dev.isNullOrEmpty()) result.complete(IntegrityCreds(tok, dev, cid, IntegrityTokens.expiryMs(tok, clock())))
+                            }
+                        }
+                        return null
+                    }
+                }
+                w.loadUrl("https://www.twitch.tv/")
+            } catch (e: Throwable) {
+                status("failed", e.javaClass.simpleName)
+                result.complete(null)
+            }
+        }
+        val got = withTimeoutOrNull(timeoutMs) { result.await() }
+        main.post(destroy)
+        // Do not leave the session cookie lying in the shared store.
+        main.post { runCatching { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush() } }
+        if (got == null) status("failed", "no integrity token seen in ${timeoutMs / 1000} s")
+        return got
+    }
+
+    private fun deviceIdCookie(): String? =
+        CookieManager.getInstance().getCookie("https://www.twitch.tv")?.split(';')
+            ?.map { it.trim() }?.firstOrNull { it.startsWith("unique_id=") }?.removePrefix("unique_id=")?.takeIf { it.isNotEmpty() }
+}
