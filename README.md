@@ -31,7 +31,7 @@ Two zones, one focus at a time: PLAYER (the bare player and its controls) and CH
   - Up from the top of the bottom section returns to the list at the newest line, following live.
 - Sheets (Menu, Emotes, Rewards, prediction, poll) open anchored above the button row and trap focus: every outward
   edge is closed; OK picks, Back or Close dismisses and focus returns to the opener (button or banner).
-- Resize: Menu > "Resize panel" enters resize mode with an on-panel hint ("◀ ▶ to resize · OK to save · Back to
+- Resize: Menu > "Resize panel" enters resize mode with an on-panel hint ("◀ wider · ▶ narrower · OK save · Back cancel"); Left widens, Right narrows.
   cancel"). Left widens and Right narrows in 2 % steps (holding repeats and accelerates) between 20 % and 45 % of the
   screen width; the video box only changes weight, so its `SurfaceView` is never recreated. OK saves the percentage
   (DataStore, used by live, VOD replay and Settings), Back reverts.

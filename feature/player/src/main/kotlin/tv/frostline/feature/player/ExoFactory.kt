@@ -34,7 +34,7 @@ internal fun buildLoadControl(lowLatency: Boolean): DefaultLoadControl =
     DefaultLoadControl.Builder().apply {
         if (lowLatency) {
             // Small buffer: stay close to the live edge, start quickly.
-            setBufferDurationsMs(2_500, 8_000, 1_000, 2_000)
+            setBufferDurationsMs(3_000, 9_000, 1_500, 2_500)
         } else {
             // Keep 8-15 s downloaded ahead; resume after a stall only once 4 s are back.
             setBufferDurationsMs(8_000, 15_000, 2_500, 4_000)

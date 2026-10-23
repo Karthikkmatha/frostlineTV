@@ -278,7 +278,7 @@ internal fun ChatPanel(
 @Composable
 private fun ResizeHint(c: ChatController, onSave: () -> Unit, modifier: Modifier) {
     Text(
-        "\u25C0 \u25B6 to resize \u00B7 OK to save \u00B7 Back to cancel   ${c.resizePct}%",
+        "\u25C0 wider \u00B7 \u25B6 narrower \u00B7 OK save \u00B7 Back cancel   ${c.resizePct}%",
         fontSize = 12.sp,
         color = FrostColors.OnSurface,
         modifier = modifier

@@ -54,7 +54,7 @@ fun TvButton(
     val ring = LocalFocusRingEnabled.current
     Button(
         onClick = onClick,
-        modifier = modifier.frostFocus(RoundedCornerShape(50)),
+        modifier = modifier,
         enabled = enabled,
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
         colors = ButtonDefaults.colors(
@@ -161,7 +161,7 @@ fun TvToggleRow(
 ) {
     androidx.tv.material3.Surface(
         onClick = { onToggle(!checked) },
-        modifier = modifier.fillMaxWidth().frostFocus(RoundedCornerShape(10.dp)),
+        modifier = modifier.fillMaxWidth(),
         shape = cardShape(RoundedCornerShape(10.dp)),
         border = focusRingBorder(RoundedCornerShape(10.dp)),
         scale = cardScale(1f),
@@ -205,7 +205,7 @@ fun TvChoiceRow(
 ) {
     androidx.tv.material3.Surface(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().frostFocus(RoundedCornerShape(10.dp)),
+        modifier = modifier.fillMaxWidth(),
         shape = cardShape(RoundedCornerShape(10.dp)),
         border = focusRingBorder(RoundedCornerShape(10.dp)),
         scale = cardScale(1f),
@@ -252,7 +252,6 @@ fun TvStepperRow(
         onClick = {},
         modifier = modifier
             .fillMaxWidth()
-            .frostFocus(RoundedCornerShape(10.dp))
             .onPreviewKeyEvent { e ->
                 if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.key) {

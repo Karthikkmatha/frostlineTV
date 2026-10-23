@@ -6,6 +6,7 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Before
@@ -61,6 +62,24 @@ class PlaybackResolverTest {
         assertEquals("true", usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
         resolver().resolve("ch", null, lowLatency = false)
         assertNull(usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
+    }
+
+    @Test fun stableFallsBackToTheFastPlaylistWhenUsherRefuses() = runBlocking {
+        gql.enqueue(tokenReply())
+        usher.enqueue(MockResponse().setResponseCode(403))
+        usher.enqueue(MockResponse().setBody(master))
+        resolver().resolve("ch", null, lowLatency = false)
+        assertNull(usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
+        assertEquals("true", usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
+    }
+
+    @Test fun failureNamesParamsButNotTokenOrSig() = runBlocking {
+        gql.enqueue(tokenReply())
+        usher.enqueue(MockResponse().setResponseCode(403)); usher.enqueue(MockResponse().setResponseCode(403))
+        val msg = runCatching { resolver().resolve("ch", null, lowLatency = false) }.exceptionOrNull()!!.message!!
+        assertTrue(msg.contains("HTTP 403") && msg.contains("allow_source"))
+        assertFalse(msg.contains("sig,") || msg.contains("token,"))
+        Unit
     }
 
     @Test fun webSessionGoesToGqlOnlyAsOAuth() = runBlocking {

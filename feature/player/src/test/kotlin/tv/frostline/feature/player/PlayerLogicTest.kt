@@ -38,10 +38,10 @@ class LiveModeConfigTest {
         assertEquals(14_000L, c.maxOffsetMs)
     }
 
-    @Test fun lowLatencyTargetsAboutFourSeconds() {
+    @Test fun lowLatencyTargetsAboutFiveSeconds() {
         val c = LiveOffsets.configFor(tv.frostline.core.data.LiveMode.LowLatency)
-        assertEquals(4_000L, c.targetOffsetMs)
-        assertEquals(3_000L, c.minOffsetMs)
+        assertEquals(5_000L, c.targetOffsetMs)
+        assertEquals(4_000L, c.minOffsetMs)
     }
 
     @Test fun stableBadgeCallsThirteenSecondsLiveNotBehind() {

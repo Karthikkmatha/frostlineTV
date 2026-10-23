@@ -270,15 +270,15 @@ object LiveOffsets {
             .setMinPlaybackSpeed(0.97f)
             .setMaxPlaybackSpeed(1.03f)
             .build()
-        // About 3-5 s behind live, catching up with up to 8 % speed-up.
+        // About 4-8 s behind live (a 5 s target leaves room for a jittery link), catching up with up to 8 % speed-up.
         LiveMode.LowLatency -> MediaItem.LiveConfiguration.Builder()
-            .setTargetOffsetMs(4_000)
-            .setMinOffsetMs(3_000)
-            .setMaxOffsetMs(6_000)
+            .setTargetOffsetMs(5_000)
+            .setMinOffsetMs(4_000)
+            .setMaxOffsetMs(8_000)
             .setMinPlaybackSpeed(0.95f)
             .setMaxPlaybackSpeed(1.08f)
             .build()
     }
 
-    fun targetSeconds(mode: LiveMode): Int = if (mode == LiveMode.Stable) 13 else 4
+    fun targetSeconds(mode: LiveMode): Int = if (mode == LiveMode.Stable) 13 else 5
 }

@@ -8,7 +8,10 @@ import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.Animatable2
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
+import java.util.concurrent.CountDownLatch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -103,6 +106,8 @@ class EmoteEngine(
         private set
     @Volatile var ratePerSec: Float = 0f
         private set
+    /** Class name / reason of the last decode or sampling failure, for the debug line (no URLs, no data). */
+    @Volatile var lastFailure: String = ""
     val memoryBytes: Long get() = stills.bytes + strips.bytes
     val hotCount: Int get() = strips.size
 
@@ -134,7 +139,7 @@ class EmoteEngine(
 
     /** One line for the debug overlay: mode, rate, hot animations, memory and disk. */
     fun debugLine(): String =
-        "emotes   ${mode.label} ${"%.1f".format(ratePerSec)}/s, ${strips.size} animated, mem ${memoryBytes / 1_048_576} MB, disk ${diskBytes / 1_048_576} MB"
+        "emotes   ${mode.label} ${"%.1f".format(ratePerSec)}/s, ${strips.size} animated, mem ${memoryBytes / 1_048_576} MB, disk ${diskBytes / 1_048_576} MB" + if (lastFailure.isNotEmpty()) ", last: $lastFailure" else ""
 
     fun entry(url: String): EmoteEntry = entries.getOrPut(url) { EmoteEntry(url) }
 
@@ -218,7 +223,7 @@ class EmoteEngine(
             val file = download(e.url) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             val bmp = stillOf(d)
-            if (e.animated == null) e.animated = d is AnimatedImageDrawable
+            if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
             e.still = bmp.asImageBitmap()
             e.stillBytes = bmp.allocationByteCount.toLong()
             stills.put(e.url, e)
@@ -233,54 +238,96 @@ class EmoteEngine(
     private fun runAnimation(e: EmoteEntry) {
         try {
             if (e.strip != null || e.animated == false) return
-            val file = download(e.url) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
+            val file = download(e.url) ?: run { lastFailure = "download"; e.failedAt = clockMs().coerceAtLeast(1); return }
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
-            if (d !is AnimatedImageDrawable) { e.animated = false; return }
+            if (d !is AnimatedImageDrawable) {
+                // The file is animated but the platform decoder gave one frame (e.g. animated AVIF): nothing to play.
+                lastFailure = if (ImageSniff.isAnimated(file.readBytes())) "decoder gave a still" else "plain image"
+                e.animated = false; return
+            }
             e.animated = true
             val strip = sample(d)
             if (strip == null) { e.animated = false; return }
             e.strip = strip
             strips.put(e.url, e)
             e.bump()
-        } catch (_: Exception) {
+        } catch (x: Exception) {
+            lastFailure = "anim ${x.javaClass.simpleName}"
             e.failedAt = clockMs().coerceAtLeast(1)
         } finally {
             e.animPending.set(false)
         }
     }
 
-    /** Plays [d] once in real time, grabbing a frame every [FRAME_MS] into small bitmaps. */
+    /**
+     * Plays [d] once, grabbing a frame every [FRAME_MS] into small bitmaps. The drawable is driven the way the
+     * framework expects (a Drawable.Callback on the main thread schedules its frames); this worker thread waits for
+     * the result. Failures are recorded in [lastFailure] for the debug line.
+     */
     private fun sample(d: AnimatedImageDrawable): FrameStrip? {
         val w = d.intrinsicWidth.coerceAtLeast(1)
         val h = d.intrinsicHeight.coerceAtLeast(1)
-        val ended = AtomicBoolean(false)
-        val cb = object : Animatable2.AnimationCallback() {
-            override fun onAnimationEnd(drawable: Drawable?) { ended.set(true) }
-        }
-        d.registerAnimationCallback(cb)
-        d.repeatCount = 0 // play once; the strip is the loop
-        d.setBounds(0, 0, w, h)
+        val main = Handler(Looper.getMainLooper())
+        val done = CountDownLatch(1)
         val frames = ArrayList<Bitmap>(32)
-        try {
-            d.start()
-            val t0 = SystemClock.uptimeMillis()
-            var i = 0
-            while (true) {
-                val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                d.draw(Canvas(bmp))
-                frames += bmp
-                if (ended.get() || frames.size >= MAX_FRAMES || SystemClock.uptimeMillis() - t0 > MAX_SAMPLE_MS) break
-                i++
-                val wait = t0 + i * FRAME_MS - SystemClock.uptimeMillis()
-                if (wait > 0) Thread.sleep(wait)
-            }
-        } catch (_: InterruptedException) {
-            return null
-        } finally {
-            d.stop()
-            d.unregisterAnimationCallback(cb)
+        val finished = AtomicBoolean(false)
+        var tick: Runnable? = null
+        fun finish() {
+            if (!finished.compareAndSet(false, true)) return
+            tick?.let { main.removeCallbacks(it) }
+            runCatching { d.stop() }
+            d.callback = null
+            done.countDown()
         }
-        return if (frames.size >= 2) FrameStrip(frames.toTypedArray()) else null
+        val cb = object : Drawable.Callback {
+            override fun invalidateDrawable(who: Drawable) {}
+            override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) { main.postAtTime(what, who, `when`) }
+            override fun unscheduleDrawable(who: Drawable, what: Runnable) { main.removeCallbacks(what, who) }
+        }
+        val end = object : Animatable2.AnimationCallback() {
+            override fun onAnimationEnd(drawable: Drawable?) {
+                if (frames.isNotEmpty()) capture(d, w, h, frames)
+                finish()
+            }
+        }
+        main.post {
+            try {
+                d.callback = cb
+                d.setBounds(0, 0, w, h)
+                d.repeatCount = 0 // play once; the strip is the loop
+                d.registerAnimationCallback(end)
+                val t0 = SystemClock.uptimeMillis()
+                val t = object : Runnable {
+                    override fun run() {
+                        if (finished.get()) return
+                        capture(d, w, h, frames)
+                        if (frames.size >= MAX_FRAMES || SystemClock.uptimeMillis() - t0 > MAX_SAMPLE_MS) finish() else main.postDelayed(this, FRAME_MS)
+                    }
+                }
+                tick = t
+                d.start()
+                t.run()
+            } catch (e: Exception) {
+                lastFailure = "sample ${e.javaClass.simpleName}"
+                finish()
+            }
+        }
+        if (!done.await(MAX_SAMPLE_MS + 2_000, TimeUnit.MILLISECONDS)) {
+            main.post { finish() }
+            lastFailure = "sample timeout"
+        }
+        main.post { runCatching { d.unregisterAnimationCallback(end) } }
+        val out = ArrayList(frames)
+        if (out.size < 2) { lastFailure = "sample ${out.size} frame"; return null }
+        // A decoder that never advanced gives N identical frames: not an animation.
+        if (out.drop(1).none { !it.sameAs(out[0]) }) { lastFailure = "sample no motion"; return null }
+        return FrameStrip(out.toTypedArray())
+    }
+
+    private fun capture(d: Drawable, w: Int, h: Int, into: MutableList<Bitmap>) {
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        d.draw(Canvas(bmp))
+        into += bmp
     }
 
     private fun stillOf(d: Drawable): Bitmap {
@@ -303,7 +350,8 @@ class EmoteEngine(
                 decoder.setTargetSize(((sw * s).roundToInt()).coerceIn(1, TARGET_H * 4), TARGET_H)
             }
         }
-    } catch (_: Exception) {
+    } catch (x: Exception) {
+        lastFailure = "decode ${x.javaClass.simpleName}"
         null
     }
 

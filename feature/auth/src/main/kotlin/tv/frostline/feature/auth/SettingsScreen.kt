@@ -145,7 +145,7 @@ fun SettingsContent(
                 description = if (ui.liveMode == LiveMode.Stable) {
                     "Stable: about 12-14 s behind live with a few seconds of video buffered ahead. Smooth, no rebuffering. Applies the next time you open a stream."
                 } else {
-                    "Low latency: about 3-5 s behind live with a small buffer and a slight speed-up to catch up. May rebuffer on a weak link. Applies the next time you open a stream."
+                    "Low latency: about 4-8 s behind live (5 s target) with a small buffer and a slight speed-up to catch up. May rebuffer on a weak link. Applies the next time you open a stream."
                 },
                 onClick = { onLiveMode(if (ui.liveMode == LiveMode.Stable) LiveMode.LowLatency else LiveMode.Stable) },
                 modifier = Modifier.widthIn(max = 560.dp).testTag("choice_live_mode"),

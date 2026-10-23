@@ -38,6 +38,25 @@ class TokenVaultTest {
         assertEquals(sample, vault.currentTokens())
     }
 
+    /** An app update recreates the vault over the same store and key: the session must survive, and so must the setting writes. */
+    @Test fun sessionSurvivesANewVaultAndSettingsWrites() = runBlocking {
+        TokenVault(store, cipher).apply { saveTokens(sample); saveWebSession("cookie-1") }
+        val settings = SettingsStore(store)
+        settings.setDebugOverlay(true)
+        settings.setLiveMode(LiveMode.LowLatency)
+        val again = TokenVault(store, cipher)
+        assertEquals(sample, again.currentTokens())
+        assertEquals("cookie-1", again.currentWebSession())
+    }
+
+    /** The persisted names are what stage 5 wrote; changing one would silently sign everyone out on update. */
+    @Test fun persistedNamesAreUnchangedSinceStage5() {
+        assertEquals("tokens_v1", TokenVault.TOKENS.name)
+        assertEquals("web_session_v1", TokenVault.WEB_SESSION.name)
+        assertEquals("guest_v1", TokenVault.GUEST.name)
+        assertEquals("web_session_expired", TokenVault.WEB_EXPIRED.name)
+    }
+
     @Test fun storesOnlyCiphertext() = runBlocking {
         val vault = TokenVault(store, cipher)
         vault.saveTokens(sample)

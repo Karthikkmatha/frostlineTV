@@ -46,26 +46,40 @@ internal class TwitchPlaybackResolver(
 
     override suspend fun resolve(login: String, webSession: String?, lowLatency: Boolean): ResolvedStream = withContext(Dispatchers.IO) {
         val (value, sig) = accessToken(login.lowercase(), webSession)
-        val url = usherBase.toHttpUrl().newBuilder()
-            .addPathSegments("api/channel/hls/${login.lowercase()}.m3u8")
-            .addQueryParameter("sig", sig)
-            .addQueryParameter("token", value)
-            .addQueryParameter("allow_source", "true")
-            .addQueryParameter("allow_audio_only", "true")
-            .apply { if (lowLatency) addQueryParameter("fast_bread", "true") } // the low-latency playlist
-            .addQueryParameter("playlist_include_framerate", "true")
-            .addQueryParameter("player_backend", "mediaplayer")
-            .addQueryParameter("supported_codecs", "h264")
-            .addQueryParameter("p", random().toString())
-            .build()
-        val text = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
-            when {
-                r.code == 404 -> throw ChannelOfflineException(login)
-                r.code !in 200..299 -> throw IOException("Playlist request failed (HTTP ${r.code})")
-                else -> r.body.string()
+        // Stable asks for the regular playlist first; if usher refuses that variant (403) fall back to the low-latency one,
+        // which is known to play, and let the player's own live offsets keep it steady.
+        val attempts = if (lowLatency) listOf(true) else listOf(false, true)
+        var lastError: IOException? = null
+        for (fastBread in attempts) {
+            val url = usherBase.toHttpUrl().newBuilder()
+                .addPathSegments("api/channel/hls/${login.lowercase()}.m3u8")
+                .addQueryParameter("sig", sig)
+                .addQueryParameter("token", value)
+                .addQueryParameter("allow_source", "true")
+                .addQueryParameter("allow_audio_only", "true")
+                .apply { if (fastBread) addQueryParameter("fast_bread", "true") }
+                .addQueryParameter("playlist_include_framerate", "true")
+                .addQueryParameter("player_backend", "mediaplayer")
+                .addQueryParameter("supported_codecs", "h264")
+                .addQueryParameter("p", random().toString())
+                .build()
+            val names = url.queryParameterNames.filter { it != "sig" && it != "token" }.joinToString(",")
+            try {
+                val text = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                    when {
+                        r.code == 404 -> throw ChannelOfflineException(login)
+                        r.code !in 200..299 -> throw IOException("Playlist request failed (HTTP ${r.code}; params $names)")
+                        else -> r.body.string()
+                    }
+                }
+                return@withContext ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text))
+            } catch (e: ChannelOfflineException) {
+                throw e
+            } catch (e: IOException) {
+                lastError = e
             }
         }
-        ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text))
+        throw lastError ?: IOException("Playlist request failed")
     }
 
     private fun accessToken(login: String, webSession: String?): Pair<String, String> {
