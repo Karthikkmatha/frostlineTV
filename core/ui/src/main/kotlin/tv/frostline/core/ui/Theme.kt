@@ -24,6 +24,8 @@ object FrostColors {
 
     /** Buttons, selected state, live/progress bars. Too dark for text or rings on the dark background. */
     val Primary = Color(0xFF4E2E99)
+    /** A focused button: lighter than [Primary], with the violet ring on top. */
+    val PrimaryFocused = Color(0xFF6445BE)
     /** Focus rings, links, highlighted text on dark surfaces. */
     val Violet = Color(0xFF8F74E8)
     /** Subtle text accents. */

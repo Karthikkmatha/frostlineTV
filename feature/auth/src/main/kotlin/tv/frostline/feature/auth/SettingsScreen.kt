@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -19,6 +21,7 @@ import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.data.ChatOptions
 import tv.frostline.core.data.ChatSettings
+import tv.frostline.core.data.LiveMode
 import tv.frostline.core.ui.TvButton
 import tv.frostline.core.ui.TvChoiceRow
 import tv.frostline.core.ui.TvStepperRow
@@ -31,6 +34,7 @@ fun SettingsScreen(
     versionName: String,
     onLinkWebSession: () -> Unit,
     onSignIn: () -> Unit,
+    firstFocus: FocusRequester = FocusRequester(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     SettingsContent(
@@ -44,7 +48,9 @@ fun SettingsScreen(
         onDebugOverlay = viewModel::setDebugOverlay,
         onShowFps = viewModel::setShowFps,
         onAutoClaim = viewModel::setAutoClaimPoints,
+        onLiveMode = viewModel::setLiveMode,
         onChatChange = viewModel::updateChat,
+        firstFocus = firstFocus,
     )
 }
 
@@ -61,6 +67,8 @@ fun SettingsContent(
     onChatChange: ((ChatSettings) -> ChatSettings) -> Unit = {},
     onShowFps: (Boolean) -> Unit = {},
     onAutoClaim: (Boolean) -> Unit = {},
+    onLiveMode: (LiveMode) -> Unit = {},
+    firstFocus: FocusRequester = FocusRequester(),
 ) {
     LazyColumn(
         // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
@@ -79,8 +87,8 @@ fun SettingsContent(
             )
         }
         item {
-            if (ui.signedIn) TvButton("Sign out", onClick = onSignOut, modifier = Modifier.testTag("btn_sign_out"))
-            else TvButton("Sign in", onClick = onSignIn, modifier = Modifier.testTag("btn_sign_in"))
+            if (ui.signedIn) TvButton("Sign out", onClick = onSignOut, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_out"))
+            else TvButton("Sign in", onClick = onSignIn, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_in"))
         }
         item {
             val status = when {
@@ -106,6 +114,20 @@ fun SettingsContent(
                 checked = ui.followRaids,
                 onToggle = onFollowRaids,
                 modifier = Modifier.widthIn(max = 560.dp).testTag("toggle_raids"),
+            )
+        }
+
+        item {
+            TvChoiceRow(
+                label = "Live mode",
+                value = ui.liveMode.label,
+                description = if (ui.liveMode == LiveMode.Stable) {
+                    "Stable: about 12-14 s behind live with a few seconds of video buffered ahead. Smooth, no rebuffering. Applies the next time you open a stream."
+                } else {
+                    "Low latency: about 3-5 s behind live with a small buffer and a slight speed-up to catch up. May rebuffer on a weak link. Applies the next time you open a stream."
+                },
+                onClick = { onLiveMode(if (ui.liveMode == LiveMode.Stable) LiveMode.LowLatency else LiveMode.Stable) },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_live_mode"),
             )
         }
 

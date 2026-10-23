@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import tv.frostline.core.data.ChatSettings
+import tv.frostline.core.data.LiveMode
 import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.TokenManager
@@ -24,6 +25,7 @@ data class AccountUi(
     val debugOverlay: Boolean = false,
     val showFps: Boolean = false,
     val autoClaimPoints: Boolean = true,
+    val liveMode: LiveMode = LiveMode.Stable,
     val chat: ChatSettings = ChatSettings(),
 )
 
@@ -40,7 +42,8 @@ class AccountViewModel(
     val ui: StateFlow<AccountUi> = combine(account, settings.followRaids, settings.debugOverlay, settings.chat) { a, raids, dbg, chat ->
         a.copy(followRaids = raids, debugOverlay = dbg, chat = chat)
     }.combine(settings.showFps) { ui, fps -> ui.copy(showFps = fps) }
-        .combine(settings.autoClaimPoints) { ui, claim -> ui.copy(autoClaimPoints = claim) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
+        .combine(settings.autoClaimPoints) { ui, claim -> ui.copy(autoClaimPoints = claim) }
+        .combine(settings.liveMode) { ui, mode -> ui.copy(liveMode = mode) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
 
     init {
         // Re-check a stored web session when Settings opens so an expired one is flagged.
@@ -65,6 +68,10 @@ class AccountViewModel(
 
     fun updateChat(transform: (ChatSettings) -> ChatSettings) {
         viewModelScope.launch { settings.updateChat(transform) }
+    }
+
+    fun setLiveMode(value: LiveMode) {
+        viewModelScope.launch { settings.setLiveMode(value) }
     }
 
     fun setAutoClaimPoints(value: Boolean) {

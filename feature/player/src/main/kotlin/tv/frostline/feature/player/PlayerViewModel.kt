@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tv.frostline.core.data.LiveMode
 import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.HelixRepository
@@ -43,6 +44,8 @@ data class PlayerUi(
     /** groupId of the pinned quality; null = Auto. */
     val quality: String? = null,
     val liveOffsetMs: Long? = null,
+    /** The Live mode this stream was opened with (shown in the debug overlay). */
+    val liveMode: LiveMode = LiveMode.Stable,
     val notice: String? = null,
 )
 
@@ -80,6 +83,7 @@ class PlayerViewModel(
     private var pendingQuality: String? = null
     private var currentVariants: List<StreamVariant> = emptyList()
     private var currentUrl: String? = null
+    private var modeAtStart: LiveMode = LiveMode.Stable
 
     val raid = RaidCountdown(viewModelScope) { target -> switchChannel(target) }
 
@@ -128,6 +132,10 @@ class PlayerViewModel(
     /** Screen became visible (ON_START). Idempotent. */
     fun start() {
         if (lifecycle.isActive) return
+        // The player is built for the Live mode in force right now; the setting applies to the next stream opened.
+        modeAtStart = PlayerProfile.liveMode
+        PlayerProfile.forLive = true
+        _ui.update { it.copy(liveMode = modeAtStart) }
         lifecycle.start()
         startTicker()
         load(_ui.value.login)
@@ -145,7 +153,7 @@ class PlayerViewModel(
     fun switchChannel(login: String) {
         raid.reset()
         channelId.value = null
-        _ui.update { PlayerUi(login = login, displayName = login, quality = it.quality) }
+        _ui.update { PlayerUi(login = login, displayName = login, quality = it.quality, liveMode = modeAtStart) }
         pendingQuality = _ui.value.quality
         if (lifecycle.isActive) load(login)
     }
@@ -206,15 +214,7 @@ class PlayerViewModel(
                 val item = MediaItem.Builder()
                     .setUri(stream.masterUrl)
                     .setMimeType(MimeTypes.APPLICATION_M3U8)
-                    .setLiveConfiguration(
-                        MediaItem.LiveConfiguration.Builder()
-                            .setTargetOffsetMs(3_000)
-                            .setMinOffsetMs(1_500)
-                            .setMaxOffsetMs(8_000)
-                            .setMinPlaybackSpeed(0.95f)
-                            .setMaxPlaybackSpeed(1.05f)
-                            .build(),
-                    )
+                    .setLiveConfiguration(LiveOffsets.configFor(modeAtStart))
                     .build()
                 p.setMediaItem(item)
                 p.prepare()
@@ -231,11 +231,11 @@ class PlayerViewModel(
     }
 
     private suspend fun resolve(login: String) = try {
-        playback.resolve(login, vault.currentWebSession())
+        playback.resolve(login, vault.currentWebSession(), lowLatency = modeAtStart == LiveMode.LowLatency)
     } catch (e: WebSessionRejectedException) {
         // The linked session is dead: flag it in Settings and carry on anonymously.
         vault.setWebSessionExpired(true)
-        playback.resolve(login, null)
+        playback.resolve(login, null, lowLatency = modeAtStart == LiveMode.LowLatency)
     }
 
     private fun startTicker() {
@@ -256,4 +256,29 @@ class PlayerViewModel(
     private companion object {
         const val AUTO = "\u0000auto"
     }
+}
+
+/** Where playback sits behind live, per Live mode. */
+@OptIn(UnstableApi::class)
+object LiveOffsets {
+    fun configFor(mode: LiveMode): MediaItem.LiveConfiguration = when (mode) {
+        // About 12-14 s behind live; barely any speed change, so the offset only drifts back slowly.
+        LiveMode.Stable -> MediaItem.LiveConfiguration.Builder()
+            .setTargetOffsetMs(13_000)
+            .setMinOffsetMs(12_000)
+            .setMaxOffsetMs(14_000)
+            .setMinPlaybackSpeed(0.97f)
+            .setMaxPlaybackSpeed(1.03f)
+            .build()
+        // About 3-5 s behind live, catching up with up to 8 % speed-up.
+        LiveMode.LowLatency -> MediaItem.LiveConfiguration.Builder()
+            .setTargetOffsetMs(4_000)
+            .setMinOffsetMs(3_000)
+            .setMaxOffsetMs(6_000)
+            .setMinPlaybackSpeed(0.95f)
+            .setMaxPlaybackSpeed(1.08f)
+            .build()
+    }
+
+    fun targetSeconds(mode: LiveMode): Int = if (mode == LiveMode.Stable) 13 else 4
 }

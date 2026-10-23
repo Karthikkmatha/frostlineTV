@@ -155,6 +155,7 @@ class VodPlayerViewModel(
 
     fun start() {
         if (lifecycle.isActive) return
+        PlayerProfile.forLive = false // VODs always use the stable buffer profile
         lifecycle.start()
         startTicker()
         load(startAt = null)

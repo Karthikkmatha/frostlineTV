@@ -30,7 +30,7 @@ class WebSessionRejectedException : IOException("Web session rejected")
 
 interface PlaybackResolver {
     /** [webSession] is the `auth-token` value, sent as `Authorization: OAuth` to GQL only. */
-    suspend fun resolve(login: String, webSession: String?): ResolvedStream
+    suspend fun resolve(login: String, webSession: String?, lowLatency: Boolean = true): ResolvedStream
 }
 
 internal class TwitchPlaybackResolver(
@@ -44,7 +44,7 @@ internal class TwitchPlaybackResolver(
 ) : PlaybackResolver {
     private val json = Json { ignoreUnknownKeys = true }
 
-    override suspend fun resolve(login: String, webSession: String?): ResolvedStream = withContext(Dispatchers.IO) {
+    override suspend fun resolve(login: String, webSession: String?, lowLatency: Boolean): ResolvedStream = withContext(Dispatchers.IO) {
         val (value, sig) = accessToken(login.lowercase(), webSession)
         val url = usherBase.toHttpUrl().newBuilder()
             .addPathSegments("api/channel/hls/${login.lowercase()}.m3u8")
@@ -52,7 +52,7 @@ internal class TwitchPlaybackResolver(
             .addQueryParameter("token", value)
             .addQueryParameter("allow_source", "true")
             .addQueryParameter("allow_audio_only", "true")
-            .addQueryParameter("fast_bread", "true")
+            .apply { if (lowLatency) addQueryParameter("fast_bread", "true") } // the low-latency playlist
             .addQueryParameter("playlist_include_framerate", "true")
             .addQueryParameter("player_backend", "mediaplayer")
             .addQueryParameter("supported_codecs", "h264")

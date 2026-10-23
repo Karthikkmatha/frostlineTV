@@ -1,6 +1,7 @@
 package tv.frostline.core.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -68,4 +69,18 @@ fun rememberHasFocus(): Pair<Boolean, Modifier> {
 fun FocusRequester.tryFocus(): Boolean {
     val result: Any? = runCatching { requestFocus() }.getOrNull()
     return result == true || result == Unit
+}
+
+/**
+ * The one focus style of the app: a 3 dp violet (#8F74E8) ring drawn over the element whenever it, or something inside
+ * it, has focus. Components pair it with the lighter focused surface ([FrostColors.SurfaceFocused]) in their own colours.
+ * Apply it to the outside of a clickable surface so the ring can never be hidden by the surface's own content.
+ */
+@Composable
+fun Modifier.frostFocus(shape: androidx.compose.ui.graphics.Shape = CardShape): Modifier {
+    var focused by remember { mutableStateOf(false) }
+    val enabled = LocalFocusRingEnabled.current
+    return this
+        .onFocusChanged { focused = it.hasFocus }
+        .then(if (focused && enabled) Modifier.border(3.dp, FrostColors.Violet, shape) else Modifier)
 }

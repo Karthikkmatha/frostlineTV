@@ -22,6 +22,7 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         container = AppContainer(this)
         container.twitch.tokenManager.startBackgroundRefresh(appScope)
+        appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
         // App open: download all global emote files and pre-decode the global animations in the background.
         val engine = tv.frostline.feature.chat.EmoteEngine.init(this)
         appScope.launch {

@@ -54,6 +54,15 @@ class PlaybackResolverTest {
         assertTrue(r.masterUrl.contains("sig=sig123"))
     }
 
+    @Test fun lowLatencyAsksForTheFastPlaylistAndStableDoesNot() = runBlocking {
+        gql.enqueue(tokenReply()); gql.enqueue(tokenReply())
+        usher.enqueue(MockResponse().setBody(master)); usher.enqueue(MockResponse().setBody(master))
+        resolver().resolve("ch", null, lowLatency = true)
+        assertEquals("true", usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
+        resolver().resolve("ch", null, lowLatency = false)
+        assertNull(usher.takeRequest().requestUrl!!.queryParameter("fast_bread"))
+    }
+
     @Test fun webSessionGoesToGqlOnlyAsOAuth() = runBlocking {
         gql.enqueue(tokenReply())
         usher.enqueue(MockResponse().setBody(master))

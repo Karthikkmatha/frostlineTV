@@ -30,6 +30,26 @@ class LiveBadgeTest {
     }
 }
 
+class LiveModeConfigTest {
+    @Test fun stableSitsTwelveToFourteenSecondsBehind() {
+        val c = LiveOffsets.configFor(tv.frostline.core.data.LiveMode.Stable)
+        assertEquals(13_000L, c.targetOffsetMs)
+        assertEquals(12_000L, c.minOffsetMs)
+        assertEquals(14_000L, c.maxOffsetMs)
+    }
+
+    @Test fun lowLatencyTargetsAboutFourSeconds() {
+        val c = LiveOffsets.configFor(tv.frostline.core.data.LiveMode.LowLatency)
+        assertEquals(4_000L, c.targetOffsetMs)
+        assertEquals(3_000L, c.minOffsetMs)
+    }
+
+    @Test fun stableBadgeCallsThirteenSecondsLiveNotBehind() {
+        assertEquals(LiveState.LowLatency, liveBadge(13_000, STABLE_EDGE_MS).state)
+        assertEquals(LiveState.Behind, liveBadge(13_000).state)
+    }
+}
+
 class MetricsAccumulatorTest {
     private var now = 1_000L
     private val m = MetricsAccumulator { now }

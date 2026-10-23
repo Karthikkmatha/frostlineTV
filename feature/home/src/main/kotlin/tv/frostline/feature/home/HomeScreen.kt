@@ -12,8 +12,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -26,6 +28,7 @@ private val RailItems = listOf(
     RailItem(HomeSection.Settings.id, HomeSection.Settings.label, R.drawable.ic_settings),
 )
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
@@ -34,7 +37,8 @@ fun HomeScreen(
     onOpenChannelPage: (String) -> Unit = {},
     /** "Continue watching": a past broadcast, by video id. */
     onOpenVod: (String) -> Unit = {},
-    settingsContent: @Composable () -> Unit,
+    /** Receives the requester for the first focusable item of Settings (Right from the rail lands there). */
+    settingsContent: @Composable (FocusRequester) -> Unit,
 ) {
     val section by viewModel.section.collectAsStateWithLifecycle()
     var railFocused by remember { mutableStateOf(false) }
@@ -51,7 +55,11 @@ fun HomeScreen(
                 HomeSection.Following -> FollowingContent(viewModel, onOpenChannel, onOpenChannelPage, onOpenVod)
                 HomeSection.Top -> TopContent(viewModel, onOpenChannel, onOpenChannelPage)
                 HomeSection.Search -> SearchContent(viewModel, onOpenChannel, onOpenChannelPage)
-                HomeSection.Settings -> settingsContent()
+                HomeSection.Settings -> {
+                    val first = remember { FocusRequester() }
+                    // Entering Settings from the rail lands on its first item (Account), not on whatever is nearest.
+                    Box(Modifier.fillMaxSize().focusProperties { enter = { first } }.focusGroup()) { settingsContent(first) }
+                }
             }
         }
         SideRail(

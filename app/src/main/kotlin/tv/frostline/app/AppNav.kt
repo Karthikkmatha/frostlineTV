@@ -139,7 +139,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                     onOpenChannel = { login -> nav.navigate("player/$login") },
                     onOpenChannelPage = { login -> nav.navigate("channel/$login") },
                     onOpenVod = { id -> nav.navigate("vod/$id") },
-                    settingsContent = {
+                    settingsContent = { firstFocus ->
                         val account: AccountViewModel = viewModel(
                             factory = viewModelFactory {
                                 initializer {
@@ -152,6 +152,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                             versionName = BuildConfig.VERSION_NAME,
                             onLinkWebSession = { nav.navigate(LINK_WEB) },
                             onSignIn = { nav.navigate(SIGN_IN) },
+                            firstFocus = firstFocus,
                         )
                     },
                 )

@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -22,6 +23,14 @@ data class ChatSettings(
     val animatedEmotes: Boolean = true,
 )
 
+/** Settings > Playback > Live mode. Applies the next time a stream is opened. */
+enum class LiveMode(val label: String) {
+    /** About 12-14 s behind live with 8-15 s of video buffered and steady Auto quality: no rebuffering. */
+    Stable("Stable"),
+    /** Twitch's low-latency playlist, about 3-5 s behind live with a small buffer and speed catch-up. */
+    LowLatency("Low latency"),
+}
+
 /** Plain (non-secret) app settings. */
 class SettingsStore(private val store: DataStore<Preferences>) {
     /** Follow raids automatically after a 10 s notice. Default on. */
@@ -35,6 +44,8 @@ class SettingsStore(private val store: DataStore<Preferences>) {
 
     /** Shows the measured UI frame rate in the debug overlay. Default off. */
     val showFps: Flow<Boolean> = store.data.map { it[SHOW_FPS] ?: false }
+
+    val liveMode: Flow<LiveMode> = store.data.map { p -> LiveMode.entries.firstOrNull { it.name == p[LIVE_MODE] } ?: LiveMode.Stable }
 
     val chat: Flow<ChatSettings> = store.data.map { it.toChat() }
 
@@ -63,6 +74,10 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         animatedEmotes = this[CHAT_ANIMATED] ?: true,
     )
 
+    suspend fun setLiveMode(value: LiveMode) {
+        store.edit { it[LIVE_MODE] = value.name }
+    }
+
     suspend fun setFollowRaids(value: Boolean) {
         store.edit { it[FOLLOW_RAIDS] = value }
     }
@@ -80,6 +95,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
     }
 
     private companion object {
+        val LIVE_MODE = stringPreferencesKey("live_mode_v1")
         val AUTO_CLAIM = booleanPreferencesKey("points_auto_claim_v1")
         val SHOW_FPS = booleanPreferencesKey("debug_fps_v1")
         val CHAT_ANIMATED = booleanPreferencesKey("chat_animated_emotes_v1")

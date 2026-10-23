@@ -76,3 +76,12 @@ class StageFiveSettingsTest {
         assertEquals(false, store.autoClaimPoints.first())
     }
 }
+
+class LiveModeSettingsTest {
+    @Test fun stableIsTheDefaultAndLowLatencyPersists() = runTest {
+        val store = SettingsStore(InMemoryPreferencesStore())
+        assertEquals(LiveMode.Stable, store.liveMode.first())
+        store.setLiveMode(LiveMode.LowLatency)
+        assertEquals(LiveMode.LowLatency, store.liveMode.first())
+    }
+}
