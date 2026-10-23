@@ -143,13 +143,14 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         val account: AccountViewModel = viewModel(
                             factory = viewModelFactory {
                                 initializer {
-                                    AccountViewModel(container.vault, container.twitch.tokenManager, container.webSessionValidator, container.settings)
+                                    AccountViewModel(container.vault, container.twitch.tokenManager, container.webSessionValidator, container.settings, container.cacheControl)
                                 }
                             },
                         )
                         SettingsScreen(
                             account,
                             versionName = BuildConfig.VERSION_NAME,
+                            commit = BuildConfig.GIT_HASH,
                             onLinkWebSession = { nav.navigate(LINK_WEB) },
                             onSignIn = { nav.navigate(SIGN_IN) },
                             firstFocus = firstFocus,

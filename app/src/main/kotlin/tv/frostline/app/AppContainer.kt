@@ -47,6 +47,19 @@ class AppContainer(context: Context) {
         return me.id
     }
 
+    /** Settings > Clear image and emote cache: Coil's thumbnails/avatars and the emote files. */
+    val cacheControl = object : tv.frostline.feature.auth.CacheControl {
+        private val dirs get() = listOf(context.cacheDir.resolve("images"), context.cacheDir.resolve(tv.frostline.feature.chat.EmoteEngine.DIR_NAME))
+        override fun sizeBytes(): Long = dirs.sumOf { tv.frostline.feature.chat.EmoteEngine.dirBytes(it) }
+        override suspend fun clear() {
+            val loader = coil3.SingletonImageLoader.get(context)
+            loader.memoryCache?.clear()
+            loader.diskCache?.clear()
+            tv.frostline.feature.chat.EmoteEngine.current?.clearAll()
+            dirs.forEach { d -> d.listFiles()?.forEach { it.deleteRecursively() } }
+        }
+    }
+
     // ---- chat ----
     val emoteRepository = EmoteRepository(OkHttpTextFetcher())
     private val ircTransports = OkHttpIrcTransportFactory()

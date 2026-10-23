@@ -2,11 +2,13 @@ package tv.frostline.feature.auth
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.data.LiveMode
 import tv.frostline.core.data.SettingsStore
@@ -14,6 +16,17 @@ import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.TokenManager
 import tv.frostline.core.twitchinternal.ProbeResult
 import tv.frostline.core.twitchinternal.WebSessionValidator
+
+/** The image and emote caches, as Settings sees them. */
+interface CacheControl {
+    fun sizeBytes(): Long
+    suspend fun clear()
+
+    object None : CacheControl {
+        override fun sizeBytes() = 0L
+        override suspend fun clear() {}
+    }
+}
 
 data class AccountUi(
     val login: String? = null,
@@ -26,6 +39,8 @@ data class AccountUi(
     val showFps: Boolean = false,
     val autoClaimPoints: Boolean = true,
     val liveMode: LiveMode = LiveMode.Stable,
+    /** Size of the image and emote caches, or -1 while not measured yet. */
+    val cacheBytes: Long = -1L,
     val chat: ChatSettings = ChatSettings(),
 )
 
@@ -34,7 +49,10 @@ class AccountViewModel(
     private val tokenManager: TokenManager,
     private val validator: WebSessionValidator,
     private val settings: SettingsStore,
+    private val cache: CacheControl = CacheControl.None,
 ) : ViewModel() {
+    private val cacheBytes = kotlinx.coroutines.flow.MutableStateFlow(-1L)
+
     private val account = combine(vault.tokens, vault.webSession, vault.webSessionExpired, vault.guest) { t, w, e, g ->
         AccountUi(login = t?.login, signedIn = t != null, guest = g && t == null, webLinked = w != null, webExpired = w != null && e)
     }
@@ -43,13 +61,27 @@ class AccountViewModel(
         a.copy(followRaids = raids, debugOverlay = dbg, chat = chat)
     }.combine(settings.showFps) { ui, fps -> ui.copy(showFps = fps) }
         .combine(settings.autoClaimPoints) { ui, claim -> ui.copy(autoClaimPoints = claim) }
-        .combine(settings.liveMode) { ui, mode -> ui.copy(liveMode = mode) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
+        .combine(settings.liveMode) { ui, mode -> ui.copy(liveMode = mode) }
+        .combine(cacheBytes) { ui, bytes -> ui.copy(cacheBytes = bytes) }.stateIn(viewModelScope, SharingStarted.Eagerly, AccountUi())
 
     init {
+        refreshCache()
         // Re-check a stored web session when Settings opens so an expired one is flagged.
         viewModelScope.launch {
             val stored = vault.currentWebSession() ?: return@launch
             if (validator.validate(stored) == ProbeResult.Invalid) vault.setWebSessionExpired(true)
+        }
+    }
+
+    fun refreshCache() {
+        viewModelScope.launch { cacheBytes.value = withContext(Dispatchers.IO) { cache.sizeBytes() } }
+    }
+
+    /** Settings > Clear image and emote cache. */
+    fun clearCache() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { cache.clear() }
+            cacheBytes.value = withContext(Dispatchers.IO) { cache.sizeBytes() }
         }
     }
 

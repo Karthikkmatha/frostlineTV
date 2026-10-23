@@ -8,7 +8,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -34,12 +38,15 @@ fun SettingsScreen(
     versionName: String,
     onLinkWebSession: () -> Unit,
     onSignIn: () -> Unit,
+    commit: String = "",
     firstFocus: FocusRequester = FocusRequester(),
 ) {
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     SettingsContent(
         ui = ui,
         versionName = versionName,
+        commit = commit,
+        onClearCache = viewModel::clearCache,
         onLinkWebSession = onLinkWebSession,
         onSignIn = onSignIn,
         onSignOut = viewModel::signOut,
@@ -69,10 +76,12 @@ fun SettingsContent(
     onAutoClaim: (Boolean) -> Unit = {},
     onLiveMode: (LiveMode) -> Unit = {},
     firstFocus: FocusRequester = FocusRequester(),
+    onClearCache: () -> Unit = {},
+    commit: String = "",
 ) {
     LazyColumn(
         // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
-        Modifier.fillMaxSize().padding(start = 16.dp, end = 48.dp, top = 27.dp),
+        Modifier.fillMaxSize().padding(start = 16.dp, end = 48.dp, top = 27.dp).testTag("settings_list"),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { Heading("Account") }
@@ -87,8 +96,20 @@ fun SettingsContent(
             )
         }
         item {
-            if (ui.signedIn) TvButton("Sign out", onClick = onSignOut, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_out"))
-            else TvButton("Sign in", onClick = onSignIn, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_in"))
+            var confirming by remember { mutableStateOf(false) }
+            val cancel = remember { FocusRequester() }
+            LaunchedEffect(confirming) { if (confirming) runCatching { cancel.requestFocus() } }
+            if (ui.signedIn && confirming) {
+                androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Text("Sign out of this account?", fontSize = 14.sp, color = FrostColors.OnSurface)
+                    TvButton("Cancel", onClick = { confirming = false }, modifier = Modifier.focusRequester(cancel).testTag("btn_sign_out_cancel"))
+                    TvButton("Yes, sign out", onClick = { confirming = false; onSignOut() }, modifier = Modifier.testTag("btn_sign_out_confirm"))
+                }
+            } else if (ui.signedIn) {
+                TvButton("Sign out", onClick = { confirming = true }, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_out"))
+            } else {
+                TvButton("Sign in", onClick = onSignIn, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_in"))
+            }
         }
         item {
             val status = when {
@@ -220,6 +241,18 @@ fun SettingsContent(
         }
 
         item { Spacer(Modifier.height(12.dp)) }
+        item { Heading("Storage") }
+        item {
+            TvChoiceRow(
+                label = "Clear image and emote cache",
+                value = if (ui.cacheBytes >= 0) formatBytes(ui.cacheBytes) else "...",
+                description = "Removes downloaded thumbnails, avatars and emote files. They download again when needed.",
+                onClick = onClearCache,
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_clear_cache"),
+            )
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
         item { Heading("Developer") }
         item {
             TvToggleRow(
@@ -243,7 +276,7 @@ fun SettingsContent(
         item { Spacer(Modifier.height(12.dp)) }
         item { Heading("About") }
         item { Text(brandName(), fontSize = 16.sp, color = FrostColors.OnSurface) }
-        item { Text("Version $versionName", fontSize = 13.sp, color = FrostColors.Muted) }
+        item { Text("Version $versionName" + if (commit.isNotBlank()) " (commit $commit)" else "", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("about_version")) }
         item { Text("An independent Twitch client for Android TV. Not affiliated with Twitch.", fontSize = 13.sp, color = FrostColors.Muted) }
         item { Spacer(Modifier.height(27.dp)) }
     }
@@ -251,3 +284,9 @@ fun SettingsContent(
 
 @Composable
 private fun Heading(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+
+internal fun formatBytes(b: Long): String = when {
+    b < 1024 -> "$b B"
+    b < 1024 * 1024 -> "${b / 1024} KB"
+    else -> "%.1f MB".format(b / 1048576.0)
+}

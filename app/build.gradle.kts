@@ -37,6 +37,8 @@ if (clientId.isEmpty() || clientSecret.isEmpty()) {
             "entry. Keys present in the file: ${env.keys.sorted()}",
     )
 }
+// Short commit hash of the build: app/commit.txt (written when the sources are synced to the build machine, which has no .git).
+val commitShort: String = File(projectDir, "commit.txt").takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() } ?: "dev"
 fun q(s: String) = "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
@@ -46,9 +48,10 @@ android {
         applicationId = "tv.frostline.app"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 6
+        versionName = "0.6.0"
         ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
+        buildConfigField("String", "GIT_HASH", q(commitShort))
         buildConfigField("String", "TWITCH_CLIENT_ID", q(clientId))
         buildConfigField("String", "TWITCH_CLIENT_SECRET", q(clientSecret))
     }
@@ -69,6 +72,13 @@ android {
         release {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("debugKeystore")
+        }
+        // Same as release but shrunk with R8 and proguard-rules.pro: checks that the keep rules cover serialization, Retrofit and Media3.
+        create("releaseMinified") {
+            initWith(getByName("release"))
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            matchingFallbacks += "release"
         }
     }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

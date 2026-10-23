@@ -2,6 +2,9 @@ package tv.frostline.feature.auth
 
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -92,5 +95,39 @@ class AuthUiTest {
         settings(AccountUi(signedIn = true, followRaids = true), raids = { value = it })
         rule.onNodeWithTag("toggle_raids").performScrollTo().activate()
         assertEquals(false, value)
+    }
+
+    @Test fun signOutAsksForConfirmationFirst() {
+        var signedOut = 0
+        rule.setContent {
+            FrostlineTheme { SettingsContent(AccountUi(login = "me", signedIn = true), "0.6.0", {}, {}, { signedOut++ }, {}, {}, {}) }
+        }
+        rule.onNodeWithTag("btn_sign_out").activate()
+        assertEquals(0, signedOut)
+        rule.onNodeWithTag("btn_sign_out_cancel").assertIsFocused() // the safe choice has focus
+        rule.onNodeWithTag("btn_sign_out_cancel").activate()
+        rule.onNodeWithTag("btn_sign_out").assertIsDisplayed()
+        rule.onNodeWithTag("btn_sign_out").activate()
+        rule.onNodeWithTag("btn_sign_out_confirm").activate()
+        assertEquals(1, signedOut)
+    }
+
+    @Test fun aboutShowsVersionAndCommitAndCacheSizeIsShown() {
+        var cleared = 0
+        rule.setContent {
+            FrostlineTheme {
+                SettingsContent(
+                    AccountUi(signedIn = true, cacheBytes = 3_145_728), "0.6.0", {}, {}, {}, {}, {}, {},
+                    onClearCache = { cleared++ }, commit = "abc1234",
+                )
+            }
+        }
+        rule.onNodeWithTag("settings_list").performScrollToNode(hasTestTag("about_version"))
+        rule.onNodeWithTag("about_version").assertIsDisplayed()
+        rule.onNodeWithTag("about_version").assertTextEquals("Version 0.6.0 (commit abc1234)")
+        rule.onNodeWithTag("settings_list").performScrollToNode(hasTestTag("choice_clear_cache"))
+        rule.onNodeWithText("3.0 MB").assertExists()
+        rule.onNodeWithTag("choice_clear_cache").activate()
+        assertEquals(1, cleared)
     }
 }
