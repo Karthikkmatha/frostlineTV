@@ -15,7 +15,7 @@ import okio.Path.Companion.toOkioPath
  */
 object ChatImages {
     /** Upper bound of the decoded-image memory cache. */
-    const val MEMORY_CACHE_BYTES = 32L * 1024 * 1024
+    const val MEMORY_CACHE_BYTES = 16L * 1024 * 1024
 
     fun loader(context: Context): ImageLoader {
         val app = context.applicationContext

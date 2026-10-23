@@ -17,6 +17,7 @@ dependencies {
     api(libs.compose.ui)
     api(libs.compose.foundation)
     api(libs.androidx.tv.material)
+    implementation(libs.androidx.activity.compose)
     api(libs.coil.compose)
     api(libs.coil.network.okhttp)
     testImplementation(libs.junit)

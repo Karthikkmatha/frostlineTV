@@ -14,6 +14,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import tv.frostline.core.ui.tryFocus
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
@@ -55,6 +62,8 @@ private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridE
 fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit, onOpenVod: (String) -> Unit) {
     val st by vm.following.collectAsStateWithLifecycle()
     val resume by vm.resume.collectAsStateWithLifecycle()
+    // Up from Continue watching goes to the last Live now card, not to the side rail.
+    val lastLive = remember { androidx.compose.ui.focus.FocusRequester() }
     val entries = remember(st, resume) {
         buildList {
             if (st.needsSignIn) {
@@ -67,10 +76,14 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
                     st.error != null -> addAll(retry("f", st.error!!, vm::loadFollowing))
                     st.live.isEmpty() && st.loading -> { add(note("f:loading", "Loading your follows...")); addAll(skeletons("f", 4)) }
                     st.live.isEmpty() -> add(note("f:none", "None of the channels you follow are live."))
-                    else -> st.live.forEach { s ->
+                    else -> st.live.forEachIndexed { i, s ->
+                        val last = i == st.live.lastIndex
                         add(
                             GridEntry("live:${s.userId}", fullSpan = true) { m ->
-                                WideStreamCard(s, st.avatars[s.userId], m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) }
+                                val card: @Composable () -> Unit = {
+                                    WideStreamCard(s, st.avatars[s.userId], m, onLongClick = { vm.onLeaving(); onOpenChannelPage(s.userLogin) }) { vm.onLeaving(); onOpen(s.userLogin) }
+                                }
+                                if (last) androidx.compose.foundation.layout.Box(Modifier.focusRequester(lastLive).focusGroup()) { card() } else card()
                             },
                         )
                     }
@@ -81,7 +94,9 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
                         GridEntry("resume:row", fullSpan = true) { m ->
                             // Same start inset as the Live now cards (16 dp), plus room for the focus ring and scale so the first card is not clipped.
                             LazyRow(
-                                m.focusGroup(),
+                                m.focusGroup().onPreviewKeyEvent { e ->
+                                    if (st.live.isNotEmpty() && e.key == Key.DirectionUp && e.type == KeyEventType.KeyDown) { lastLive.tryFocus(); true } else false
+                                },
                                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                             ) {

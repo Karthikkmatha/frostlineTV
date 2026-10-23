@@ -150,7 +150,10 @@ class EmoteEngine(
             var n = 0
             while (isActive) {
                 val t = clockMs()
+                val prev = mode
                 mode = tracker.update(t)
+                // Fast chat shows stills only: nothing animated is held, and its memory is freed until the rate drops.
+                if (mode == EmoteMode.Fast && prev != EmoteMode.Fast) strips.clear()
                 ratePerSec = tracker.rate(t)
                 if (n++ % 5 == 0) diskBytes = dirBytes(dir)
                 delay(1_000)
@@ -271,6 +274,7 @@ class EmoteEngine(
             e.animated = true
             val strip = sample(d)
             if (strip == null) { e.animated = false; return }
+            if (mode == EmoteMode.Fast || !active) return // chat got fast (or hidden) while this was sampling: drop it
             e.strip = strip
             strips.put(e.url, e)
             e.bump()

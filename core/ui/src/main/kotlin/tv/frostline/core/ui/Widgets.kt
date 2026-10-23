@@ -248,12 +248,17 @@ fun TvStepperRow(
     modifier: Modifier = Modifier,
     description: String? = null,
 ) {
+    // OK enters adjust mode (Left/Right change the value; OK or Back leaves it). Otherwise Left/Right move focus as usual,
+    // so the row is never a trap.
+    var adjusting by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = adjusting) { adjusting = false }
     androidx.tv.material3.Surface(
-        onClick = {},
+        onClick = { adjusting = !adjusting },
         modifier = modifier
             .fillMaxWidth()
+            .onFocusChanged { if (!it.hasFocus) adjusting = false }
             .onPreviewKeyEvent { e ->
-                if (e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                if (!adjusting || e.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 when (e.key) {
                     Key.DirectionLeft -> { onStep(-1, e.nativeKeyEvent.repeatCount); true }
                     Key.DirectionRight -> { onStep(+1, e.nativeKeyEvent.repeatCount); true }
@@ -280,7 +285,7 @@ fun TvStepperRow(
                 if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
             }
             Text(
-                "\u25C0  $value  \u25B6",
+                if (adjusting) "\u25C0  $value  \u25B6" else "$value  (OK to adjust)",
                 fontSize = 13.sp,
                 color = FrostColors.OnSurface,
                 modifier = Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 4.dp),

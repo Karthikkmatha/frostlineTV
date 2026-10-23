@@ -255,9 +255,12 @@ internal fun ChatPanel(
                     .focusRequester(req).testTag(tag),
             )
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height },
+        // Wraps to a second line when the panel is narrow (20% of the screen), so no button is ever clipped off-panel.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height }.testTag("chat_button_row"),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             for (req in rowOrder) when (req) {
                 f.emotes -> rowButton("Emotes", req, "chat_emotes_btn") { actions.loadPicker(); c.pickerOpen = true }

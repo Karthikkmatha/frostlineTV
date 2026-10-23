@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -303,7 +304,8 @@ class IrcSession(
         val wait = reconnectDelayMs(attempt, jitter())
         retry?.cancel()
         retry = scope.launch {
-            delay(wait)
+            // The network coming back ends the wait early.
+            kotlinx.coroutines.withTimeoutOrNull(wait) { tv.frostline.core.twitch.NetworkRetry.available.first() }
             if (running) connect()
         }
     }

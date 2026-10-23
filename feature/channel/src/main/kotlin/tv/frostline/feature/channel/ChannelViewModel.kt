@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tv.frostline.core.twitch.NetworkRetry
 import tv.frostline.core.twitch.ClipPeriod
 import tv.frostline.core.twitch.HelixClip
 import tv.frostline.core.twitch.HelixRepository
@@ -88,8 +89,28 @@ class ChannelViewModel(
     private var headerJob: Job? = null
     private val listJobs = HashMap<String, Job>()
 
+    private var attempt = 0
+    private var retryJob: kotlinx.coroutines.Job? = null
+
+    /** Friendly text for a network error plus the next automatic retry (2 s, 5 s, 15 s, then 30 s). */
+    private fun failure(e: Exception, fallback: String): String {
+        if (!NetworkRetry.isNetworkError(e)) return e.message ?: fallback
+        val n = attempt++
+        retryJob?.cancel()
+        retryJob = scope.launch { kotlinx.coroutines.delay(NetworkRetry.delayMs(n)); retry() }
+        return NetworkRetry.MESSAGE
+    }
+
     init {
         load()
+    }
+
+    /** Collected by the screen: when the network comes back, retry whatever failed. Never returns. */
+    suspend fun watchNetwork() {
+        NetworkRetry.available.collect {
+            val s = _state.value
+            if (s.error != null || s.currentVideos.error != null || s.currentClips.error != null) retry()
+        }
     }
 
     fun load() {
@@ -111,7 +132,7 @@ class ChannelViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message ?: "Could not load the channel") }
+                _state.update { it.copy(loading = false, error = failure(e, "Could not load the channel")) }
             }
         }
     }
@@ -172,6 +193,7 @@ class ChannelViewModel(
             ChannelTab.Clips -> _state.update { it.copy(clips = it.clips + (s.clipPeriod to s.currentClips.copy(error = null))) }
             ChannelTab.About -> if (s.user == null) load()
         }
+        if (s.error != null && s.user == null) { load(); return }
         loadMore()
     }
 
@@ -190,7 +212,7 @@ class ChannelViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                update { it.copy(loading = false, error = e.message ?: "Could not load") }
+                update { it.copy(loading = false, error = failure(e, "Could not load")) }
             }
         }
     }

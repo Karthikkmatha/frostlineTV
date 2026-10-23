@@ -21,6 +21,7 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        tv.frostline.core.twitch.NetworkRetry.start(this)
         container.twitch.tokenManager.startBackgroundRefresh(appScope)
         appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
         // With a linked web session, capture the integrity token at start and keep it fresh (it refreshes itself when it expires).

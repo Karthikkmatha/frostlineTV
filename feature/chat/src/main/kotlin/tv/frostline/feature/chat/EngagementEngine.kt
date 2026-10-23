@@ -181,11 +181,15 @@ class EngagementEngine(
     private suspend fun userTopic(s: EngagementSession) {
         try {
             setDebug("hermes", "connecting")
+            // The topic must name the user of the web session, which can differ from the Helix sign-in.
+            val webId = runCatching { api.webUserId(s.authToken) }.getOrNull()
+            val uid = webId ?: s.userId
+            if (webId != null && webId != s.userId) setDebug("hermes", "connecting (web user differs from sign-in)")
             kotlinx.coroutines.coroutineScope {
                 var gotEvent = false
                 // Real connection state (welcome, subscribed, rejected, failure class / HTTP status) until an event arrives.
                 launch { hermes.status.collect { st -> if (!gotEvent && st != "idle") setDebug("hermes", st) } }
-                hermes.events(listOf(PointsEvents.topic(s.userId)), s.authToken).collect { ev ->
+                hermes.events(listOf(PointsEvents.topic(uid)), s.authToken).collect { ev ->
                     gotEvent = true
                     lastUserEventAt = clock()
                     setDebug("hermes", "ok (user topic)")

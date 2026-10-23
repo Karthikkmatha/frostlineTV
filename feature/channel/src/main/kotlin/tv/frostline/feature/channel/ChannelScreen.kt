@@ -99,6 +99,7 @@ fun ChannelScreen(
     onOpenClip: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(viewModel) { viewModel.watchNetwork() }
     val actions = remember(viewModel) {
         ChannelActions(
             onWatchLive = { onWatchLive(viewModel.state.value.login) },

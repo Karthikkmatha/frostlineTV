@@ -121,6 +121,13 @@ class PlayerViewModel(
     )
 
     init {
+        // Playback failed (or never started) and the network is back: rebuild the source.
+        viewModelScope.launch {
+            tv.frostline.core.twitch.NetworkRetry.available.collect {
+                val u = _ui.value
+                if (u.error != null && !u.offline) refresh()
+            }
+        }
         viewModelScope.launch {
             // Raids: only while a channel id is known and the setting is on.
             combine(channelId, settings.followRaids) { id, on -> if (on) id else null }.collectLatest { id ->
@@ -233,7 +240,7 @@ class PlayerViewModel(
             } catch (e: tv.frostline.core.twitchinternal.StreamRestrictedException) {
                 _ui.update { it.copy(loading = false, error = e.message, errorDetail = e.detail) }
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = e.message ?: "Could not start playback") }
+                _ui.update { it.copy(loading = false, error = tv.frostline.core.twitch.NetworkRetry.userMessage(e, "Could not start playback"), errorDetail = if (tv.frostline.core.twitch.NetworkRetry.isNetworkError(e)) e.javaClass.simpleName else null) }
             }
         }
     }

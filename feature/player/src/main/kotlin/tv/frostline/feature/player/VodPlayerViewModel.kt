@@ -102,6 +102,7 @@ class VodPlayerViewModel(
 
     private var loadJob: Job? = null
     private var tickJob: Job? = null
+    private var netJob: Job? = null
     private var currentVariants: List<StreamVariant> = emptyList()
     private var clipQualities: List<ClipQuality> = emptyList()
     private var pendingQuality: String? = null
@@ -158,11 +159,17 @@ class VodPlayerViewModel(
         PlayerProfile.forLive = false // VODs always use the stable buffer profile
         lifecycle.start()
         startTicker()
+        netJob?.cancel()
+        // Playback failed and the network is back: rebuild the source at the same position.
+        netJob = viewModelScope.launch {
+            tv.frostline.core.twitch.NetworkRetry.available.collect { if (_ui.value.error != null) refresh() }
+        }
         load(startAt = null)
     }
 
     fun stop() {
         loadJob?.cancel()
+        netJob?.cancel()
         tickJob?.cancel()
         skip.cancel()
         lifecycle.stop()

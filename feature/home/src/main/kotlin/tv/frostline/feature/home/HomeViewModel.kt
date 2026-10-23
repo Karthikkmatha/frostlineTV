@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import tv.frostline.core.twitch.NetworkRetry
 import tv.frostline.core.data.ResumeDao
 import tv.frostline.core.data.ResumeEntity
 import tv.frostline.core.twitch.FollowedChannel
@@ -103,9 +104,34 @@ class HomeViewModel(
     private var followingLoadedAt = 0L
     private var searchJob: Job? = null
 
+    private val attempts = HashMap<String, Int>()
+    private val retryJobs = HashMap<String, Job>()
+
     init {
         loadFollowing()
     }
+
+    /** Collected by the screen: when the network comes back, retry whatever failed, now. Never returns. */
+    suspend fun watchNetwork() {
+        NetworkRetry.available.collect {
+            if (_following.value.error != null) loadFollowing()
+            if (_top.value.error != null) loadTop()
+            if (_search.value.error != null) searchNow()
+        }
+    }
+
+
+    /** The message for a failed load; for a network error also schedules the next automatic retry (2 s, 5 s, 15 s, then 30 s). */
+    private fun failed(name: String, e: Exception, fallback: String, again: () -> Unit): String {
+        if (!NetworkRetry.isNetworkError(e)) return e.message ?: fallback
+        val n = attempts[name] ?: 0
+        attempts[name] = n + 1
+        retryJobs[name]?.cancel()
+        retryJobs[name] = viewModelScope.launch { delay(NetworkRetry.delayMs(n)); again() }
+        return NetworkRetry.MESSAGE
+    }
+
+    private fun succeeded(name: String) { attempts.remove(name); retryJobs.remove(name)?.cancel() }
 
     fun select(section: HomeSection) {
         _section.value = section
@@ -143,10 +169,11 @@ class HomeViewModel(
                     _following.update { it.copy(loading = false, offline = offlineChannels(all, live)) }
                 }
                 followingLoadedAt = System.currentTimeMillis()
+                succeeded("following")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _following.update { it.copy(loading = false, error = e.message ?: "Could not load your follows") }
+                _following.update { it.copy(loading = false, error = failed("following", e, "Could not load your follows", ::loadFollowing)) }
             }
         }
     }
@@ -172,10 +199,11 @@ class HomeViewModel(
                     _top.update { it.copy(categories = c) }
                 }
                 _top.update { it.copy(loading = false) }
+                succeeded("top")
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _top.update { it.copy(loading = false, error = e.message ?: "Could not load streams") }
+                _top.update { it.copy(loading = false, error = failed("top", e, "Could not load streams", ::loadTop)) }
             }
         }
     }
@@ -232,11 +260,12 @@ class HomeViewModel(
                 val ch = async { helix.searchChannels(q) }
                 val cat = async { helix.searchCategories(q) }
                 _search.update { it.copy(channels = ch.await(), categories = cat.await(), searched = true, loading = false) }
+                succeeded("search")
             }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            _search.update { it.copy(loading = false, error = e.message ?: "Search failed") }
+            _search.update { it.copy(loading = false, error = failed("search", e, "Search failed", ::searchNow)) }
         }
     }
 

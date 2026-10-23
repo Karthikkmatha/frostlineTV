@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -112,6 +113,15 @@ class ChatFocusTest {
         rule.waitForIdle()
     }
     private fun index() = controller.listState.firstVisibleItemIndex
+
+    @Test fun everyRowButtonStaysInsideAPanelAtTwentyPercent() {
+        show(initial = ChatSettings(widthPct = 20))
+        val panel = rule.onNodeWithTag("chat_panel").fetchSemanticsNode().boundsInRoot
+        for (tag in listOf("chat_emotes_btn", "chat_send_btn", "chat_menu_btn")) {
+            val b = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+            assertTrue("$tag $b outside $panel", b.left >= panel.left - 1 && b.right <= panel.right + 1 && b.bottom <= panel.bottom + 1)
+        }
+    }
 
     // ---- player <-> chat ----
 

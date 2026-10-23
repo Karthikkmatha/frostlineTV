@@ -37,6 +37,9 @@ interface EngagementApi {
     suspend fun predictions(login: String, authToken: String): List<PredictionEvent>
     suspend fun predict(eventId: String, outcomeId: String, points: Long, transactionId: String, authToken: String): ActionResult
 
+    /** The user id of the web session itself (it can differ from the Helix sign-in); null when unknown. Hermes topics need this one. */
+    suspend fun webUserId(authToken: String): String? = null
+
     /** The poll the viewer can currently see, or null. */
     suspend fun poll(login: String, authToken: String): PollInfo?
 
@@ -164,6 +167,10 @@ internal class GqlEngagementApi(
     /** Integrity token + device id captured from the web page; sent with every call. */
     private val integrity: IntegrityProvider = IntegrityProvider.None,
 ) : EngagementApi {
+
+    override suspend fun webUserId(authToken: String): String? = runCatching {
+        post("CurrentUser", "query CurrentUser { currentUser { id } }", buildJsonObject { }, authToken, false)["data"].obj()?.get("currentUser").obj()?.get("id").str()
+    }.getOrNull()
 
     override suspend fun pointsContext(login: String, authToken: String): PointsInfo =
         EngagementParser.points(run("ChannelPointsContext", POINTS_QUERIES, buildJsonObject { put("channelLogin", login) }, authToken))

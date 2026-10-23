@@ -41,6 +41,7 @@ fun HomeScreen(
     settingsContent: @Composable (FocusRequester) -> Unit,
 ) {
     val section by viewModel.section.collectAsStateWithLifecycle()
+    androidx.compose.runtime.LaunchedEffect(viewModel) { viewModel.watchNetwork() }
     var railFocused by remember { mutableStateOf(false) }
     val railRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
