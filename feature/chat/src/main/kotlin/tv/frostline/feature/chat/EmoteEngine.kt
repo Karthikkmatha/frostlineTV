@@ -307,23 +307,23 @@ class EmoteEngine(
             override fun scheduleDrawable(who: Drawable, what: Runnable, `when`: Long) { main.postAtTime(what, who, `when`) }
             override fun unscheduleDrawable(who: Drawable, what: Runnable) { main.removeCallbacks(what, who) }
         }
-        val end = object : Animatable2.AnimationCallback() {
-            override fun onAnimationEnd(drawable: Drawable?) {
-                if (frames.isNotEmpty()) capture(d, w, h, frames)
-                finish()
-            }
-        }
         main.post {
             try {
                 d.callback = cb
                 d.setBounds(0, 0, w, h)
-                d.repeatCount = 0 // play once; the strip is the loop
-                d.registerAnimationCallback(end)
+                // Loop forever and register no AnimationCallback: AnimatedImageDrawable posts its end callbacks to the
+                // main looper and is not thread-safe, so an end event racing an unregister crashes the app.
+                d.repeatCount = AnimatedImageDrawable.REPEAT_INFINITE
                 val t0 = SystemClock.uptimeMillis()
                 val t = object : Runnable {
                     override fun run() {
                         if (finished.get()) return
                         capture(d, w, h, frames)
+                        // The loop is complete when the first frame comes round again after the picture changed.
+                        if (frames.size >= 4 && frames.last().sameAs(frames[0]) && frames.drop(1).dropLast(1).any { !it.sameAs(frames[0]) }) {
+                            frames.removeAt(frames.size - 1)
+                            finish(); return
+                        }
                         if (frames.size >= MAX_FRAMES || SystemClock.uptimeMillis() - t0 > MAX_SAMPLE_MS) finish() else main.postDelayed(this, FRAME_MS)
                     }
                 }
@@ -339,7 +339,6 @@ class EmoteEngine(
             main.post { finish() }
             lastFailure = "sample timeout"
         }
-        main.post { runCatching { d.unregisterAnimationCallback(end) } }
         val out = ArrayList(frames)
         if (out.size < 2) { lastFailure = "sample ${out.size} frame"; return null }
         // A decoder that never advanced gives N identical frames: not an animation.
