@@ -117,7 +117,9 @@ internal fun ChatPanel(
     // is on and the player is playing, and only while an emote is on screen.
     val clockScope = rememberCoroutineScope()
     val clock = remember { EmoteClock(clockScope) }
-    val animate = model.settings.animatedEmotes && model.playerPlaying
+    val engine = EmoteEngine.current
+    // Fast chat shows still frames only; the clock stops with it.
+    val animate = model.settings.animatedEmotes && model.playerPlaying && (engine == null || engine.mode != EmoteMode.Fast || model.replay)
     LaunchedEffect(animate) { clock.setActive(animate) }
     val eng = model.engagement
     val act = actions.engagement
@@ -161,7 +163,10 @@ internal fun ChatPanel(
     }
     LaunchedEffect(c.resizing) { if (c.resizing) f.resize.tryFocus() }
 
-    CompositionLocalProvider(LocalEmoteClock provides if (model.settings.animatedEmotes) clock else null) {
+    CompositionLocalProvider(
+        LocalEmoteClock provides if (model.settings.animatedEmotes) clock else null,
+        LocalEmoteGate provides if (engine != null && !model.replay) engine.chatGate else EmoteGate { true },
+    ) {
     Box(
         modifier
             // Its own layer: new lines and emote frames redraw this panel, not the rest of the window.

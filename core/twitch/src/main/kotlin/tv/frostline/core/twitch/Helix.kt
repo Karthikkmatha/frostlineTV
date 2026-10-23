@@ -113,6 +113,10 @@ interface HelixApi {
         @Query("after") after: String? = null,
     ): Page<HelixEmote>
 
+    /** Twitch's global emotes (Kappa and friends). */
+    @GET("chat/emotes/global")
+    suspend fun globalEmotes(): Page<HelixEmote>
+
     @GET("users")
     suspend fun users(): Page<HelixUser>
 

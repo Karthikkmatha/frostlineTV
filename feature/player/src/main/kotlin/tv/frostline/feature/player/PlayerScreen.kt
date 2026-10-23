@@ -18,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -72,6 +73,13 @@ fun PlayerScreen(
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
     val fps = rememberUiFps(debug && showFps)
+    val emoteLine by produceState("", debug) {
+        while (debug) {
+            value = tv.frostline.feature.chat.EmoteEngine.current?.debugLine().orEmpty()
+            kotlinx.coroutines.delay(1_000)
+        }
+        value = ""
+    }
 
     var controlsVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
@@ -190,7 +198,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = engDebug.map { "engage   $it" })
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = engDebug.map { "engage   $it" } + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))

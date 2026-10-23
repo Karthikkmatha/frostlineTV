@@ -81,3 +81,14 @@ focus when they appear. If the focused banner goes away, focus moves to the list
 trap focus (`exit` is cancelled; every edge is closed). Back steps out of a confirm or result step first, then closes
 the sheet; focus returns to the element that opened it (Rewards button, or the banner; the list if the banner is gone).
 Covered by `EngagementFocusTest`.
+
+## Animated emotes (`EmoteEngine`)
+
+Emote files are downloaded once to `cacheDir/emotes`. Each emote has a still frame (decoded at display size, so nothing pops in blank) and, if
+animated and hot, a `FrameStrip`: the animation sampled once at about 15 fps and then drawn by index from one shared clock, never
+decoded per frame. Strips live in a 40 MB LRU (most used and recently seen); evicted ones fall back to the still. Globals
+(Twitch, 7TV, BTTV, FFZ) are downloaded and pre-decoded when the app opens, a channel's emotes when its stream opens (stills first,
+then animations most-used first, at low priority). Chat rate (messages per second over about 5 s, with 5 s hysteresis) picks the
+mode: slow (under 3/s) all visible emotes animate, busy (3-8/s) the newest 12 lines, fast (over 8/s) still frames only. The emote
+drawer has its own clock and ignores the mode and chat focus. "Animated emotes: Off" overrides everything. The debug overlay shows
+the mode, rate, number of hot animations and the memory and disk cache sizes.

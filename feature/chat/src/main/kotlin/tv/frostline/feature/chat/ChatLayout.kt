@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,10 +79,20 @@ fun ChatLayout(
             )
         }
         if (chatVisible && controller.pickerOpen) {
+            // The drawer has its own clock: it animates whether or not chat has focus and whatever the chat rate is.
+            // Only the setting (Animated emotes: Off) turns it off.
+            val drawerScope = rememberCoroutineScope()
+            val drawerClock = remember { EmoteClock(drawerScope) }
+            LaunchedEffect(model.settings.animatedEmotes) { drawerClock.setActive(model.settings.animatedEmotes) }
+            CompositionLocalProvider(
+                LocalEmoteClock provides if (model.settings.animatedEmotes) drawerClock else null,
+                LocalEmoteGate provides EmoteGate { true },
+            ) {
             EmotePicker(
                 model.picker, controller,
                 Modifier.align(Alignment.BottomEnd).padding(bottom = anchorBottom).fillMaxHeight().width(if (panelWidth > 380.dp) panelWidth else 380.dp),
             )
+            }
         }
 
         val eng = model.engagement

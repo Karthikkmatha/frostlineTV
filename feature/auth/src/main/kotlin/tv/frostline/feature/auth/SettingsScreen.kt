@@ -150,7 +150,7 @@ fun SettingsContent(
             TvChoiceRow(
                 label = "Animated emotes",
                 value = if (ui.chat.animatedEmotes) "On" else "Off (still frame)",
-                description = "Animated emotes play at about 12 frames a second, and only while chat is shown and the video is playing.",
+                description = "Animated emotes play from pre-decoded frames at about 15 frames a second in slow chat, only the newest lines in busy chat, and as still frames in very fast chat. Off overrides everything.",
                 onClick = { onChatChange { it.copy(animatedEmotes = !it.animatedEmotes) } },
                 modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_animated"),
             )

@@ -39,6 +39,8 @@ class ChatMessage(
     val header: String?,
     val highlight: Boolean,
     val mine: Boolean = false,
+    /** Arrival order (process-wide, increasing): lets the newest lines be told apart without their list index. */
+    val seq: Long = 0L,
 ) : ChatLine
 
 @androidx.compose.runtime.Immutable
@@ -93,6 +95,8 @@ class ResolveContext(
 )
 
 object MessageBuilder {
+    private val seqGen = java.util.concurrent.atomic.AtomicLong()
+
     fun build(
         raw: RawMessage,
         ctx: ResolveContext,
@@ -116,6 +120,7 @@ object MessageBuilder {
             header = raw.systemHeader,
             highlight = raw.highlighted || raw.announcement,
             mine = mine,
+            seq = seqGen.incrementAndGet(),
         )
 
     /**

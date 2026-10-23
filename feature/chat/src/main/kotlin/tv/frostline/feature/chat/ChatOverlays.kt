@@ -242,7 +242,7 @@ internal fun EmotePicker(
                                 focusedContainerColor = FrostColors.SurfaceFocused,
                             ),
                         ) {
-                            EmoteImage(e.url, e.code, Modifier.fillMaxSize().padding(4.dp))
+                            EmoteImage(e.url, e.code, Modifier.fillMaxSize().padding(4.dp), priority = EmoteEngine.PRIO_VISIBLE)
                         }
                     }
                 }

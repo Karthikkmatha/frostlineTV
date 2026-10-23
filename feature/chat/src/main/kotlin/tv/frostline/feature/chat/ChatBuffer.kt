@@ -14,7 +14,9 @@ class ChatBuffer(val capacity: Int = 200) {
     @Synchronized
     fun apply(ev: ChatEvent, ctx: ResolveContext, fallback: Map<String, Emote> = emptyMap()): Boolean = when (ev) {
         is ChatEvent.Message -> {
-            add(MessageBuilder.build(ev.message, ctx, fallback = fallback))
+            val m = MessageBuilder.build(ev.message, ctx, fallback = fallback)
+            add(m)
+            EmoteEngine.current?.noteMessage(m) // message rate, emote usage and the hot set
             true
         }
         is ChatEvent.System -> {

@@ -188,6 +188,7 @@ class ChatViewModel(
             val list = if (id != null) runCatching { helix.userEmotes(id) }.getOrDefault(emptyList()) else emptyList()
             val mapped = list.map { Emote(it.id, it.name, TwitchEmotes.url(it.id), EmoteProvider.Twitch) }
             twitchByCode = mapped.associateBy { it.code }
+            EmoteEngine.current?.preloadUser(mapped)
             _picker.value = _picker.value.copy(twitch = mapped, twitchLoading = false)
             if (mapped.isEmpty()) pickerJob = null // allow a retry next time the picker opens
         }
@@ -216,6 +217,8 @@ class ChatViewModel(
                 if (login == forLogin) {
                     sets = s
                     rebuildContext(settings.value)
+                    // Stream open: download this channel's emote files, decode stills, then the animations.
+                    EmoteEngine.current?.preloadChannel(s.sevenTv + s.bttv + s.ffz)
                 }
             }
             launch {

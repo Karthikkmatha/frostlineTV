@@ -43,6 +43,7 @@ private class FakeApi(val live: List<HelixStream> = emptyList()) : HelixApi {
     override suspend fun searchCategories(query: String, first: Int) = Page<HelixGame>()
     override suspend fun globalBadges() = Page<tv.frostline.core.twitch.BadgeSet>()
     override suspend fun channelBadges(broadcasterId: String) = Page<tv.frostline.core.twitch.BadgeSet>()
+    override suspend fun globalEmotes() = Page<tv.frostline.core.twitch.HelixEmote>()
     override suspend fun userEmotes(userId: String, after: String?) = Page<tv.frostline.core.twitch.HelixEmote>()
     override suspend fun videos(userId: String, type: String, first: Int, after: String?, sort: String) = Page<tv.frostline.core.twitch.HelixVideo>()
     override suspend fun videoById(id: String) = Page<tv.frostline.core.twitch.HelixVideo>()

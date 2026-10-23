@@ -54,6 +54,7 @@ class HelixRepository(private val api: HelixApi) {
         return out
     }
 
+    suspend fun globalEmotes(): List<HelixEmote> = api.globalEmotes().data
     suspend fun globalBadges(): List<BadgeSet> = api.globalBadges().data
     suspend fun channelBadges(broadcasterId: String): List<BadgeSet> = api.channelBadges(broadcasterId).data
 
