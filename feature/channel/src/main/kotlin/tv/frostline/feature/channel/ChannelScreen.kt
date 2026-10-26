@@ -1,6 +1,7 @@
 package tv.frostline.feature.channel
 
 import androidx.compose.foundation.background
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -54,6 +55,10 @@ import tv.frostline.core.twitch.HelixStream
 import tv.frostline.core.twitch.HelixVideo
 import tv.frostline.core.twitch.Thumbnails
 import tv.frostline.core.twitch.VideoKind
+import tv.frostline.core.ui.CardSizes
+import tv.frostline.core.ui.FrostLayout
+import tv.frostline.core.ui.FrostMediaCard
+import tv.frostline.core.ui.ThumbBadge
 import tv.frostline.core.ui.FocusMemory
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.FrostButton
@@ -63,8 +68,6 @@ import tv.frostline.core.ui.rememberPreviewBucket
 import tv.frostline.core.ui.rememberFocusIn
 import tv.frostline.core.ui.tryFocus
 
-private val OverscanX = 48.dp
-private val OverscanY = 27.dp
 
 /** Test tags. */
 object ChannelTags {
@@ -163,10 +166,10 @@ fun ChannelContent(state: ChannelState, actions: ChannelActions, memory: FocusMe
     }
 
     LazyVerticalGrid(
-        columns = GridCells.Adaptive(220.dp),
+        columns = GridCells.Adaptive(CardSizes.ChannelWidth),
         state = grid,
         modifier = Modifier.fillMaxSize().testTag("channel_grid"),
-        contentPadding = PaddingValues(start = 48.dp, end = OverscanX, top = OverscanY, bottom = OverscanY),
+        contentPadding = PaddingValues(start = FrostLayout.SafeX, end = FrostLayout.SafeX, top = FrostLayout.SafeY, bottom = FrostLayout.SafeY),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
@@ -174,7 +177,7 @@ fun ChannelContent(state: ChannelState, actions: ChannelActions, memory: FocusMe
         if (state.error != null) {
             item(key = "error", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(state.error, fontSize = 16.sp, color = FrostColors.OnSurface)
+                    Text(state.error, style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface)
                     FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry).focusRequester(if (state.live == null) firstFocus else FocusRequester()))
                 }
             }
@@ -220,28 +223,28 @@ private fun Header(state: ChannelState, actions: ChannelActions, watchLiveFocus:
     Row(
         Modifier.fillMaxWidth().testTag(ChannelTags.Header),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        horizontalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        Box(Modifier.size(72.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
+        Box(Modifier.size(96.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
             val avatar = state.user?.profileImageUrl.orEmpty()
-            if (avatar.isNotEmpty()) tv.frostline.core.ui.SizedImage(avatar, 72.dp, 72.dp, Modifier.fillMaxSize())
+            if (avatar.isNotEmpty()) tv.frostline.core.ui.SizedImage(avatar, 96.dp, 96.dp, Modifier.fillMaxSize())
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(state.displayName, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(state.displayName, style = MaterialTheme.typography.displaySmall, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
             val live = state.live
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.size(9.dp).clip(CircleShape).background(if (live != null) FrostColors.Live else FrostColors.Muted))
                 Text(
                     if (live != null) "LIVE  ${Counts.compact(live.viewerCount.toLong())} viewers" else if (state.loading) "Loading..." else "Offline",
-                    fontSize = 14.sp,
+                    style = MaterialTheme.typography.bodyLarge,
                     color = if (live != null) FrostColors.Live else FrostColors.Muted,
                     modifier = Modifier.testTag(ChannelTags.Status),
                 )
             }
             if (live != null) {
                 Text(
-                    listOf(live.title, live.gameName).filter { it.isNotBlank() }.joinToString("  ·  "),
-                    fontSize = 14.sp, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    listOf(live.title, live.gameName).filter { it.isNotBlank() }.joinToString("  \u00B7  "),
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -285,12 +288,12 @@ private fun LazyGridScope.footer(loading: Boolean, error: String?, empty: Boolea
     when {
         error != null -> item(key = "footer-error", span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(error, fontSize = 14.sp, color = FrostColors.Muted)
+                Text(error, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
                 FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry))
             }
         }
-        loading -> item(key = "footer-loading", span = { GridItemSpan(maxLineSpan) }) { Text("Loading...", fontSize = 14.sp, color = FrostColors.Muted) }
-        empty -> item(key = "footer-empty", span = { GridItemSpan(maxLineSpan) }) { Text(emptyText, fontSize = 14.sp, color = FrostColors.Muted, modifier = Modifier.testTag(ChannelTags.Empty)) }
+        loading -> item(key = "footer-loading", span = { GridItemSpan(maxLineSpan) }) { Text("Loading...", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) }
+        empty -> item(key = "footer-empty", span = { GridItemSpan(maxLineSpan) }) { Text(emptyText, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag(ChannelTags.Empty)) }
     }
 }
 
@@ -300,7 +303,7 @@ private fun About(state: ChannelState) {
         val u = state.user
         Text(
             u?.description?.ifBlank { null } ?: "This channel has no description.",
-            fontSize = 16.sp, color = FrostColors.OnSurface,
+            style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface,
         )
         val facts = buildList {
             u?.broadcasterType?.takeIf { it.isNotBlank() }?.let { add("Channel type" to it.replaceFirstChar { c -> c.uppercase() }) }
@@ -312,8 +315,8 @@ private fun About(state: ChannelState) {
         }
         facts.forEach { (k, v) ->
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(k, fontSize = 14.sp, color = FrostColors.Muted, modifier = Modifier.size(width = 130.dp, height = 22.dp))
-                Text(v, fontSize = 14.sp, color = FrostColors.OnSurface)
+                Text(k, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.size(width = 130.dp, height = 22.dp))
+                Text(v, style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface)
             }
         }
     }
@@ -339,7 +342,7 @@ private fun Thumb(urls: List<String>, id: String, modifier: Modifier = Modifier,
     val url = urls.getOrNull(failed)
     if (url == null) {
         Box(modifier.background(FrostColors.SurfaceAlt).testTag(ChannelTags.Placeholder + id), contentAlignment = Alignment.Center) {
-            Text(label.ifBlank { "No preview" }, fontSize = 12.sp, color = FrostColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
+            Text(label.ifBlank { "No preview" }, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
         }
     } else {
         // A chain (live preview, then offline banner) moves on when an image fails to load; a single image stays as it is.
@@ -350,12 +353,7 @@ private fun Thumb(urls: List<String>, id: String, modifier: Modifier = Modifier,
 private fun one(url: String?) = listOfNotNull(url)
 
 @Composable
-private fun Badge(text: String, modifier: Modifier) {
-    Text(
-        text, fontSize = 10.sp, color = FrostColors.OnSurface,
-        modifier = modifier.padding(6.dp).background(androidx.compose.ui.graphics.Color(0xCC050507), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 2.dp),
-    )
-}
+private fun Badge(text: String, modifier: Modifier) = ThumbBadge(text, modifier.padding(8.dp))
 
 /** A small padlock: this video is restricted (subscriber-only). */
 @Composable
@@ -375,14 +373,6 @@ private fun LockBadge(modifier: Modifier) {
 }
 
 @Composable
-private fun CardText(title: String, sub: String) {
-    Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title.ifBlank { " " }, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        Text(sub, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
-}
-
-@Composable
 fun VideoCard(
     video: HelixVideo,
     offlineImage: String?,
@@ -394,9 +384,13 @@ fun VideoCard(
 ) {
     val bucket by rememberPreviewBucket()
     val inProgress = Thumbnails.isInProgress(video, live)
-    CardSurface(modifier.testTag(ChannelTags.VideoPrefix + video.id), onClick) {
-        Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
+    FrostMediaCard(
+        onClick, modifier.testTag(ChannelTags.VideoPrefix + video.id),
+        thumbWidth = CardSizes.ChannelWidth, thumbHeight = CardSizes.ChannelThumbHeight,
+        title = video.title,
+        subtitle = listOf(Counts.date(video.createdAt), "${Counts.compact(video.viewCount)} views").filter { it.isNotBlank() }.joinToString("  \u00B7  "),
+    ) {
+        run {
                 // A live archive has a blank thumbnail: the channel's offline image stands in, else a placeholder.
                 // The live broadcast: stream preview, then the offline banner, then the placeholder. Past videos: their thumbnail.
                 val urls = if (inProgress) Thumbnails.liveOrOffline(live?.thumbnailUrl, offlineImage, 440, 248, bucket)
@@ -405,21 +399,19 @@ fun VideoCard(
                 if (inProgress) Badge("LIVE", Modifier.align(Alignment.TopEnd).testTag("live_badge_${video.id}"))
                 if (video.durationMs > 0) Badge(Durations.clock(video.durationMs), Modifier.align(Alignment.BottomEnd))
                 if (video.restricted) LockBadge(Modifier.align(Alignment.TopStart).testTag("lock_${video.id}"))
-            }
-            CardText(video.title, listOf(Counts.date(video.createdAt), "${Counts.compact(video.viewCount)} views").filter { it.isNotBlank() }.joinToString("  ·  "))
         }
     }
 }
 
 @Composable
 fun ClipCard(clip: HelixClip, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(modifier.testTag(ChannelTags.ClipPrefix + clip.id), onClick) {
-        Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                Thumb(one(Thumbnails.clip(clip.thumbnailUrl)), clip.id, Modifier.fillMaxSize())
-                if (clip.duration > 0) Badge(Durations.clock((clip.duration * 1000).toLong()), Modifier.align(Alignment.BottomEnd))
-            }
-            CardText(clip.title, listOf("${Counts.compact(clip.viewCount)} views", Counts.date(clip.createdAt)).joinToString("  ·  "))
-        }
+    FrostMediaCard(
+        onClick, modifier.testTag(ChannelTags.ClipPrefix + clip.id),
+        thumbWidth = CardSizes.ChannelWidth, thumbHeight = CardSizes.ChannelThumbHeight,
+        title = clip.title,
+        subtitle = listOf("${Counts.compact(clip.viewCount)} views", Counts.date(clip.createdAt)).joinToString("  \u00B7  "),
+    ) {
+        Thumb(one(Thumbnails.clip(clip.thumbnailUrl)), clip.id, Modifier.fillMaxSize())
+        if (clip.duration > 0) Badge(Durations.clock((clip.duration * 1000).toLong()), Modifier.align(Alignment.BottomEnd))
     }
 }
