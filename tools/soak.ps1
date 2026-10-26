@@ -79,7 +79,7 @@ for ($i = 1; $i -le $total; $i++) {
 
 function Fmt([double]$v) { if ([double]::IsNaN($v)) { 'n/a' } else { '{0:N2}' -f $v } }
 $lines = @()
-$lines += "Soak $Package on $TvHost: $($ts.Count) samples over $([math]::Round(((Get-Date) - $t0).TotalHours, 2)) h ($failed failed), $chIdx channel switches"
+$lines += "Soak $Package on ${TvHost}: $($ts.Count) samples over $([math]::Round(((Get-Date) - $t0).TotalHours, 2)) h ($failed failed), $chIdx channel switches"
 if ($ts.Count -ge 3) {
     $lines += "PSS      first $($pss[0]) MB, last $($pss[$pss.Count - 1]) MB, max $(($pss | Measure-Object -Maximum).Maximum) MB, slope $(Fmt (Get-Slope $ts.ToArray() $pss.ToArray())) MB/h"
     $lines += "threads  first $($thr[0]), last $($thr[$thr.Count - 1]), slope $(Fmt (Get-Slope $ts.ToArray() $thr.ToArray()))/h"
