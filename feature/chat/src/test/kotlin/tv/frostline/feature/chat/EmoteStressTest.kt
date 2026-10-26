@@ -88,7 +88,7 @@ class EmoteStressTest {
         }
         val visible = window.flatten().map { eng.entry(it.url) }.toSet()
         val blank = awaitAll(visible)
-        assertTrue("visible emotes still blank: ${blank.size} of ${visible.size} (${eng.atlasLine()})", blank.isEmpty())
+        assertTrue("visible emotes still blank: ${blank.size} of ${visible.size} (${eng.atlasLine()}) failed=${blank.count { it.failedAt != 0L }} pending=${blank.count { it.stillPending.get() }} running=${blank.count { it.stillRunning.get() }} vis0=${blank.count { it.visible.get() == 0 }} last=${eng.lastFailure}", blank.isEmpty())
         // They stay drawable: nothing on screen was evicted for something else.
         assertTrue(visible.all { it.drawable })
     }
