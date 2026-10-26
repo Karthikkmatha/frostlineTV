@@ -27,16 +27,13 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
 import tv.frostline.core.ui.TvTextField
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostButtonStyle
+import tv.frostline.core.ui.FrostChip
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 private fun header(key: String, text: String, color: androidx.compose.ui.graphics.Color = FrostColors.OnSurface) =
@@ -56,7 +53,7 @@ private fun skeletons(key: String, n: Int = 8) = (0 until n).map { i ->
 
 private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridEntry> = listOf(
     note("$key:err", message),
-    GridEntry("$key:retry", fullSpan = true) { m -> TvButton("Retry", onRetry, m) },
+    GridEntry("$key:retry", fullSpan = true) { m -> FrostButton("Retry", onRetry, m) },
 )
 
 @Composable
@@ -71,7 +68,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
             if (st.needsSignIn) {
                 add(header("h:live", "Following"))
                 add(note("f:signin", "Sign in to see your follows"))
-                add(GridEntry("f:settings", fullSpan = true) { m -> TvButton("Open Settings to sign in", { vm.select(HomeSection.Settings) }, m) })
+                add(GridEntry("f:settings", fullSpan = true) { m -> FrostButton("Open Settings to sign in", { vm.select(HomeSection.Settings) }, m) })
             } else {
                 add(header("h:live", "Live now"))
                 when {
@@ -136,48 +133,14 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
     FocusGrid(entries, vm.memory("following"), vm.focusSignal)
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun OfflineToggle(label: String, expanded: Boolean, onToggle: () -> Unit, modifier: Modifier) {
-    Surface(
-        onClick = onToggle,
-        modifier = modifier.padding(top = 6.dp),
-        shape = cardShape(RoundedCornerShape(8.dp)),
-        border = focusRingBorder(RoundedCornerShape(8.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Text(
-            (if (expanded) "v  " else ">  ") + label,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-        )
-    }
+    FrostButton((if (expanded) "v  " else ">  ") + label, onToggle, modifier.padding(top = 6.dp), style = FrostButtonStyle.Secondary)
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        shape = cardShape(RoundedCornerShape(20.dp)),
-        border = focusRingBorder(RoundedCornerShape(20.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) FrostColors.Primary else FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.Lavender,
-        ),
-    ) {
-        Text(label, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-    }
+    FrostChip(label, selected, onClick)
 }
 
 @Composable

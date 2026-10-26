@@ -1,8 +1,6 @@
 package tv.frostline.core.ui
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
@@ -13,36 +11,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.unit.dp
-import androidx.tv.material3.Border
-import androidx.tv.material3.ClickableSurfaceBorder
-import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.tv.material3.ClickableSurfaceScale
-import androidx.tv.material3.ClickableSurfaceShape
-import androidx.tv.material3.ExperimentalTvMaterial3Api
 
-/** False while a screen transition is running, so no focus ring flashes on a half-moved screen. */
+/** False while a screen transition is running, so no focus border flashes on a half-moved screen. */
 val LocalFocusRingEnabled = compositionLocalOf { true }
-
-val CardShape = RoundedCornerShape(10.dp)
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun focusRingBorder(shape: androidx.compose.ui.graphics.Shape = CardShape): ClickableSurfaceBorder {
-    val enabled = LocalFocusRingEnabled.current
-    return ClickableSurfaceDefaults.border(
-        focusedBorder = if (enabled) Border(BorderStroke(3.dp, FrostColors.Violet), shape = shape) else Border.None,
-    )
-}
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun cardShape(shape: androidx.compose.ui.graphics.Shape = CardShape): ClickableSurfaceShape =
-    ClickableSurfaceDefaults.shape(shape = shape)
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun cardScale(focused: Float = 1.04f): ClickableSurfaceScale = ClickableSurfaceDefaults.scale(focusedScale = focused)
 
 /** Remembers where focus last was inside a screen so it can be restored after navigating back. */
 class FocusMemory {
@@ -72,15 +43,9 @@ fun FocusRequester.tryFocus(): Boolean {
 }
 
 /**
- * The one focus style of the app: a 3 dp violet (#8F74E8) ring drawn over the element whenever it, or something inside
- * it, has focus. Components pair it with the lighter focused surface ([FrostColors.SurfaceFocused]) in their own colours.
- * Apply it to the outside of a clickable surface so the ring can never be hidden by the surface's own content.
+ * The focus border (2 dp, #8F74E8) for the few focus targets that are not tv-material components (the chat message
+ * list, the resize hint). Every button, chip, card and row gets the same border from [FrostTokens.border].
  */
 @Composable
-fun Modifier.frostFocus(shape: androidx.compose.ui.graphics.Shape = CardShape): Modifier {
-    var focused by remember { mutableStateOf(false) }
-    val enabled = LocalFocusRingEnabled.current
-    return this
-        .onFocusChanged { focused = it.hasFocus }
-        .then(if (focused && enabled) Modifier.border(3.dp, FrostColors.Violet, shape) else Modifier)
-}
+fun Modifier.frostFocusBorder(focused: Boolean, shape: androidx.compose.ui.graphics.Shape = FrostTokens.RowShape): Modifier =
+    if (focused && LocalFocusRingEnabled.current) border(FrostTokens.FocusBorderWidth, FrostColors.Violet, shape) else this

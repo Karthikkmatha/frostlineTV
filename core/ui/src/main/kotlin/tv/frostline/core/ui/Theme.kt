@@ -19,13 +19,17 @@ object FrostColors {
     val Background = Color(0xFF050507)
     val Surface = Color(0xFF121019)
     val SurfaceAlt = Color(0xFF1B1726)
-    /** Raised and focused cards. */
-    val SurfaceFocused = Color(0xFF262033)
+    /** Resting container of buttons, chips, cards and list rows (Phase C design token). */
+    val Container = Color(0xFF262033)
+    /** The same container while focused: lighter, with the violet border on top. */
+    val ContainerFocused = Color(0xFF3A2F57)
+    /** Alias of [ContainerFocused], kept for call sites that mean "a focused surface". */
+    val SurfaceFocused = ContainerFocused
 
     /** Buttons, selected state, live/progress bars. Too dark for text or rings on the dark background. */
     val Primary = Color(0xFF4E2E99)
     /** A focused button: lighter than [Primary], with the violet ring on top. */
-    val PrimaryFocused = Color(0xFF6445BE)
+    val PrimaryFocused = Color(0xFF6A47C7)
     /** Focus rings, links, highlighted text on dark surfaces. */
     val Violet = Color(0xFF8F74E8)
     /** Subtle text accents. */

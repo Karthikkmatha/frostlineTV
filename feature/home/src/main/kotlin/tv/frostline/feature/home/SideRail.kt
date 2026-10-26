@@ -27,14 +27,10 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
-import androidx.tv.material3.Surface
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostSurface
 
 data class RailItem(val id: String, val label: String, @DrawableRes val icon: Int)
 
@@ -76,21 +72,16 @@ fun SideRail(
     ) {
         items.forEach { item ->
             val selected = item.id == selectedId
-            Surface(
+            FrostSurface(
                 onClick = { onSelect(item.id) },
                 modifier = Modifier
                     .size(RailIndicatorSize)
                     .focusRequester(requesters.getValue(item.id))
                     .testTag("rail_${item.id}"),
-                shape = cardShape(shape),
-                border = focusRingBorder(shape),
-                scale = cardScale(1f),
-                colors = ClickableSurfaceDefaults.colors(
-                    containerColor = if (selected) FrostColors.Primary.copy(alpha = 0.55f) else Color.Transparent,
-                    contentColor = FrostColors.OnSurface,
-                    focusedContainerColor = FrostColors.SurfaceFocused,
-                    focusedContentColor = FrostColors.Lavender,
-                ),
+                shape = shape,
+                containerColor = if (selected) FrostColors.Primary.copy(alpha = 0.55f) else Color.Transparent,
+                focusedContainerColor = FrostColors.ContainerFocused,
+                focusedContentColor = FrostColors.Lavender,
             ) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(

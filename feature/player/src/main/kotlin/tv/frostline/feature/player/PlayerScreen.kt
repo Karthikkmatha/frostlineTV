@@ -40,7 +40,8 @@ import androidx.media3.ui.compose.PlayerSurface
 import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Text
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.rememberUiFps
 import kotlinx.coroutines.flow.MutableStateFlow
 import tv.frostline.feature.chat.ChatActions
@@ -263,7 +264,7 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier)
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(message, fontSize = 18.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
-        TvButton("Try again", onRetry, Modifier.focusRequester(retry))
+        FrostButton("Try again", onRetry, Modifier.focusRequester(retry))
         Text("Press Back to leave", fontSize = 12.sp, color = FrostColors.Muted)
     }
 }
@@ -288,7 +289,7 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Text("Raiding ${notice.targetName} in ${notice.secondsLeft} s", fontSize = 16.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("raid_text"))
-        TvButton("Cancel", onCancel, Modifier.focusRequester(cancel).testTag("raid_cancel"))
+        FrostSecondaryButton("Cancel", onCancel, Modifier.focusRequester(cancel).testTag("raid_cancel"))
     }
 }
 

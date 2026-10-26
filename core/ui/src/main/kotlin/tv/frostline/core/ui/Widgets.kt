@@ -1,10 +1,9 @@
 package tv.frostline.core.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -33,47 +32,13 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.Border
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
+import androidx.compose.ui.text.font.FontWeight
+import androidx.tv.material3.Switch
+import androidx.tv.material3.SwitchDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
-
-@OptIn(ExperimentalTvMaterial3Api::class)
-@Composable
-fun TvButton(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    val ring = LocalFocusRingEnabled.current
-    Button(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
-        colors = ButtonDefaults.colors(
-            containerColor = FrostColors.Primary,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.PrimaryFocused,
-            focusedContentColor = FrostColors.OnSurface,
-            pressedContainerColor = FrostColors.Primary,
-            pressedContentColor = FrostColors.OnSurface,
-            disabledContainerColor = FrostColors.SurfaceAlt,
-            disabledContentColor = FrostColors.Muted,
-        ),
-        border = ButtonDefaults.border(
-            focusedBorder = if (ring) Border(BorderStroke(3.dp, FrostColors.Violet)) else Border.None,
-        ),
-    ) {
-        Text(text, fontSize = 14.sp)
-    }
-}
 
 /**
  * A single focus stop that doubles as a text field. Focusing it never opens the keyboard: the field is read-only
@@ -97,9 +62,8 @@ fun TvTextField(
     var focused by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf(false) }
     var okDown by remember { mutableStateOf(false) }
-    val ringEnabled = LocalFocusRingEnabled.current
     val keyboard = LocalSoftwareKeyboardController.current
-    val shape = RoundedCornerShape(10.dp)
+    val shape = FrostTokens.RowShape
     LaunchedEffect(editing) {
         onEditingChange(editing)
         if (editing) keyboard?.show()
@@ -107,13 +71,14 @@ fun TvTextField(
     Box(
         modifier
             .fillMaxWidth()
-            .background(if (focused) FrostColors.SurfaceFocused else FrostColors.Surface, shape)
-            .border(if (focused && ringEnabled) 3.dp else 0.dp, FrostColors.Violet, shape)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .heightIn(min = FrostTokens.RowMinHeight)
+            .background(if (focused) FrostColors.ContainerFocused else FrostColors.Container, shape)
+            .frostFocusBorder(focused, shape)
+            .padding(horizontal = FrostTokens.HorizontalPadding, vertical = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (value.isEmpty()) {
-            Text(placeholder, color = FrostColors.Muted, fontSize = 14.sp)
+            Text(placeholder, color = FrostColors.Muted, fontSize = 15.sp)
         }
         BasicTextField(
             value = value,
@@ -121,7 +86,7 @@ fun TvTextField(
             // Read-only fields do not start an input session, so focus alone cannot raise the IME.
             readOnly = !editing,
             singleLine = true,
-            textStyle = TextStyle(color = FrostColors.OnSurface, fontSize = 14.sp),
+            textStyle = TextStyle(color = FrostColors.OnSurface, fontSize = 15.sp),
             cursorBrush = SolidColor(FrostColors.Violet),
             visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
@@ -149,7 +114,7 @@ fun TvTextField(
     }
 }
 
-/** A settings row that toggles on OK. Shows On/Off as text so state never relies on colour alone. */
+/** A settings row with a trailing switch; OK toggles. The switch is a display of the state, the row is the focus target. */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun TvToggleRow(
@@ -159,38 +124,27 @@ fun TvToggleRow(
     onToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    androidx.tv.material3.Surface(
+    FrostListItem(
         onClick = { onToggle(!checked) },
         modifier = modifier.fillMaxWidth(),
-        shape = cardShape(RoundedCornerShape(10.dp)),
-        border = focusRingBorder(RoundedCornerShape(10.dp)),
-        scale = cardScale(1f),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Text(label, fontSize = 15.sp)
-                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
+        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
+        trailing = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                // The word as well as the switch, so state never relies on colour or shape alone.
+                Text(if (checked) "On" else "Off", fontSize = 13.sp, color = FrostColors.Lavender)
+                Switch(
+                    checked = checked,
+                    onCheckedChange = null,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = FrostColors.OnSurface,
+                        checkedTrackColor = FrostColors.PrimaryFocused,
+                        uncheckedThumbColor = FrostColors.Muted,
+                        uncheckedTrackColor = FrostColors.SurfaceAlt,
+                    ),
+                )
             }
-            Text(
-                if (checked) "On" else "Off",
-                fontSize = 13.sp,
-                color = FrostColors.OnSurface,
-                modifier = Modifier
-                    .background(if (checked) FrostColors.Primary else FrostColors.SurfaceAlt, RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 4.dp),
-            )
-        }
-    }
+        },
+    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
 }
 
 /** A settings row that cycles through choices on OK, showing the current one as text. */
@@ -203,41 +157,18 @@ fun TvChoiceRow(
     modifier: Modifier = Modifier,
     description: String? = null,
 ) {
-    androidx.tv.material3.Surface(
+    FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = cardShape(RoundedCornerShape(10.dp)),
-        border = focusRingBorder(RoundedCornerShape(10.dp)),
-        scale = cardScale(1f),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Text(label, fontSize = 15.sp)
-                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
-            }
-            Text(
-                value,
-                fontSize = 13.sp,
-                color = FrostColors.OnSurface,
-                modifier = Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
-            )
-        }
-    }
+        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
+        trailing = { Text(value, fontSize = 14.sp, color = FrostColors.Lavender, maxLines = 1) },
+    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
 }
 
 /**
- * A settings row with a value that Left/Right change (stepper). OK does nothing; the hold-to-repeat count is passed
- * on so callers can accelerate. Shows the value between arrows so the control is visible without colour.
+ * A settings row with a value that Left/Right change (stepper). OK enters adjust mode (Left/Right change the value;
+ * OK or Back leaves it), otherwise Left/Right move focus as usual, so the row is never a trap. The hold-to-repeat
+ * count is passed on so callers can accelerate.
  */
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
@@ -248,11 +179,9 @@ fun TvStepperRow(
     modifier: Modifier = Modifier,
     description: String? = null,
 ) {
-    // OK enters adjust mode (Left/Right change the value; OK or Back leaves it). Otherwise Left/Right move focus as usual,
-    // so the row is never a trap.
     var adjusting by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = adjusting) { adjusting = false }
-    androidx.tv.material3.Surface(
+    FrostListItem(
         onClick = { adjusting = !adjusting },
         modifier = modifier
             .fillMaxWidth()
@@ -265,33 +194,15 @@ fun TvStepperRow(
                     else -> false
                 }
             },
-        shape = cardShape(RoundedCornerShape(10.dp)),
-        border = focusRingBorder(RoundedCornerShape(10.dp)),
-        scale = cardScale(1f),
-        colors = androidx.tv.material3.ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Row(
-            Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Text(label, fontSize = 15.sp)
-                if (description != null) Text(description, fontSize = 12.sp, color = FrostColors.Muted)
-            }
+        selected = adjusting,
+        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
+        trailing = {
             Text(
                 if (adjusting) "\u25C0  $value  \u25B6" else "$value  (OK to adjust)",
-                fontSize = 13.sp,
-                color = FrostColors.OnSurface,
-                modifier = Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(12.dp)).padding(horizontal = 14.dp, vertical = 4.dp),
+                fontSize = 14.sp, color = FrostColors.OnSurface, maxLines = 1,
             )
-        }
-    }
+        },
+    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
 }
 
 /** A static, non-focusable placeholder shaped like a card; shown while a grid loads. Not animated, so it costs nothing. */
@@ -301,6 +212,6 @@ fun SkeletonCard(modifier: Modifier = Modifier) {
         modifier
             .fillMaxWidth()
             .height(150.dp)
-            .background(FrostColors.SurfaceAlt, androidx.compose.foundation.shape.RoundedCornerShape(10.dp)),
+            .background(FrostColors.SurfaceAlt, FrostTokens.CardShape),
     )
 }

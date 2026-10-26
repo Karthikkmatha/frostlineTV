@@ -17,6 +17,7 @@ dependencies {
     api(libs.compose.ui)
     api(libs.compose.foundation)
     api(libs.androidx.tv.material)
+    api(libs.kotlinx.coroutines.core)
     implementation(libs.androidx.activity.compose)
     api(libs.coil.compose)
     implementation(libs.androidx.metrics.performance)

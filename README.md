@@ -13,6 +13,15 @@ Emotes: Twitch (from tags), 7TV, BTTV and FFZ, global plus channel, cached per c
 The backlog is capped at 150 lines; the message list is the only lazy list in chat (newest-first, `reverseLayout`,
 stable keys). Settings: Show chat, panel width (a percentage), font size, timestamps, 7TV/BTTV/FFZ.
 
+### Look and feel (Phase C)
+
+Every button, chip, card and row is a wrapper in `:core:ui` (`FrostButton`, `FrostChip`, `FrostCard`, `FrostListItem`,
+`FrostSurface`) around the tv-material component, configured by `FrostTokens`: pill buttons and chips 40 dp high, 12 dp
+cards, rows at least 56 dp, 20 dp horizontal padding, label Medium 15 sp, 8 dp icon gap; focused = lighter container,
+2 dp #8F74E8 border, a soft glow and a 1.1 (buttons, chips) / 1.05 (cards) scale; pressed = 0.95. Motion is the
+tv-material default and runs on focus change only. `frostline://debug/showcase` (debug overlay on) opens a screen with
+all of them.
+
 ### Focus model (remote only)
 
 Two zones, one focus at a time: PLAYER (the bare player and its controls) and CHAT (panel plus sheets).
@@ -26,8 +35,10 @@ Two zones, one focus at a time: PLAYER (the bare player and its controls) and CH
   - Middle: the message list. Up/Down scroll history (Up at the oldest line does nothing); Down at the newest line
     moves to the bottom section; OK jumps back to live (or, already live, focuses the field).
   - Bottom, top to bottom: prediction banner, poll banner (only while active; OK opens the sheet), the message field
-    (OK opens the keyboard), then the button row `Emotes · Send · Rewards · Menu`, Left/Right between them.
-    Guest: `Menu · Sign in`. VOD replay: `Menu`. Rewards is hidden without a web session.
+    (OK opens the keyboard), then the button grid, equal-width buttons at every panel width (20-45 %):
+    `Emotes · Send` over `Rewards · Menu`. Down from Emotes is Rewards, Right from Emotes is Send, Down from Send is
+    Menu, Left of the first column leaves chat, Up from the top row is the message field. Without Rewards (guest or
+    no web session) it is one row `Emotes · Send · Menu`; guest: `Menu · Sign in`; VOD replay: `Menu`.
   - Up from the top of the bottom section returns to the list at the newest line, following live.
 - Sheets (Menu, Emotes, Rewards, prediction, poll) open anchored above the button row and trap focus: every outward
   edge is closed; OK picks, Back or Close dismisses and focus returns to the opener (button or banner).

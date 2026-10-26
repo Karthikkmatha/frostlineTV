@@ -96,22 +96,29 @@ class WebSignInActivity : ComponentActivity() {
 
     private fun dp(v: Int) = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v.toFloat(), resources.displayMetrics).toInt()
 
+    /** The Phase C button, drawn by hand because this screen is a plain View hierarchy around the WebView: 40 dp pill, primary container, lighter on focus with a 2 dp #8F74E8 border and a 1.1 scale (150 ms, FastOutSlowIn). */
     private fun styled(text: String, onClick: () -> Unit) = Button(this).apply {
         this.text = text
         isAllCaps = false
-        setTextColor(Color.WHITE)
-        textSize = 14f
+        setTextColor(0xFFEEEBF5.toInt())
+        textSize = 15f
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         isFocusable = true
-        val normal = GradientDrawable().apply { setColor(0xFF4E2E99.toInt()); cornerRadius = dp(8).toFloat() }
+        minHeight = dp(40); minimumHeight = dp(40)
+        val normal = GradientDrawable().apply { setColor(0xFF4E2E99.toInt()); cornerRadius = dp(20).toFloat() }
         val focused = GradientDrawable().apply {
-            setColor(0xFF262033.toInt()); cornerRadius = dp(8).toFloat(); setStroke(dp(3), 0xFF8F74E8.toInt())
+            setColor(0xFF6A47C7.toInt()); cornerRadius = dp(20).toFloat(); setStroke(dp(2), 0xFF8F74E8.toInt())
         }
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
             addState(intArrayOf(), normal)
         }
-        setPadding(dp(16), dp(6), dp(16), dp(6))
+        setPadding(dp(20), 0, dp(20), 0)
         setOnClickListener { onClick() }
+        setOnFocusChangeListener { v, hasFocus ->
+            v.animate().scaleX(if (hasFocus) 1.1f else 1f).scaleY(if (hasFocus) 1.1f else 1f).setDuration(150)
+                .setInterpolator(android.view.animation.PathInterpolator(0.4f, 0f, 0.2f, 1f)).start()
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

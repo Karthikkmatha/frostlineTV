@@ -25,15 +25,11 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import tv.frostline.core.twitchinternal.StreamVariant
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostListItem
 
 /** Quality choices: Auto plus the variants of the master playlist. [selected] null = Auto. */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalTvMaterial3Api::class)
@@ -77,25 +73,12 @@ fun QualitySheet(
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun QualityRow(label: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
-    Surface(
+    FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = cardShape(RoundedCornerShape(8.dp)),
-        border = focusRingBorder(RoundedCornerShape(8.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (isSelected) FrostColors.Primary else FrostColors.SurfaceAlt,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontSize = 15.sp, modifier = Modifier.weight(1f))
-            if (isSelected) Text("✓", fontSize = 15.sp, color = FrostColors.Lavender)
-        }
-    }
+        selected = isSelected,
+        trailing = if (isSelected) ({ Text("\u2713", fontSize = 16.sp, color = FrostColors.Lavender) }) else null,
+    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
 }

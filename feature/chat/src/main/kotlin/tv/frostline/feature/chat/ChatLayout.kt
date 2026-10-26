@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -66,7 +67,7 @@ fun ChatLayout(
     BoxWithConstraints(modifier.fillMaxSize()) {
         val panelWidth = maxWidth * frac
         // Sheets anchor just above the bottom button row.
-        val anchorBottom = with(LocalDensity.current) { controller.buttonRowHeightPx.toDp() }.coerceAtLeast(40.dp) + 8.dp
+        val anchorBottom = with(LocalDensity.current) { controller.buttonRowHeightPx.toDp() }.coerceAtLeast(48.dp) + 8.dp
         Row(Modifier.fillMaxSize()) {
             Box(Modifier.weight(if (chatVisible) 1f - frac else 1f).fillMaxHeight(), content = video)
             if (chatVisible) ChatPanel(model, actions, controller, Modifier.weight(frac).fillMaxHeight())
@@ -75,7 +76,8 @@ fun ChatLayout(
             ChatMenu(
                 model.settings, controller, actions,
                 onJumpToLive = { scope.launch { controller.resumeLive() } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = panelWidth + 8.dp, bottom = anchorBottom).width(280.dp),
+                modifier = Modifier.align(Alignment.BottomEnd).padding(end = panelWidth + 8.dp, bottom = anchorBottom).width(300.dp)
+                    .heightIn(max = (maxHeight - anchorBottom - 8.dp).coerceAtLeast(120.dp)),
             )
         }
         if (chatVisible && controller.pickerOpen) {

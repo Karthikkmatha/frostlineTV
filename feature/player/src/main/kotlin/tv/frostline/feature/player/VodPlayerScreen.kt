@@ -37,7 +37,8 @@ import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Text
 import tv.frostline.core.twitch.Durations
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.rememberUiFps
 import tv.frostline.core.ui.tryFocus
 import tv.frostline.feature.chat.ChatActions
@@ -242,8 +243,8 @@ fun ResumePrompt(positionMs: Long, onResume: () -> Unit, onStartOver: () -> Unit
     ) {
         Text("Continue where you left off?", fontSize = 18.sp, color = FrostColors.OnSurface)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            TvButton("Resume from ${Durations.clock(positionMs)}", onResume, Modifier.focusRequester(first).testTag("resume_btn"))
-            TvButton("Start over", onStartOver, Modifier.testTag("start_over_btn"))
+            FrostButton("Resume from ${Durations.clock(positionMs)}", onResume, Modifier.focusRequester(first).testTag("resume_btn"))
+            FrostSecondaryButton("Start over", onStartOver, Modifier.testTag("start_over_btn"))
         }
     }
 }
@@ -258,7 +259,7 @@ private fun VodError(message: String, onRetry: () -> Unit, modifier: Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(message, fontSize = 18.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
-        TvButton("Try again", onRetry, Modifier.focusRequester(retry))
+        FrostButton("Try again", onRetry, Modifier.focusRequester(retry))
         Text("Press Back to leave", fontSize = 12.sp, color = FrostColors.Muted)
     }
 }

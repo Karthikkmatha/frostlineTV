@@ -26,7 +26,8 @@ import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.data.ChatOptions
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.data.LiveMode
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.TvChoiceRow
 import tv.frostline.core.ui.TvStepperRow
 import tv.frostline.core.ui.TvToggleRow
@@ -102,13 +103,13 @@ fun SettingsContent(
             if (ui.signedIn && confirming) {
                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Text("Sign out of this account?", fontSize = 14.sp, color = FrostColors.OnSurface)
-                    TvButton("Cancel", onClick = { confirming = false }, modifier = Modifier.focusRequester(cancel).testTag("btn_sign_out_cancel"))
-                    TvButton("Yes, sign out", onClick = { confirming = false; onSignOut() }, modifier = Modifier.testTag("btn_sign_out_confirm"))
+                    FrostSecondaryButton("Cancel", onClick = { confirming = false }, modifier = Modifier.focusRequester(cancel).testTag("btn_sign_out_cancel"))
+                    FrostButton("Yes, sign out", onClick = { confirming = false; onSignOut() }, modifier = Modifier.testTag("btn_sign_out_confirm"))
                 }
             } else if (ui.signedIn) {
-                TvButton("Sign out", onClick = { confirming = true }, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_out"))
+                FrostButton("Sign out", onClick = { confirming = true }, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_out"))
             } else {
-                TvButton("Sign in", onClick = onSignIn, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_in"))
+                FrostButton("Sign in", onClick = onSignIn, modifier = Modifier.focusRequester(firstFocus).testTag("btn_sign_in"))
             }
         }
         item {
@@ -121,8 +122,8 @@ fun SettingsContent(
         }
         item {
             androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                TvButton("Link web session", onClick = onLinkWebSession, modifier = Modifier.testTag("btn_link_web"))
-                if (ui.webLinked) TvButton("Unlink", onClick = onUnlink)
+                FrostButton("Link web session", onClick = onLinkWebSession, modifier = Modifier.testTag("btn_link_web"))
+                if (ui.webLinked) FrostSecondaryButton("Unlink", onClick = onUnlink)
             }
         }
 

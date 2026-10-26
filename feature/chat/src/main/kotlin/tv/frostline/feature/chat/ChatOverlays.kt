@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -38,39 +40,24 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostButtonStyle
+import tv.frostline.core.ui.FrostChip
+import tv.frostline.core.ui.FrostListItem
+import tv.frostline.core.ui.FrostSurface
 
 /** One row of the chat menu: label on the left, current value on the right. */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun MenuRow(label: String, value: String?, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
+    FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = cardShape(RoundedCornerShape(8.dp)),
-        border = focusRingBorder(RoundedCornerShape(8.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.SurfaceAlt,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontSize = 14.sp, modifier = Modifier.weight(1f))
-            if (value != null) Text(value, fontSize = 13.sp, color = FrostColors.Lavender)
-        }
-    }
+        trailing = value?.let { v -> { Text(v, fontSize = 14.sp, color = FrostColors.Lavender, maxLines = 1) } },
+    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1) }
 }
 
 /** Swallows horizontal moves so focus cannot leave an overlay sideways. */
@@ -105,6 +92,8 @@ internal fun ChatMenu(
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text("Chat", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+        // Seven 56 dp rows are taller than the space above the button row on a 540 dp screen: the rows scroll.
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         MenuRow(
             "Resize panel", "${settings.widthPct}%",
             { c.menuOpen = false; c.startResize(settings.widthPct) },
@@ -128,27 +117,13 @@ internal fun ChatMenu(
         MenuRow("Jump to live", null, { onJumpToLive(); c.menuOpen = false }, Modifier.testTag("chat_menu_live"))
         MenuRow("Hide chat", null, { c.menuOpen = false; actions.hide() }, Modifier.testTag("chat_menu_hide"))
         MenuRow("Close", null, { c.menuOpen = false }, Modifier.focusProperties { down = stop }.testTag("chat_menu_close"))
+        }
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun TabChip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = cardShape(RoundedCornerShape(16.dp)),
-        border = focusRingBorder(RoundedCornerShape(16.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) FrostColors.Primary else FrostColors.SurfaceAlt,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = if (selected) FrostColors.Primary else FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Text(label, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp), color = if (selected) FrostColors.Ice else FrostColors.OnSurface)
-    }
+    FrostChip(label, selected, onClick, modifier)
 }
 
 private val pickerTabs = EmoteProvider.entries
@@ -158,7 +133,6 @@ private val pickerTabs = EmoteProvider.entries
  * emote code into the draft and keeps the picker open. Every edge is closed with Cancel so focus can only
  * leave through Back / Close.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 internal fun EmotePicker(
     data: PickerData,
@@ -197,9 +171,10 @@ internal fun EmotePicker(
                 )
             }
             Box(Modifier.weight(1f))
-            TabChip(
-                "Close", false, { c.pickerOpen = false },
-                Modifier.focusProperties { up = stop; right = stop; if (emotes.isEmpty()) down = stop }.testTag("emote_close"),
+            FrostButton(
+                "Close", { c.pickerOpen = false },
+                style = FrostButtonStyle.Secondary,
+                modifier = Modifier.focusProperties { up = stop; right = stop; if (emotes.isEmpty()) down = stop }.testTag("emote_close"),
             )
         }
         BoxWithConstraints(Modifier.weight(1f, fill = true).fillMaxWidth()) {
@@ -221,10 +196,11 @@ internal fun EmotePicker(
                     itemsIndexed(emotes, key = { _, e -> e.provider.name + e.id + e.code }) { index, e ->
                         val col = index % cols
                         val row = index / cols
-                        Surface(
+                        FrostSurface(
                             onClick = {
                                 c.insertEmote(e.code)
                             },
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .size(48.dp)
                                 .onFocusChanged { if (it.isFocused) focusedCode = e.code }
@@ -234,13 +210,6 @@ internal fun EmotePicker(
                                     if (row == rows - 1 || (row == rows - 2 && col >= lastRowCount)) down = stop
                                 }
                                 .testTag("emote_${e.code}"),
-                            shape = cardShape(RoundedCornerShape(8.dp)),
-                            border = focusRingBorder(RoundedCornerShape(8.dp)),
-                            scale = cardScale(1f),
-                            colors = ClickableSurfaceDefaults.colors(
-                                containerColor = FrostColors.SurfaceAlt,
-                                focusedContainerColor = FrostColors.SurfaceFocused,
-                            ),
                         ) {
                             EmoteImage(e.url, e.code, Modifier.fillMaxSize().padding(4.dp), priority = EmoteEngine.PRIO_VISIBLE)
                         }

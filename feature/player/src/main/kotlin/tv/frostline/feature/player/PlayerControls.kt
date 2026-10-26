@@ -45,18 +45,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
-import tv.frostline.core.ui.CardShape
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostSurface
+import tv.frostline.core.ui.FrostTokens
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 
 /** Test tags of the control rows. */
 object ControlTags {
@@ -203,7 +200,7 @@ fun PlayerChrome(
                         if (vod == null) LiveBadgeView(badge)
                         else Text(vod.kindLabel, fontSize = 13.sp, color = FrostColors.Lavender, modifier = Modifier.testTag("vod_kind"))
                     }
-                    TvButton(
+                    FrostSecondaryButton(
                         "Channel",
                         onChannel,
                         Modifier.focusRequester(channel).testTag(ControlTags.Channel)
@@ -305,34 +302,30 @@ private fun SeekBar(positionMs: Long, durationMs: Long) {
  * A text button that accumulates presses. OK on the key (including the repeats of a held key) is handled here, in
  * the preview pass, so the surface never also fires its own click for the same press; [onClick] serves pointer input.
  */
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun SkipButton(label: String, description: String, onPress: (repeat: Boolean) -> Unit, modifier: Modifier) {
-    Surface(
+    FrostSurface(
         onClick = { onPress(false) },
         modifier = modifier
-            .height(44.dp)
+            .height(FrostTokens.ButtonHeight)
             .semantics { contentDescription = description }
             .onPreviewKeyEvent { e ->
                 if (!isSelect(e.key)) return@onPreviewKeyEvent false
                 if (e.type == KeyEventType.KeyDown) onPress(e.nativeKeyEvent.repeatCount > 0)
                 true
             },
-        shape = cardShape(CircleShape),
-        border = focusRingBorder(CircleShape),
-        scale = cardScale(1.08f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = Color(0xCC1B1726),
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.Primary,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
+        shape = FrostTokens.PillShape,
+        containerColor = OverlayContainer,
+        focusedContainerColor = FrostColors.PrimaryFocused,
     ) {
-        Box(Modifier.fillMaxHeight().padding(horizontal = 22.dp), contentAlignment = Alignment.Center) {
-            Text(label, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Box(Modifier.fillMaxHeight().padding(horizontal = FrostTokens.HorizontalPadding), contentAlignment = Alignment.Center) {
+            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
+
+/** Container of round controls over the video: the Container colour, a little see-through so the picture shows. */
+private val OverlayContainer = Color(0xCC262033)
 
 @Composable
 fun LiveBadgeView(badge: LiveBadge, modifier: Modifier = Modifier) {
@@ -347,7 +340,6 @@ fun LiveBadgeView(badge: LiveBadge, modifier: Modifier = Modifier) {
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun IconControl(
     icon: Int,
@@ -357,18 +349,12 @@ fun IconControl(
     modifier: Modifier = Modifier,
     active: Boolean = false,
 ) {
-    Surface(
+    FrostSurface(
         onClick = onClick,
         modifier = modifier.size(size.dp),
-        shape = cardShape(CircleShape),
-        border = focusRingBorder(CircleShape),
-        scale = cardScale(1.08f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (active) FrostColors.Primary else Color(0xCC1B1726),
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.Primary,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
+        shape = CircleShape,
+        containerColor = if (active) FrostColors.Primary else OverlayContainer,
+        focusedContainerColor = FrostColors.PrimaryFocused,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Icon(painterResource(icon), contentDescription = description, modifier = Modifier.size((size * 0.5f).dp))

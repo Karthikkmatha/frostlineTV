@@ -39,19 +39,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import tv.frostline.core.twitchinternal.CustomReward
 import tv.frostline.core.twitchinternal.PredictionStatus
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.TvTextField
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostListItem
+import tv.frostline.core.ui.FrostSurface
 import tv.frostline.core.ui.tryFocus
 
 /** Banners and sheets tick once a second for countdowns; tests switch this off. */
@@ -99,23 +97,11 @@ internal fun PointsToast(text: String, modifier: Modifier = Modifier) {
 
 // ---------------------------------------------------------------- banners
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun BannerSurface(onClick: () -> Unit, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth(),
-        shape = cardShape(RoundedCornerShape(8.dp)),
-        border = focusRingBorder(RoundedCornerShape(8.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.SurfaceAlt,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
+    // A wide banner: the border and lighter container show focus, it does not scale (it would crowd the panel).
+    FrostSurface(onClick = onClick, modifier = modifier.fillMaxWidth(), focusedScale = 1f) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
     }
 }
 
@@ -216,11 +202,10 @@ private fun SheetHeader(title: String, closeTag: String, onClose: () -> Unit, po
             Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
             if (points != null) PointsBadge(points, Modifier.testTag("sheet_balance"))
         }
-        TvButton("Close", onClose, closeModifier.focusProperties { up = Stop; left = Stop; right = Stop }.testTag(closeTag))
+        FrostSecondaryButton("Close", onClose, closeModifier.focusProperties { up = Stop; left = Stop; right = Stop }.testTag(closeTag))
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun SheetRow(
     onClick: () -> Unit,
@@ -229,21 +214,14 @@ private fun SheetRow(
     selected: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    Surface(
+    FrostListItem(
         onClick = { if (!inert) onClick() },
         modifier = modifier.fillMaxWidth().focusProperties { left = Stop; right = Stop }.then(if (inert) Modifier.semantics { disabled() } else Modifier),
-        shape = cardShape(RoundedCornerShape(8.dp)),
-        border = focusRingBorder(RoundedCornerShape(8.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) FrostColors.Primary else FrostColors.SurfaceAlt,
-            contentColor = if (inert) FrostColors.Muted else FrostColors.OnSurface,
-            focusedContainerColor = if (selected) FrostColors.Primary else FrostColors.SurfaceFocused,
-            focusedContentColor = if (inert) FrostColors.Muted else FrostColors.OnSurface,
-        ),
-    ) {
-        Box(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { content() }
-    }
+        selected = selected,
+        headline = {
+            if (inert) androidx.compose.runtime.CompositionLocalProvider(androidx.tv.material3.LocalContentColor provides FrostColors.Muted) { content() } else content()
+        },
+    )
 }
 
 @Composable
@@ -284,8 +262,8 @@ internal fun RewardsSheet(
             finished -> {
                 Result(result, "redeem")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TvButton("Back to rewards", { act.resetRedeem(); c.rewardPick = null }, Modifier.focusRequester(initial).focusProperties { left = Stop }.testTag("redeem_back"))
-                    TvButton("Close", { act.resetRedeem(); c.rewardPick = null; c.rewardsOpen = false }, Modifier.focusProperties { right = Stop; up = Stop }.testTag("redeem_done"))
+                    FrostSecondaryButton("Back to rewards", { act.resetRedeem(); c.rewardPick = null }, Modifier.focusRequester(initial).focusProperties { left = Stop }.testTag("redeem_back"))
+                    FrostSecondaryButton("Close", { act.resetRedeem(); c.rewardPick = null; c.rewardsOpen = false }, Modifier.focusProperties { right = Stop; up = Stop }.testTag("redeem_done"))
                 }
             }
             pick != null -> RedeemConfirm(pick, balance, result, act, c, initial)
@@ -357,13 +335,13 @@ private fun RedeemConfirm(r: CustomReward, balance: Long, state: ActionState, ac
         }
         Result(state, "redeem")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TvButton(
+            FrostButton(
                 if (working) "Redeeming..." else "Redeem",
                 { act.redeem(r, if (needsText) c.rewardText else null) },
                 Modifier.then(if (!needsText) Modifier.focusRequester(initial) else Modifier).focusProperties { left = Stop; if (needsText) up = FocusRequester.Default else up = Stop }.testTag("redeem_ok"),
                 enabled = canRedeem,
             )
-            TvButton("Cancel", { c.rewardPick = null }, Modifier.focusProperties { right = Stop; down = Stop }.testTag("redeem_cancel"), enabled = !working)
+            FrostSecondaryButton("Cancel", { c.rewardPick = null }, Modifier.focusProperties { right = Stop; down = Stop }.testTag("redeem_cancel"), enabled = !working)
         }
     }
 }
@@ -400,7 +378,7 @@ internal fun PredictionSheet(
             finished -> {
                 Result(action, "prediction")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TvButton("Back", { act.resetPrediction(); c.predConfirm = false }, Modifier.focusRequester(initial).focusProperties { left = Stop; down = Stop }.testTag("prediction_back"))
+                    FrostSecondaryButton("Back", { act.resetPrediction(); c.predConfirm = false }, Modifier.focusRequester(initial).focusProperties { left = Stop; down = Stop }.testTag("prediction_back"))
                 }
             }
             c.predConfirm && outcome != null -> {
@@ -408,8 +386,8 @@ internal fun PredictionSheet(
                 Text("Predict \"${outcome.title}\" with ${EngagementMath.grouped(c.predAmount)} points?", fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("prediction_confirm_text"))
                 Result(action, "prediction")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TvButton(if (working) "Placing..." else "Confirm", { act.predict(outcome.id, c.predAmount) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("prediction_confirm"), enabled = !working && p.open)
-                    TvButton("Back", { c.predConfirm = false }, Modifier.focusProperties { right = Stop; down = Stop }.testTag("prediction_confirm_back"), enabled = !working)
+                    FrostButton(if (working) "Placing..." else "Confirm", { act.predict(outcome.id, c.predAmount) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("prediction_confirm"), enabled = !working && p.open)
+                    FrostSecondaryButton("Back", { c.predConfirm = false }, Modifier.focusProperties { right = Stop; down = Stop }.testTag("prediction_confirm_back"), enabled = !working)
                 }
             }
             else -> {
@@ -437,7 +415,7 @@ internal fun PredictionSheet(
                     } else {
                         AmountPicker(balance, c)
                         val ready = outcome != null && c.predAmount in EngagementMath.MIN_PREDICTION..EngagementMath.maxAmount(balance)
-                        TvButton(
+                        FrostButton(
                             if (outcome == null) "Pick an outcome" else "Predict ${EngagementMath.grouped(c.predAmount)}",
                             { c.predConfirm = true },
                             Modifier.focusProperties { left = Stop; right = Stop; down = Stop }.testTag("prediction_go"),
@@ -455,14 +433,14 @@ private fun AmountPicker(balance: Long, c: ChatController) {
     // Keep whatever was typed inside the allowed range as the balance moves.
     LaunchedEffect(balance) { c.predAmount = EngagementMath.clampAmount(if (c.predAmount == 0L) 100 else c.predAmount, balance) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TvButton("-", { c.predAmount = EngagementMath.decrease(c.predAmount, balance) }, Modifier.focusProperties { left = Stop }.testTag("prediction_dec"))
+        FrostSecondaryButton("-", { c.predAmount = EngagementMath.decrease(c.predAmount, balance) }, Modifier.focusProperties { left = Stop }.testTag("prediction_dec"))
         Text(EngagementMath.grouped(c.predAmount), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, modifier = Modifier.width(96.dp).testTag("prediction_amount"))
-        TvButton("+", { c.predAmount = EngagementMath.increase(c.predAmount, balance) }, Modifier.focusProperties { right = Stop }.testTag("prediction_inc"))
+        FrostSecondaryButton("+", { c.predAmount = EngagementMath.increase(c.predAmount, balance) }, Modifier.focusProperties { right = Stop }.testTag("prediction_inc"))
     }
     val presets = EngagementMath.presets(balance)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         presets.forEachIndexed { i, (label, value) ->
-            TvButton(
+            FrostSecondaryButton(
                 label, { c.predAmount = value },
                 Modifier.focusProperties { if (i == 0) left = Stop; if (i == presets.lastIndex) right = Stop }.testTag("prediction_preset_$label"),
             )
@@ -505,19 +483,19 @@ internal fun PollSheet(
         when {
             finished -> {
                 Result(action, "poll")
-                TvButton("Back", { act.resetPoll(); c.pollChoice = null }, Modifier.focusRequester(initial).focusProperties { left = Stop; right = Stop; down = Stop }.testTag("poll_back"))
+                FrostSecondaryButton("Back", { act.resetPoll(); c.pollChoice = null }, Modifier.focusRequester(initial).focusProperties { left = Stop; right = Stop; down = Stop }.testTag("poll_back"))
             }
             choice != null && p.open -> {
                 val working = action == ActionState.Working
                 Text("Vote for \"${choice.title}\"?", fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("poll_confirm_text"))
                 Result(action, "poll")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TvButton(if (working) "Voting..." else "Vote", { act.vote(choice.id, false) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("poll_vote"), enabled = !working)
+                    FrostButton(if (working) "Voting..." else "Vote", { act.vote(choice.id, false) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("poll_vote"), enabled = !working)
                     val cost = p.pointsVoteCost
                     if (cost != null) {
-                        TvButton("Vote +${EngagementMath.grouped(cost.toLong())} pts", { act.vote(choice.id, true) }, Modifier.focusProperties { up = Stop }.testTag("poll_vote_points"), enabled = !working && cost <= balance)
+                        FrostButton("Vote +${EngagementMath.grouped(cost.toLong())} pts", { act.vote(choice.id, true) }, Modifier.focusProperties { up = Stop }.testTag("poll_vote_points"), enabled = !working && cost <= balance)
                     }
-                    TvButton("Back", { c.pollChoice = null }, Modifier.focusProperties { right = Stop; up = Stop }.testTag("poll_confirm_back"), enabled = !working)
+                    FrostSecondaryButton("Back", { c.pollChoice = null }, Modifier.focusProperties { right = Stop; up = Stop }.testTag("poll_confirm_back"), enabled = !working)
                 }
                 if (cost(p) != null && cost(p)!! > balance) Text("Not enough points for an extra vote.", fontSize = 11.sp, color = FrostColors.Muted)
             }

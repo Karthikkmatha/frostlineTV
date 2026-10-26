@@ -20,7 +20,7 @@ class ContrastTest {
         return 0.2126 * ch(c.red) + 0.7152 * ch(c.green) + 0.0722 * ch(c.blue)
     }
 
-    private val surfaces = listOf(FrostColors.Background, FrostColors.Surface, FrostColors.SurfaceAlt, FrostColors.SurfaceFocused)
+    private val surfaces = listOf(FrostColors.Background, FrostColors.Surface, FrostColors.SurfaceAlt, FrostColors.Container, FrostColors.ContainerFocused)
 
     @Test fun bodyTextIsAaOnEverySurface() {
         for (s in surfaces) {
@@ -37,6 +37,7 @@ class ContrastTest {
 
     @Test fun buttonTextIsAaOnPrimary() {
         assertTrue(ratio(FrostColors.OnSurface, FrostColors.Primary) >= 4.5)
+        assertTrue(ratio(FrostColors.OnSurface, FrostColors.PrimaryFocused) >= 4.5)
     }
 
     @Test fun liveRedReadsOnDarkAndCarriesDarkText() {

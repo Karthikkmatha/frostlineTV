@@ -36,7 +36,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.brandName
 
 @Composable
@@ -84,8 +85,8 @@ fun SignInLanding(ui: SignInUi, onWebSignIn: () -> Unit, onGuest: () -> Unit, on
             Text(brandName(), fontSize = 40.sp, color = FrostColors.OnSurface)
             Text("A native Twitch client for your TV.", fontSize = 15.sp, color = FrostColors.Muted)
             Spacer(Modifier.height(16.dp))
-            TvButton("Sign in with Twitch", onWebSignIn, Modifier.focusRequester(first).testTag("btn_web_signin"))
-            TvButton("Skip — watch as guest", onGuest, Modifier.testTag("btn_guest"))
+            FrostButton("Sign in with Twitch", onWebSignIn, Modifier.focusRequester(first).testTag("btn_web_signin"))
+            FrostSecondaryButton("Skip — watch as guest", onGuest, Modifier.testTag("btn_guest"))
             Text(
                 "Signing in unlocks your follows and chat. As a guest you can browse Top, Categories and Search and watch streams.",
                 fontSize = 12.sp,
@@ -138,7 +139,7 @@ private fun CodePanel(ui: SignInUi, onNewCode: () -> Unit, modifier: Modifier) {
                 modifier = Modifier.testTag("code_status"),
             )
         }
-        TvButton("Get a new code", onNewCode, Modifier.testTag("btn_new_code"))
+        FrostButton("Get a new code", onNewCode, Modifier.testTag("btn_new_code"))
     }
 }
 
