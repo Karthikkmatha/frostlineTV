@@ -89,14 +89,43 @@ object IntegrityGate {
     @Volatile private var startingAtMs = 0L
     @Volatile private var startedAtMs = 0L
 
+    const val SETTLE_MS = 30_000L
+
     fun streamStarting() { startingAtMs = System.currentTimeMillis() }
     fun streamStarted() { startedAtMs = System.currentTimeMillis() }
 
-    /** False while a stream is starting (for at most 60 s) and for [settleMs] after playback began. */
-    internal fun mayRun(now: Long, settleMs: Long = 10_000L): Boolean {
+    /** False while a stream is starting (for at most 60 s) and for [settleMs] after playback began (also after a channel switch). */
+    internal fun mayRun(now: Long, settleMs: Long = SETTLE_MS): Boolean {
         val startingNow = startingAtMs > startedAtMs && now - startingAtMs < 60_000L
         return !startingNow && now - startedAtMs >= settleMs
     }
+}
+
+/** How often a capture may run: the first one at once, later ones at most hourly, a forced one (integrity error) after 10 minutes. */
+internal object IntegrityPolicy {
+    const val ROUTINE_GAP_MS = 60 * 60_000L
+    const val FORCED_GAP_MS = 10 * 60_000L
+
+    fun mayCapture(nowMs: Long, lastCaptureMs: Long, haveCreds: Boolean, forced: Boolean): Boolean = when {
+        !haveCreds || lastCaptureMs == 0L -> true
+        forced -> nowMs - lastCaptureMs >= FORCED_GAP_MS
+        else -> nowMs - lastCaptureMs >= ROUTINE_GAP_MS
+    }
+}
+
+/** Cookies of twitch.tv before and after a capture: only the ones the capture added are removed, never the linked session. */
+internal object CookieHygiene {
+    /** Device identity cookies stay: a stable device id keeps the integrity token bound to the same device. */
+    private fun keep(name: String) = name.startsWith("unique_id")
+
+    fun names(cookieHeader: String?): Set<String> =
+        cookieHeader.orEmpty().split(';').map { it.trim().substringBefore('=') }.filter { it.isNotEmpty() }.toSet()
+
+    fun value(cookieHeader: String?, name: String): String? =
+        cookieHeader.orEmpty().split(';').map { it.trim() }.firstOrNull { it.startsWith("$name=") }?.removePrefix("$name=")
+
+    /** Names present after but not before, minus the device identity ones: these are expired again. */
+    fun addedByCapture(before: String?, after: String?): Set<String> = names(after) - names(before) - names(after).filter(::keep).toSet()
 }
 
 internal object IntegrityTokens {
@@ -143,7 +172,10 @@ class WebViewIntegrityProvider(
         return mutex.withLock {
             val again = cached
             if (!forceRefresh && again != null && clock() < again.expiresAtMs - 5 * 60_000L) return@withLock again
-            if (forceRefresh && again != null && clock() - capturedAtMs < 30_000L) return@withLock again // just captured
+            if (!IntegrityPolicy.mayCapture(clock(), capturedAtMs, again != null, forceRefresh)) {
+                status("kept (next capture allowed in ${((if (forceRefresh) IntegrityPolicy.FORCED_GAP_MS else IntegrityPolicy.ROUTINE_GAP_MS) - (clock() - capturedAtMs)) / 60_000 + 1} min)")
+                return@withLock again
+            }
             val token = session()?.trim()?.takeIf { it.isNotEmpty() } ?: run { status("no web session"); return@withLock null }
             if (clock() < retryNotBeforeMs) { status("backing off after $failures failure(s)"); return@withLock cached }
             while (!IntegrityGate.mayRun(clock())) { status("waiting for the stream to settle"); delay(1_000) }
@@ -171,6 +203,8 @@ class WebViewIntegrityProvider(
         val result = CompletableDeferred<IntegrityCreds?>()
         val main = Handler(Looper.getMainLooper())
         var web: WebView? = null
+        var cookiesBefore: String? = null
+        var authBefore: String? = null
         val destroy = Runnable {
             web?.let { w ->
                 runCatching { w.stopLoading(); w.webViewClient = WebViewClient(); w.loadUrl("about:blank"); w.removeAllViews(); w.destroy() }
@@ -184,6 +218,8 @@ class WebViewIntegrityProvider(
             try {
                 val cm = CookieManager.getInstance()
                 cm.setAcceptCookie(true)
+                cookiesBefore = cm.getCookie("https://www.twitch.tv")
+                authBefore = CookieHygiene.value(cookiesBefore, "auth-token")
                 val value = authToken.removePrefix("auth-token=").trim('"', '\'', ' ', ';')
                 cm.setCookie("https://www.twitch.tv", "auth-token=$value; Domain=.twitch.tv; Path=/; Secure")
                 cm.flush()
@@ -194,6 +230,10 @@ class WebViewIntegrityProvider(
                 w.settings.domStorageEnabled = true
                 w.settings.mediaPlaybackRequiresUserGesture = true
                 w.settings.cacheMode = WebSettings.LOAD_DEFAULT
+                // Cheapest capture possible: no images, and the renderer process runs at the lowest priority.
+                w.settings.loadsImagesAutomatically = false
+                w.settings.blockNetworkImage = true
+                if (android.os.Build.VERSION.SDK_INT >= 26) w.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED, true)
                 w.layout(0, 0, 1, 1)
                 w.webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest?): WebResourceResponse? {
@@ -219,8 +259,19 @@ class WebViewIntegrityProvider(
         }
         val got = withTimeoutOrNull(timeoutMs) { result.await() }
         main.post(destroy)
-        // Do not leave the session cookie lying in the shared store.
-        main.post { runCatching { CookieManager.getInstance().removeAllCookies(null); CookieManager.getInstance().flush() } }
+        // Put the cookie store back as it was: remove only what this capture added and restore a previous auth-token. Never
+        // removeAllCookies: the linked web session's own cookies share this store.
+        main.post {
+            runCatching {
+                val cm = CookieManager.getInstance()
+                CookieHygiene.addedByCapture(cookiesBefore, cm.getCookie("https://www.twitch.tv")).forEach { name ->
+                    cm.setCookie("https://www.twitch.tv", "$name=; Max-Age=0; Domain=.twitch.tv; Path=/")
+                }
+                val previous = authBefore
+                if (previous != null) cm.setCookie("https://www.twitch.tv", "auth-token=$previous; Domain=.twitch.tv; Path=/; Secure")
+                cm.flush()
+            }
+        }
         if (got == null) status("failed", "no integrity token seen in ${timeoutMs / 1000} s")
         return got
     }

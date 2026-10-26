@@ -65,4 +65,33 @@ class IntegrityTest {
         assertEquals("ok", HermesProtocol.subscribeResult("""{"type":"subscribeResponse","subscribeResponse":{"result":"ok"}}"""))
         assertTrue(HermesProtocol.subscribeResult("""{"type":"subscribeResponse","subscribeResponse":{"result":"error","error":"unauthorized"}}""").contains("unauthorized"))
     }
+
+    @Test fun capturesAreRateLimitedAndTheFirstIsImmediate() {
+        val h = 60 * 60_000L
+        assertTrue(IntegrityPolicy.mayCapture(1_000, 0, false, false))
+        assertTrue(IntegrityPolicy.mayCapture(1_000, 500, false, false)) // no creds yet: try
+        assertFalse(IntegrityPolicy.mayCapture(h / 2, 1, true, false))
+        assertTrue(IntegrityPolicy.mayCapture(h + 2, 1, true, false))
+        assertFalse(IntegrityPolicy.mayCapture(5 * 60_000L, 1, true, true))
+        assertTrue(IntegrityPolicy.mayCapture(11 * 60_000L, 1, true, true))
+    }
+
+    @Test fun streamStartAndChannelSwitchHoldTheCaptureForThirtySeconds() {
+        IntegrityGate.streamStarting()
+        assertFalse(IntegrityGate.mayRun(System.currentTimeMillis() + 5_000))
+        IntegrityGate.streamStarted()
+        val t = System.currentTimeMillis()
+        assertFalse(IntegrityGate.mayRun(t + 29_000))
+        assertTrue(IntegrityGate.mayRun(t + 31_000))
+    }
+
+    @Test fun cookieCleanupRemovesOnlyWhatTheCaptureAdded() {
+        val before = "auth-token=SECRET; unique_id=abc; theme=dark"
+        val after = "auth-token=SECRET; unique_id=abc; theme=dark; server_session_id=x; unique_id_durable=d; api_token=t"
+        assertEquals(setOf("server_session_id", "api_token"), CookieHygiene.addedByCapture(before, after))
+        assertEquals(setOf("auth-token", "unique_id", "theme"), CookieHygiene.names(before))
+        assertEquals("SECRET", CookieHygiene.value(before, "auth-token"))
+        assertEquals(null, CookieHygiene.value(null, "auth-token"))
+        assertEquals(emptySet<String>(), CookieHygiene.addedByCapture(null, null))
+    }
 }
