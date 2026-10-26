@@ -62,6 +62,7 @@ class ChatFocusTest {
         visible: Boolean = true,
         initial: ChatSettings = ChatSettings(),
         replay: Boolean = false,
+        engagement: EngagementUi = EngagementUi(),
     ) {
         val lines = (count - 1 downTo 0).map { msg(it) }
         rule.setContent {
@@ -73,7 +74,7 @@ class ChatFocusTest {
                     chatVisible = visible,
                     model = ChatUiModel(
                         lines, ConnState.Connected, "Slow 5 s", canSend = signedIn, signedIn = signedIn,
-                        settings = s, picker = PickerData(twitch = emotes), replay = replay,
+                        settings = s, picker = PickerData(twitch = emotes), replay = replay, engagement = engagement,
                     ),
                     actions = ChatActions(
                         send = { sent += it; true },
@@ -121,6 +122,73 @@ class ChatFocusTest {
             val b = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
             assertTrue("$tag $b outside $panel", b.left >= panel.left - 1 && b.right <= panel.right + 1 && b.bottom <= panel.bottom + 1)
         }
+    }
+
+    // ---- the 2x2 button grid (Emotes, Send / Rewards, Menu) at every panel width ----
+
+    private val withRewards = EngagementUi(available = true, rewardsLoad = RewardsLoad.Ready)
+
+    private fun boundsOf(tag: String) = rule.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
+
+    private fun assertGridLayout(widthPct: Int) {
+        show(initial = ChatSettings(widthPct = widthPct), engagement = withRewards)
+        val panel = boundsOf("chat_panel")
+        val e = boundsOf("chat_emotes_btn"); val s = boundsOf("chat_send_btn")
+        val r = boundsOf("chat_rewards_btn"); val m = boundsOf("chat_menu_btn")
+        for ((tag, b) in listOf("emotes" to e, "send" to s, "rewards" to r, "menu" to m)) {
+            assertTrue("$tag $b outside $panel at $widthPct%", b.left >= panel.left - 1 && b.right <= panel.right + 1 && b.bottom <= panel.bottom + 1)
+        }
+        // Two rows of two: Emotes beside Send above Rewards beside Menu, same columns, equal widths.
+        assertEquals(e.top, s.top, 1f); assertEquals(r.top, m.top, 1f)
+        assertTrue("second row below the first", r.top >= e.bottom - 1)
+        assertEquals(e.left, r.left, 1f); assertEquals(s.left, m.left, 1f)
+        assertTrue(s.left > e.right - 1)
+        val w = listOf(e, s, r, m).map { it.width }
+        assertEquals("equal widths ${w}", w.min(), w.max(), 1f)
+    }
+
+    private fun assertGridKeys() {
+        enter()
+        rule.onNodeWithTag("chat_emotes_btn").focus()
+        press(Key.DirectionDown); focused("chat_rewards_btn")      // Down from Emotes -> Rewards
+        press(Key.DirectionRight); focused("chat_menu_btn")        // Right of Rewards -> Menu
+        press(Key.DirectionUp); focused("chat_send_btn")           // Up from Menu -> Send
+        press(Key.DirectionLeft); focused("chat_emotes_btn")       // Left of Send -> Emotes
+        press(Key.DirectionRight); focused("chat_send_btn")        // Right from Emotes -> Send
+        press(Key.DirectionRight); focused("chat_send_btn")        // nothing right of Send
+        press(Key.DirectionDown); focused("chat_menu_btn")         // Down from Send -> Menu
+        press(Key.DirectionDown); focused("chat_menu_btn")         // nothing below Menu
+        press(Key.DirectionRight); focused("chat_menu_btn")
+        press(Key.DirectionLeft); focused("chat_rewards_btn")      // Left of Menu -> Rewards
+        val before = leaves
+        press(Key.DirectionLeft)                                    // Left of the first column leaves chat
+        assertEquals(before + 1, leaves)
+        rule.onNodeWithTag("chat_rewards_btn").focus()
+        press(Key.DirectionUp); focused("chat_emotes_btn")
+        press(Key.DirectionUp); focused("chat_input")              // Up from the top row -> the message field
+        press(Key.DirectionDown); focused("chat_emotes_btn")
+    }
+
+    @Test fun buttonGridIsTwoByTwoAtTwentyPercent() = assertGridLayout(20)
+    @Test fun buttonGridIsTwoByTwoAtFortyFivePercent() = assertGridLayout(45)
+    @Test fun buttonGridIsTwoByTwoAtThirtyPercent() = assertGridLayout(30)
+
+    @Test fun gridKeysAtTwentyPercent() { show(initial = ChatSettings(widthPct = 20), engagement = withRewards); assertGridKeys() }
+    @Test fun gridKeysAtFortyFivePercent() { show(initial = ChatSettings(widthPct = 45), engagement = withRewards); assertGridKeys() }
+
+    @Test fun withoutRewardsTheButtonsAreOneRowOfThreeAtTwentyPercent() {
+        show(initial = ChatSettings(widthPct = 20))
+        rule.onNodeWithTag("chat_rewards_btn").assertDoesNotExistCompat()
+        val e = boundsOf("chat_emotes_btn"); val s = boundsOf("chat_send_btn"); val m = boundsOf("chat_menu_btn")
+        assertEquals(e.top, s.top, 1f); assertEquals(s.top, m.top, 1f)
+        assertEquals(e.width, m.width, 1f)
+        val panel = boundsOf("chat_panel")
+        assertTrue(m.right <= panel.right + 1)
+        enter()
+        rule.onNodeWithTag("chat_emotes_btn").focus()
+        press(Key.DirectionDown); focused("chat_emotes_btn") // a single row: nothing below
+        press(Key.DirectionRight); focused("chat_send_btn")
+        press(Key.DirectionRight); focused("chat_menu_btn")
     }
 
     // ---- player <-> chat ----

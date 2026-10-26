@@ -152,21 +152,26 @@ class EngagementFocusTest {
         show()
         rule.onNodeWithTag("chat_menu_btn").focus()
         press(Key.DirectionRight)
-        focused("chat_menu_btn") // Menu is the last button
+        focused("chat_menu_btn") // Menu is the last button of the grid's second row
         press(Key.DirectionLeft)
         focused("chat_rewards_btn")
         press(Key.DirectionRight)
         focused("chat_menu_btn")
-        press(Key.DirectionLeft); press(Key.DirectionLeft); press(Key.DirectionLeft)
-        focused("chat_emotes_btn")
+        press(Key.DirectionUp); focused("chat_send_btn")
+        press(Key.DirectionLeft); focused("chat_emotes_btn")
         assertEquals(0, leaves)
         press(Key.DirectionLeft)
         assertEquals(1, leaves)
+        rule.onNodeWithTag("chat_rewards_btn").focus()
+        press(Key.DirectionLeft) // the first column leaves chat in the second row too
+        assertEquals(2, leaves)
     }
 
     @Test fun upFromTheButtonRowGoesToTheFieldThenTheListWhenThereIsNoBanner() {
         show()
         rule.onNodeWithTag("chat_rewards_btn").focus()
+        press(Key.DirectionUp)
+        focused("chat_emotes_btn") // Rewards sits under Emotes
         press(Key.DirectionUp)
         focused("chat_input")
         press(Key.DirectionUp)
@@ -325,7 +330,7 @@ class EngagementFocusTest {
 
     @Test fun upFromTheButtonRowGoesToTheFieldAndOnToTheBanner() {
         show(signedIn.copy(prediction = prediction()))
-        rule.onNodeWithTag("chat_rewards_btn").focus()
+        rule.onNodeWithTag("chat_emotes_btn").focus()
         press(Key.DirectionUp)
         focused("chat_input")
         press(Key.DirectionUp)

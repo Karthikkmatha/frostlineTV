@@ -2,13 +2,13 @@ package tv.frostline.feature.chat
 
 import tv.frostline.core.data.ChatOptions
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -50,7 +50,10 @@ import androidx.tv.material3.Text
 import kotlinx.coroutines.launch
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
+import tv.frostline.core.ui.FrostTokens
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostButtonStyle
+import tv.frostline.core.ui.frostFocusBorder
 import tv.frostline.core.ui.TvTextField
 
 /** Everything the panel draws. */
@@ -127,12 +130,15 @@ internal fun ChatPanel(
     val poll = eng.poll
     val hasInput = model.signedIn && !model.replay
 
-    // The button row, left to right. Variants: guest = Menu, Sign in; replay = Menu; signed in = Emotes, Send, Rewards, Menu.
-    val rowOrder: List<FocusRequester> = when {
-        model.replay -> listOf(f.menu)
-        !model.signedIn -> listOf(f.menu, f.signIn)
-        else -> buildList { add(f.emotes); add(f.send); if (showRewards) add(f.rewards); add(f.menu) }
+    // The button grid. Signed in with rewards: 2x2 (Emotes, Send / Rewards, Menu). Signed in without rewards: one row
+    // (Emotes, Send, Menu). Guest: Menu, Sign in. Replay: Menu.
+    val grid: List<List<FocusRequester>> = when {
+        model.replay -> listOf(listOf(f.menu))
+        !model.signedIn -> listOf(listOf(f.menu, f.signIn))
+        showRewards -> listOf(listOf(f.emotes, f.send), listOf(f.rewards, f.menu))
+        else -> listOf(listOf(f.emotes, f.send, f.menu))
     }
+    val rowOrder: List<FocusRequester> = grid.flatten()
     val toList: () -> Unit = { c.following = true; c.bannerFocused = null; f.list.tryFocus() }
     // Above the button row: the field, else the last banner, else the list.
     val aboveRow: FocusRequester = when {
@@ -239,32 +245,45 @@ internal fun ChatPanel(
         if (hasInput) {
             InputField(model, actions, c, upFromField, toList, f.emotes)
         }
-        val rowButton: @Composable (String, FocusRequester, String, () -> Unit) -> Unit = { label, req, tag, onClick ->
-            val idx = rowOrder.indexOf(req)
-            TvButton(
+        val gridButton: @Composable RowScope.(String, FocusRequester, String, () -> Unit) -> Unit = { label, req, tag, onClick ->
+            val r = grid.indexOfFirst { req in it }
+            val col = grid[r].indexOf(req)
+            val stop = FocusRequester.Cancel
+            FrostButton(
                 label,
                 onClick,
                 Modifier
-                    .onDpad(Key.DirectionLeft) { if (idx <= 0) actions.leave() else rowOrder[idx - 1].tryFocus(); true }
-                    .onDpad(Key.DirectionRight) { if (idx in 0 until rowOrder.lastIndex) rowOrder[idx + 1].tryFocus(); true }
-                    .onDpad(Key.DirectionUp) { if (aboveRow == f.list) toList() else aboveRow.tryFocus(); true }
-                    .onDpad(Key.DirectionDown) { true }
+                    .weight(1f)
+                    // Explicit focus targets inside the grid; edges are closed (Left of the first column and Up of
+                    // the first row leave the grid through the key handlers below).
+                    .focusProperties {
+                        left = if (col > 0) grid[r][col - 1] else stop
+                        right = if (col < grid[r].lastIndex) grid[r][col + 1] else stop
+                        up = if (r > 0) grid[r - 1][minOf(col, grid[r - 1].lastIndex)] else stop
+                        down = if (r < grid.lastIndex) grid[r + 1][minOf(col, grid[r + 1].lastIndex)] else stop
+                    }
+                    .onDpad(Key.DirectionLeft) { if (col == 0) { actions.leave(); true } else false }
+                    .onDpad(Key.DirectionUp) { if (r == 0) { if (aboveRow == f.list) toList() else aboveRow.tryFocus(); true } else false }
                     .focusRequester(req).testTag(tag),
+                style = if (req == f.send) FrostButtonStyle.Primary else FrostButtonStyle.Secondary,
+                horizontalPadding = 8.dp,
             )
         }
-        // Wraps to a second line when the panel is narrow (20% of the screen), so no button is ever clipped off-panel.
-        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-        androidx.compose.foundation.layout.FlowRow(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height }.testTag("chat_button_row"),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        // A real grid at every panel width (20-45 %): equal-width buttons, one Row per grid row.
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height }.testTag("chat_button_row"),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            for (req in rowOrder) when (req) {
-                f.emotes -> rowButton("Emotes", req, "chat_emotes_btn") { actions.loadPicker(); c.pickerOpen = true }
-                f.send -> rowButton("Send", req, "chat_send_btn") { if (c.draft.isNotBlank() && actions.send(c.draft)) c.draft = "" }
-                f.rewards -> rowButton("Rewards", req, "chat_rewards_btn") { c.openRewards(act) }
-                f.signIn -> rowButton("Sign in", req, "chat_signin_btn") { actions.signIn() }
-                else -> rowButton("Menu", req, "chat_menu_btn") { c.menuOpen = true }
+            for (row in grid) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (req in row) when (req) {
+                        f.emotes -> gridButton("Emotes", req, "chat_emotes_btn") { actions.loadPicker(); c.pickerOpen = true }
+                        f.send -> gridButton("Send", req, "chat_send_btn") { if (c.draft.isNotBlank() && actions.send(c.draft)) c.draft = "" }
+                        f.rewards -> gridButton("Rewards", req, "chat_rewards_btn") { c.openRewards(act) }
+                        f.signIn -> gridButton("Sign in", req, "chat_signin_btn") { actions.signIn() }
+                        else -> gridButton("Menu", req, "chat_menu_btn") { c.menuOpen = true }
+                    }
+                }
             }
         }
     }
@@ -282,8 +301,8 @@ private fun ResizeHint(c: ChatController, onSave: () -> Unit, modifier: Modifier
         fontSize = 12.sp,
         color = FrostColors.OnSurface,
         modifier = modifier
-            .background(FrostColors.Primary, RoundedCornerShape(10.dp))
-            .border(2.dp, FrostColors.Violet, RoundedCornerShape(10.dp))
+            .background(FrostColors.Primary, FrostTokens.PillShape)
+            .frostFocusBorder(true, FrostTokens.PillShape)
             .padding(horizontal = 10.dp, vertical = 6.dp)
             .onPreviewKeyEvent { e ->
                 val down = e.type == KeyEventType.KeyDown
@@ -371,7 +390,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
             }
             .focusRequester(f.list)
             .onFocusChanged { focused = it.isFocused }
-            .border(3.dp, if (focused) FrostColors.Violet else Color.Transparent, RoundedCornerShape(8.dp))
+            .frostFocusBorder(focused, RoundedCornerShape(8.dp))
             .focusable()
             .testTag("chat_list"),
     ) {
