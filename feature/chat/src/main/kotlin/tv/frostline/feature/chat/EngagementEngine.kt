@@ -5,10 +5,13 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -20,6 +23,7 @@ import tv.frostline.core.twitch.HelixRepository
 import tv.frostline.core.twitchinternal.CustomReward
 import tv.frostline.core.twitchinternal.EngagementApi
 import tv.frostline.core.twitchinternal.HermesClient
+import tv.frostline.core.twitchinternal.BearerToken
 import tv.frostline.core.twitchinternal.PointsEvent
 import tv.frostline.core.twitchinternal.PointsEvents
 import tv.frostline.core.twitchinternal.PointsInfo
@@ -33,7 +37,7 @@ import tv.frostline.core.twitchinternal.engagementDebugText
 import java.util.UUID
 
 /** The viewer's web session. [toString] never shows the token. */
-class EngagementSession(val authToken: String, val userId: String) {
+class EngagementSession(val authToken: String, val userId: String, val helixToken: String? = null) {
     override fun toString() = "EngagementSession(userId=$userId)"
 }
 
@@ -83,6 +87,27 @@ class EngagementEngine(
         synchronized(debugMap) {
             debugMap.clear(); debugMap.putAll(idleDebug().mapValues { all })
             _debug.value = renderDebug(debugMap)
+        }
+    }
+
+    init {
+        // The prediction and poll debug lines follow the banner: while a banner shows they describe it, and when it goes
+        // away they say "ok (none)" (they used to keep what the first fetch found, "none", under a visible banner).
+        scope.launch {
+            var shown = false
+            _ui.map { u -> u.prediction?.let { p -> "banner ${p.status.name}" + (if (p.myOutcomeId != null) ", bet placed" else "") + ", ${p.outcomes.size} outcomes" } }
+                .distinctUntilChanged()
+                .collect { line ->
+                    if (line != null) { shown = true; setDebug("prediction", line) } else if (shown) { shown = false; setDebug("prediction", "ok (none)") }
+                }
+        }
+        scope.launch {
+            var shown = false
+            _ui.map { u -> u.poll?.let { p -> "banner ${if (p.open) "open" else "ended"}, ${p.choices.size} choices" + (if (p.myChoiceId != null) ", voted" else "") } }
+                .distinctUntilChanged()
+                .collect { line ->
+                    if (line != null) { shown = true; setDebug("poll", line) } else if (shown) { shown = false; setDebug("poll", "ok (none)") }
+                }
         }
     }
 
@@ -198,11 +223,35 @@ class EngagementEngine(
             val uid = webId ?: s.userId
             val note = if (webId != null && webId != s.userId) " (web user differs from sign-in)" else ""
             val topic = PointsEvents.topic(uid)
+            // The web session's token first; the Helix token only if the server rejects the web one. The debug line says
+            // which kind was used (never the token itself).
+            val attempts = buildList {
+                add("web" to BearerToken.bare(s.authToken))
+                s.helixToken?.takeIf { it.isNotEmpty() && it != s.authToken }?.let { add("helix" to BearerToken.bare(it)) }
+            }
             kotlinx.coroutines.coroutineScope {
-                mirrorTopic("hm-points", topic, note)
-                hermes.events(listOf(topic), s.authToken).collect { ev ->
-                    lastUserEventAt = clock()
-                    PointsEvents.parse(ev.payload)?.let(::onPoints)
+                var idx = 0
+                while (true) {
+                    val (kind, tok) = attempts[idx]
+                    val rejected = kotlinx.coroutines.CompletableDeferred<Unit>()
+                    val mirror = launch {
+                        hermes.topicStatus.collect { m ->
+                            m[topic]?.let {
+                                setDebug("hm-points", "$it$note [$kind token]")
+                                if (it.startsWith("rejected")) rejected.complete(Unit)
+                            }
+                        }
+                    }
+                    val collector = launch {
+                        hermes.events(listOf(topic), tok).collect { ev ->
+                            lastUserEventAt = clock()
+                            PointsEvents.parse(ev.payload)?.let(::onPoints)
+                        }
+                    }
+                    if (idx >= attempts.lastIndex) { collector.join(); mirror.cancel(); break }
+                    rejected.await()
+                    collector.cancelAndJoin(); mirror.cancel()
+                    idx++
                 }
             }
         } catch (e: Throwable) {
@@ -512,10 +561,10 @@ class EngagementEngine(
  * Signed in AND a linked web session (the `auth-token` from the WebView sign-in; the Helix device-code token does not
  * work for GQL). The user id comes from the stored tokens, else from [fetchId]. Null means the feature stays hidden.
  */
-internal suspend fun resolveEngagementSession(web: String?, signedIn: Boolean, storedUserId: String?, fetchId: suspend () -> String?): EngagementSession? {
+internal suspend fun resolveEngagementSession(web: String?, signedIn: Boolean, storedUserId: String?, helixToken: String? = null, fetchId: suspend () -> String?): EngagementSession? {
     if (!signedIn || web.isNullOrEmpty()) return null
     val id = storedUserId ?: fetchId() ?: return null
-    return EngagementSession(web, id)
+    return EngagementSession(web, id, helixToken)
 }
 
 /** Wires the engine to the app: the web session from the vault, the channel id from Helix, auto-claim from Settings. */
@@ -533,7 +582,7 @@ class EngagementViewModel(
         hermes = hermes,
         session = {
             val tokens = vault.currentTokens()
-            resolveEngagementSession(vault.currentWebSession(), tokens != null, tokens?.userId) { runCatching { helix.me().id }.getOrNull() }
+            resolveEngagementSession(vault.currentWebSession(), tokens != null, tokens?.userId, tokens?.accessToken) { runCatching { helix.me().id }.getOrNull() }
         },
         noSession = {
             when {

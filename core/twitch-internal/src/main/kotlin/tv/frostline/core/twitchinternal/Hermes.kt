@@ -24,6 +24,11 @@ import okhttp3.WebSocketListener
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+/** A token as the servers want it in a bearer key: bare, without an "OAuth " or "Bearer " prefix. */
+object BearerToken {
+    fun bare(token: String): String = token.trim().removePrefix("OAuth ").removePrefix("oauth ").removePrefix("Bearer ").removePrefix("bearer ").trim()
+}
+
 /** Pure Hermes wire format helpers (no I/O), so the protocol is unit-testable. */
 internal object HermesProtocol {
     sealed interface Message {
@@ -36,6 +41,9 @@ internal object HermesProtocol {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    /** A token as the server wants it in the bearer key: bare, without an "OAuth " / "Bearer " prefix. */
+    fun bareToken(token: String): String = BearerToken.bare(token)
+
     fun subscribe(topic: String, nonce: String, subscriptionId: String, timestamp: String, authToken: String? = null): String =
         buildJsonObject {
             put("type", "subscribe")
@@ -44,7 +52,7 @@ internal object HermesProtocol {
                 put("id", subscriptionId)
                 put("type", "pubsub")
                 put("pubsub", buildJsonObject { put("topic", topic) })
-                if (authToken != null) put("auth", buildJsonObject { put("type", "bearer"); put("key", authToken) })
+                if (authToken != null) put("auth", buildJsonObject { put("type", "bearer"); put("key", bareToken(authToken)) })
             })
             put("timestamp", timestamp)
         }.toString()

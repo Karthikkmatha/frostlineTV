@@ -94,6 +94,14 @@ class HermesTest {
         assertTrue(!m.contains("auth", ignoreCase = true))
     }
 
+    @Test fun theBearerKeyIsBareEvenIfTheStoredTokenCarriesAPrefix() {
+        for (raw in listOf("abc123", "OAuth abc123", "oauth abc123", "Bearer abc123", "  abc123 ")) {
+            val m = HermesProtocol.subscribe("community-points-user-v1.7", "n", "s", "2026-01-01T00:00:00Z", raw)
+            assertTrue(m, m.contains("\"auth\":{\"type\":\"bearer\",\"key\":\"abc123\"}"))
+        }
+        assertEquals("abc123", BearerToken.bare("OAuth abc123"))
+    }
+
     @Test fun subscribesAfterWelcomeAndDeliversNotifications() = runBlocking {
         val server = MockWebServer().also { it.start() }
         try {
