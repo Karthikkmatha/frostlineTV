@@ -41,6 +41,8 @@ class ChatMessage(
     val mine: Boolean = false,
     /** Arrival order (process-wide, increasing): lets the newest lines be told apart without their list index. */
     val seq: Long = 0L,
+    /** The signed-in user's login when this message @mentions them (lower case), else null. */
+    val mentionLogin: String? = null,
 ) : ChatLine {
     @Volatile private var prepared: PreparedLine? = null
 
@@ -87,14 +89,65 @@ object ChatText {
     /** A stable fallback colour for users without a chosen one. */
     fun defaultColor(login: String): Int = palette[(login.hashCode() and 0x7fffffff) % palette.size]
 
-    /** Brightens colours too dark to read on the near-black chat background (WCAG-style relative luminance). */
+    /**
+     * Contrast floor for names on the #121018 chat background: a colour whose relative luminance is below 0.25 (about 6:1)
+     * is lightened in HSL, keeping its hue and saturation. Brighter colours are returned unchanged.
+     */
     fun readable(argb: Int): Int {
-        var c = argb or 0xFF000000.toInt()
-        repeat(6) {
-            if (luminance(c) >= 0.25) return c
-            c = mix(c, 0xFFFFFFFF.toInt(), 0.22f)
+        val c = argb or 0xFF000000.toInt()
+        if (luminance(c) >= 0.25) return c
+        val r = ((c shr 16) and 0xFF) / 255f
+        val g = ((c shr 8) and 0xFF) / 255f
+        val b = (c and 0xFF) / 255f
+        val mx = maxOf(r, g, b)
+        val mn = minOf(r, g, b)
+        val d = mx - mn
+        var l = (mx + mn) / 2f
+        val s = if (d == 0f) 0f else d / (1f - Math.abs(2f * l - 1f))
+        val h = when {
+            d == 0f -> 0f
+            mx == r -> (((g - b) / d) % 6f + 6f) % 6f
+            mx == g -> (b - r) / d + 2f
+            else -> (r - g) / d + 4f
+        } // hue in sixths of the circle
+        var out = c
+        repeat(24) {
+            l = (l + 0.04f).coerceAtMost(0.95f)
+            out = hslToArgb(h, s, l)
+            if (luminance(out) >= 0.25) return out
         }
-        return c
+        return out
+    }
+
+    private fun hslToArgb(h: Float, s: Float, l: Float): Int {
+        val c = (1f - Math.abs(2f * l - 1f)) * s
+        val x = c * (1f - Math.abs(h % 2f - 1f))
+        val m = l - c / 2f
+        val (r, g, b) = when (h.toInt()) {
+            0 -> Triple(c, x, 0f)
+            1 -> Triple(x, c, 0f)
+            2 -> Triple(0f, c, x)
+            3 -> Triple(0f, x, c)
+            4 -> Triple(x, 0f, c)
+            else -> Triple(c, 0f, x)
+        }
+        fun ch(v: Float) = ((v + m) * 255f + 0.5f).toInt().coerceIn(0, 255)
+        return (0xFF shl 24) or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
+    }
+
+    /** [own] (lower case) when [text] contains `@own` as a whole word (case-insensitive), else null. */
+    fun mentionOf(text: String, own: String?): String? {
+        if (own.isNullOrEmpty()) return null
+        var from = 0
+        while (true) {
+            val i = text.indexOf('@', from)
+            if (i < 0) return null
+            val end = i + 1 + own.length
+            if (end <= text.length && text.regionMatches(i + 1, own, 0, own.length, ignoreCase = true) &&
+                (end == text.length || !(text[end].isLetterOrDigit() || text[end] == '_'))
+            ) return own.lowercase()
+            from = i + 1
+        }
     }
 
     fun luminance(argb: Int): Double {
@@ -105,10 +158,6 @@ object ChatText {
         return 0.2126 * ch((argb shr 16) and 0xFF) + 0.7152 * ch((argb shr 8) and 0xFF) + 0.0722 * ch(argb and 0xFF)
     }
 
-    private fun mix(a: Int, b: Int, t: Float): Int {
-        fun m(sh: Int) = (((a shr sh) and 0xFF) * (1 - t) + ((b shr sh) and 0xFF) * t).toInt().coerceIn(0, 255)
-        return (0xFF shl 24) or (m(16) shl 16) or (m(8) shl 8) or m(0)
-    }
 }
 
 /** What the builder needs to resolve a message. Swapped atomically when emotes/badges arrive or settings change. */
@@ -116,6 +165,8 @@ class ResolveContext(
     val thirdParty: Map<String, Emote>,
     val badgeUrls: Map<String, String>,
     val maxBadges: Int = 3,
+    /** The signed-in user's login: messages that @mention it get a highlighted row. */
+    val ownLogin: String? = null,
 ) {
     /** Shortest and longest emote code: a word outside this range cannot be an emote, so it is never cut out for a lookup. */
     val minCodeLen: Int
@@ -157,6 +208,7 @@ object MessageBuilder {
             highlight = raw.highlighted || raw.announcement,
             mine = mine,
             seq = seqGen.incrementAndGet(),
+            mentionLogin = if (!mine) ChatText.mentionOf(raw.text, ctx.ownLogin) else null,
         )
 
     /**

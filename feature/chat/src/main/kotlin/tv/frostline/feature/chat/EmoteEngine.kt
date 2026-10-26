@@ -52,6 +52,8 @@ class EmoteEntry(val url: String) {
     val stillPending = AtomicBoolean(false)
     /** A still decode is running right now (a second, higher-priority task for the same emote waits out). */
     internal val stillRunning = AtomicBoolean(false)
+    /** A second task found the first still running (or the first shed itself): the first re-queues if the emote is on screen and still blank. */
+    @Volatile internal var stillRerun = false
     /** Priority and time of the queued still task, so a later on-screen request can jump the queue and stale ones can be shed. */
     @Volatile internal var stillPrio: Int = Int.MAX_VALUE
     @Volatile internal var stillQueuedAt: Long = 0L
@@ -346,12 +348,13 @@ class EmoteEngine(
     // ------------------------------------------------------------------ workers
 
     private fun runStill(e: EmoteEntry) {
-        if (!e.stillRunning.compareAndSet(false, true)) return // another task for this emote is decoding it
+        if (!e.stillRunning.compareAndSet(false, true)) { e.stillRerun = true; return } // another task for this emote is decoding it
+        var shed = false
         try {
             if (e.still != null || e.direct != null) return
             if (e.failedAt != 0L && clockMs() - e.failedAt < RETRY_MS) return
             // Chat outran the decoder: shed stale background work for lines that scrolled away (they are asked for again when shown).
-            if (e.stillPrio >= PRIO_VISIBLE && e.visible.get() == 0 && stillPool.queue.size > SHED_QUEUE && clockMs() - e.stillQueuedAt > SHED_AFTER_MS) return
+            if (e.stillPrio >= PRIO_VISIBLE && e.visible.get() == 0 && stillPool.queue.size > SHED_QUEUE && clockMs() - e.stillQueuedAt > SHED_AFTER_MS) { shed = true; return }
             val file = download(e.url) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
@@ -383,6 +386,11 @@ class EmoteEngine(
         } finally {
             e.stillRunning.set(false)
             e.stillPending.set(false)
+            // It came on screen while this task was shed or while it ran: ask again (the on-screen request had nowhere to queue).
+            if ((shed || e.stillRerun) && e.visible.get() > 0 && e.still == null && e.direct == null) {
+                e.stillRerun = false
+                ensureStill(e, PRIO_SCREEN)
+            }
         }
     }
 

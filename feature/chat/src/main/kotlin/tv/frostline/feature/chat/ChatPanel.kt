@@ -400,6 +400,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                 state = state,
                 reverseLayout = true,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp), // line spacing between messages
                 userScrollEnabled = false, // scrolled by the D-pad handler above (and programmatically)
                 modifier = Modifier.fillMaxSize(),
             ) {

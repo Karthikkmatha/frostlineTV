@@ -65,7 +65,10 @@ object LineBuilder {
             val body = if (m.action) SpanStyle(color = name, fontStyle = FontStyle.Italic) else SpanStyle()
             withStyle(body) {
                 for (p in m.parts) when (p) {
-                    is Part.Text -> { append(p.text); spoken.append(p.text) }
+                    is Part.Text -> {
+                        appendWithMention(p.text, m.mentionLogin)
+                        spoken.append(p.text)
+                    }
                     is Part.EmoteRef -> {
                         val e = p.emote
                         val w = (emoteH * e.aspect).coerceIn(emoteH * 0.5f, emoteH * 4f)
@@ -76,5 +79,27 @@ object LineBuilder {
             }
         }
         return PreparedLine(text, placeholders, images, spoken.toString(), fontSp, timestamps)
+    }
+
+    /** Appends [text], with every `@[login]` (whole word, any case) in bold. */
+    private fun androidx.compose.ui.text.AnnotatedString.Builder.appendWithMention(text: String, login: String?) {
+        if (login == null) { append(text); return }
+        var from = 0
+        while (from < text.length) {
+            val i = text.indexOf('@', from)
+            val end = i + 1 + login.length
+            if (i < 0) break
+            if (end <= text.length && text.regionMatches(i + 1, login, 0, login.length, ignoreCase = true) &&
+                (end == text.length || !(text[end].isLetterOrDigit() || text[end] == '_'))
+            ) {
+                append(text.substring(from, i))
+                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(text.substring(i, end)) }
+                from = end
+            } else {
+                append(text.substring(from, i + 1))
+                from = i + 1
+            }
+        }
+        if (from < text.length) append(text.substring(from))
     }
 }

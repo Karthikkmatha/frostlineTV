@@ -251,7 +251,7 @@ class ChatViewModel(
     }
 
     private fun rebuildContext(s: ChatSettings) {
-        ctx = ResolveContext(sets.index(s.show7tv, s.showBttv, s.showFfz), badgeUrls)
+        ctx = ResolveContext(sets.index(s.show7tv, s.showBttv, s.showFfz), badgeUrls, ownLogin = ownLogin)
         _picker.value = _picker.value.copy(
             sevenTv = if (s.show7tv) sets.sevenTv else emptyList(),
             bttv = if (s.showBttv) sets.bttv else emptyList(),

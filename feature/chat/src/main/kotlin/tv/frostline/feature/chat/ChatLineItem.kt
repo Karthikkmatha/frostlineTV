@@ -77,22 +77,30 @@ fun ChatLineItem(line: ChatLine, fontSp: Int, timestamps: Boolean, modifier: Mod
             }
             BasicText(
                 (if (timestamps) line.time + "  " else "") + line.text,
-                modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp).testTag("sys_line"),
+                modifier.fillMaxWidth().noticeBar().padding(horizontal = 8.dp, vertical = 2.dp).testTag("sys_line"),
                 style = TextStyle(color = color, fontSize = fontSp.sp, fontStyle = FontStyle.Italic, lineHeight = (fontSp * 1.35f).sp),
             )
         }
     }
 }
 
+/** A 3 dp muted bar on the left edge of a system notice, with the text indented past it. */
+private fun Modifier.noticeBar(): Modifier = this
+    .drawBehind { drawRect(FrostColors.Muted, size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height)) }
+    .padding(start = 6.dp)
+
 @Composable
 private fun MessageLine(m: ChatMessage, fontSp: Int, timestamps: Boolean, modifier: Modifier) {
     val prep = remember(m, fontSp, timestamps) { m.prepared(fontSp, timestamps) } // already built by the view model; cheap
     val bg = when {
         m.highlight -> Modifier.background(FrostColors.SurfaceFocused, RoundedCornerShape(6.dp))
+        m.mentionLogin != null -> Modifier.background(FrostColors.Violet.copy(alpha = 0.15f), RoundedCornerShape(6.dp)) // someone @mentioned you
         m.mine -> Modifier.background(FrostColors.SurfaceAlt, RoundedCornerShape(6.dp))
         else -> Modifier
     }
-    Column(modifier.fillMaxWidth().then(bg).padding(horizontal = 8.dp, vertical = 3.dp)) {
+    // Sub, raid and announcement lines (they carry a header) get the muted bar on the left, like system notices.
+    val bar = if (m.header != null) Modifier.noticeBar() else Modifier
+    Column(modifier.fillMaxWidth().then(bg).then(bar).padding(horizontal = 8.dp, vertical = 2.dp)) {
         m.header?.let {
             BasicText(it, style = TextStyle(color = FrostColors.Lavender, fontSize = (fontSp - 2).sp), maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
