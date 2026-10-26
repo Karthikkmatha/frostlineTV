@@ -126,9 +126,12 @@ batches (200 ms slow, 300 ms busy, 500 ms fast) as a 150-reference list with sta
 
 ### GPU memory audit (what becomes a texture)
 
-- Emotes and badges: stills and animation frames live in the shared `EmoteAtlas` (one size class, 48 px tall): 1000x1000
-  pages of 50 px cells (4 MB each, at most four = 16 MB, a page is only added when the others are full). Drawn with src rects.
-  At most 300 stills (LRU) and 1000 cells of animation strips (LRU); a full atlas evicts the least recently used strip, then still.
+- Emotes and badges: two small `EmoteAtlas` instances, stills cut to 32 px (34 px cells) and animation frames at 48 px
+  (50 px cells). Pages are 512x512 (1 MB), at most 2 per atlas (4 MB total), added only when the others are full, drawn with src
+  rects. At most 300 stills and 180 cells of strips (LRU); a full atlas evicts its least recently used entry, which also bumps the
+  entry's version so no recorded draw refers to a reused cell. Pages are released when chat is hidden or the player closes.
+  Settings > Emote atlas (debug) off gives every emote its own bitmap. No graphicsLayer on chat rows or the panel (no offscreen
+  render targets); the debug overlay shows `bitmaps` (textures and bytes) and `profile` (compiled / awaiting / none).
 - Thumbnails, avatars and category art: Coil (`SizedImage` decodes at the exact display size as a hardware bitmap), one
   8 MB memory cache; it is emptied while a player is on screen, and Home's lazy grids only compose what is on screen.
 - The integrity WebView is created per capture, then `stopLoading`, `loadUrl("about:blank")`, `removeAllViews`, `destroy`; the
@@ -144,3 +147,9 @@ batches (200 ms slow, 300 ms busy, 500 ms fast) as a 150-reference list with sta
   Stable keeps 8-15 s (24 MB cap); Low latency 3-9 s with a 5 s offset target (4-8 s range).
 - The live offset (`currentLiveOffset`) and the VOD position tick at 1 Hz only while the controls or the debug overlay show.
 - Integrity capture and the global emote preload wait for the first frame plus 2 s (`StartupGate`).
+
+### Soak test
+
+`tools/soak.ps1 -Hours 8 [-TvHost 192.168.68.54] [-SwitchMinutes 30]` samples CPU, PSS (Java/native/graphics), threads and fds
+every minute into a CSV and prints the slope per hour. It switches channels with `am start -d frostline://channel/<login>`
+(also handy for testing). The debug overlay has an `uptime` line (threads, fds, sockets, emote cache sizes).

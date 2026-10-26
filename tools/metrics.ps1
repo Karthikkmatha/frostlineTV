@@ -17,7 +17,7 @@
   .\tools\metrics.ps1 -TvHost 192.168.x.y -Samples 12 -IntervalSec 5
 #>
 param(
-    [Parameter(Mandatory = $true)][string]$TvHost,
+    [string]$TvHost = '192.168.68.54',
     [int]$Port = 5555,
     [int]$Samples = 12,
     [int]$IntervalSec = 5,

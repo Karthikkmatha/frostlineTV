@@ -104,7 +104,9 @@ class ChatViewModel(
                 // Hidden panel: keep buffering (so showing it again is instant) but stop publishing new lists.
                 val wasVisible = visible
                 visible = it.enabled
+                EmoteEngine.current?.setAtlasEnabled(it.emoteAtlas)
                 EmoteEngine.current?.setChatActive(visible)
+                if (!visible && wasVisible) EmoteEngine.current?.trimMemory()
                 if (visible && !wasVisible) publish()
             }
         }
@@ -120,6 +122,7 @@ class ChatViewModel(
         if (!started) return
         started = false
         settingsJob?.cancel()
+        EmoteEngine.current?.trimMemory()
         eventsJob?.cancel()
         channelJob?.cancel()
         session.stop()

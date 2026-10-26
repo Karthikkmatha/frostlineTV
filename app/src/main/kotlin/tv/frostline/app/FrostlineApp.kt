@@ -24,6 +24,19 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
         tv.frostline.core.twitch.NetworkRetry.start(this)
         container.twitch.tokenManager.startBackgroundRefresh(appScope)
         appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
+        // Baseline profile state for the debug overlay (after the first frame plus 2 s).
+        appScope.launch {
+            tv.frostline.core.ui.StartupGate.awaitIdle()
+            runCatching {
+                val r = androidx.profileinstaller.ProfileVerifier.getCompilationStatusAsync().get()
+                tv.frostline.core.ui.ProfileStatus.set(when (r.profileInstallResultCode) {
+                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE,
+                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING -> "compiled"
+                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION -> "awaiting"
+                    else -> "none"
+                })
+            }.onFailure { tv.frostline.core.ui.ProfileStatus.set("none") }
+        }
         // With a linked web session, capture the integrity token and keep it fresh (it refreshes itself when it expires).
         // Not needed to show Following: it starts after the first frame plus 2 s.
         appScope.launch {

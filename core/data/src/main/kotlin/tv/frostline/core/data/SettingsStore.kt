@@ -21,6 +21,8 @@ data class ChatSettings(
     val showFfz: Boolean = true,
     /** Animated emotes play (at a throttled frame rate). Off shows the first frame only. */
     val animatedEmotes: Boolean = true,
+    /** Debug: packs emotes into shared atlas pages. Off gives every emote a bitmap of its own. */
+    val emoteAtlas: Boolean = true,
 )
 
 /** Settings > Playback > Live mode. Applies the next time a stream is opened. */
@@ -60,6 +62,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
             p[CHAT_BTTV] = n.showBttv
             p[CHAT_FFZ] = n.showFfz
             p[CHAT_ANIMATED] = n.animatedEmotes
+            p[CHAT_ATLAS] = n.emoteAtlas
         }
     }
 
@@ -72,6 +75,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         showBttv = this[CHAT_BTTV] ?: true,
         showFfz = this[CHAT_FFZ] ?: true,
         animatedEmotes = this[CHAT_ANIMATED] ?: true,
+        emoteAtlas = this[CHAT_ATLAS] ?: true,
     )
 
     suspend fun setLiveMode(value: LiveMode) {
@@ -99,6 +103,7 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         val AUTO_CLAIM = booleanPreferencesKey("points_auto_claim_v1")
         val SHOW_FPS = booleanPreferencesKey("debug_fps_v1")
         val CHAT_ANIMATED = booleanPreferencesKey("chat_animated_emotes_v1")
+        val CHAT_ATLAS = booleanPreferencesKey("chat_emote_atlas_v1")
         val FOLLOW_RAIDS = booleanPreferencesKey("follow_raids_v1")
         val DEBUG_OVERLAY = booleanPreferencesKey("debug_overlay_v1")
         val CHAT_ENABLED = booleanPreferencesKey("chat_enabled_v1")

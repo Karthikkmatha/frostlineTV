@@ -101,6 +101,15 @@ fun PlayerScreen(
         value = ""
     }
 
+    // Uptime, threads, fds, sockets and the emote caches' sizes: creep here over hours means a leak.
+    val healthLine by produceState("", debug) {
+        while (debug) {
+            value = tv.frostline.core.ui.HealthStats.line(tv.frostline.feature.chat.EmoteEngine.current?.let { ", ${it.cacheCounts()}" }.orEmpty())
+            kotlinx.coroutines.delay(5_000)
+        }
+        value = ""
+    }
+
     var controlsVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
     // The live offset is only read by the controls' LIVE badge and the debug overlay: tick (1 Hz) only while one is shown.
@@ -117,6 +126,7 @@ fun PlayerScreen(
     val chatVisible = chatSettings.enabled
     val engUi by remember(engagement) { engagement?.engine?.ui ?: MutableStateFlow(EngagementUi()) }.collectAsStateWithLifecycle()
     val integrityLine by tv.frostline.core.twitchinternal.IntegrityStatus.line.collectAsStateWithLifecycle()
+    val profileLine by tv.frostline.core.ui.ProfileStatus.line.collectAsStateWithLifecycle()
     val webViewLine by tv.frostline.core.twitchinternal.WebViewRenderers.line.collectAsStateWithLifecycle()
     val engDebug by remember(engagement) { engagement?.engine?.debug ?: MutableStateFlow(emptyList<String>()) }.collectAsStateWithLifecycle()
     val chatController = rememberChatController()
@@ -222,7 +232,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + "webview  $webViewLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + "webview  $webViewLine" + "profile  $profileLine" + listOfNotNull(healthLine.takeIf { it.isNotEmpty() }) + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))

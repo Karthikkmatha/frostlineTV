@@ -15,10 +15,11 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class EmoteAtlasTest {
-    private val perPage = AtlasGeometry.COLS * AtlasGeometry.ROWS
+    private fun mk(pages: Int) = EmoteAtlas(cell = 50, maxPages = pages)
+    private val perPage = 400
 
     @Test fun oneBitmapSharedByManyRegions() {
-        val atlas = EmoteAtlas(maxPages = 2)
+        val atlas = mk(2)
         val a = atlas.tryAlloc(48, 48, 1)!!
         val b = atlas.tryAlloc(48, 48, 12)!!
         assertSame(a.page, b.page)
@@ -32,16 +33,16 @@ class EmoteAtlasTest {
     }
 
     @Test fun wideImagesSpanSeveralCells() {
-        val atlas = EmoteAtlas(maxPages = 1)
+        val atlas = mk(1)
         val w = atlas.tryAlloc(150, 48, 2)!!
-        assertEquals(AtlasGeometry.spanOf(150), w.cellsPerFrame)
-        assertEquals(2 * AtlasGeometry.spanOf(150), atlas.usedCells)
+        assertEquals(atlas.spanOf(150), w.cellsPerFrame)
+        assertEquals(2 * atlas.spanOf(150), atlas.usedCells)
         // A frame never straddles a row end.
-        for (i in 0 until w.count) assertTrue(w.srcX(i) + w.w <= AtlasGeometry.COLS * AtlasGeometry.CELL)
+        for (i in 0 until w.count) assertTrue(w.srcX(i) + w.w <= atlas.cols * atlas.cell)
     }
 
     @Test fun freedCellsAreReusedExactly() {
-        val atlas = EmoteAtlas(maxPages = 1)
+        val atlas = mk(1)
         val all = atlas.tryAlloc(48, 48, perPage)!!
         assertNull(atlas.tryAlloc(48, 48, 1)) // full, and the atlas may not grow
         atlas.free(all)
@@ -51,7 +52,7 @@ class EmoteAtlasTest {
     }
 
     @Test fun growsByPagesUpToTheLimit() {
-        val atlas = EmoteAtlas(maxPages = 2)
+        val atlas = mk(2)
         assertNotNull(atlas.tryAlloc(48, 48, perPage))
         assertNotNull(atlas.tryAlloc(48, 48, perPage))
         assertEquals(2, atlas.pageCount)
@@ -59,14 +60,14 @@ class EmoteAtlasTest {
     }
 
     @Test fun anAnimationNeverSplitsAcrossPages() {
-        val atlas = EmoteAtlas(maxPages = 2)
+        val atlas = mk(2)
         atlas.tryAlloc(48, 48, perPage - 5)!!
         val strip = atlas.tryAlloc(48, 48, 10)!! // does not fit the rest of page 0
         assertEquals(1, strip.page.index)
     }
 
     @Test fun writeFillsTheCells() {
-        val atlas = EmoteAtlas(maxPages = 1)
+        val atlas = mk(1)
         val first = atlas.tryAlloc(10, 10, 1)!!
         val red = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888).also { it.eraseColor(Color.RED) }
         atlas.write(first, 0, red)
@@ -83,10 +84,20 @@ class EmoteAtlasTest {
 
     @Test fun oversizedImagesAreScaledToFit() {
         val big = Bitmap.createBitmap(400, 96, Bitmap.Config.ARGB_8888)
-        val fit = fitToAtlas(big)
-        assertTrue(fit.width <= 4 * AtlasGeometry.CELL - 2 && fit.height <= AtlasGeometry.MAX_IMAGE_H)
+        val atlas = mk(1)
+        val fit = fitToAtlas(big, atlas)
+        assertTrue(fit.width <= atlas.maxImageW && fit.height <= atlas.maxImageH)
         val small = Bitmap.createBitmap(30, 30, Bitmap.Config.ARGB_8888)
-        assertSame(small, fitToAtlas(small))
+        assertSame(small, fitToAtlas(small, atlas))
+    }
+
+    @Test fun disabledAtlasGivesPrivateBitmaps() {
+        val atlas = mk(1)
+        atlas.enabled = false
+        val a = atlas.tryAlloc(30, 30, 2)!!
+        val b = atlas.tryAlloc(30, 30, 1)!!
+        assertTrue(a.page !== b.page)
+        atlas.free(a); atlas.free(b)
     }
 
     @Test fun lruEvictOldestFreesInOrder() {

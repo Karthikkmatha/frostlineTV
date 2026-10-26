@@ -13,6 +13,11 @@ import androidx.compose.ui.semantics.testTagsAsResourceId
 import tv.frostline.core.ui.FrostlineTheme
 
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        DeepLinks.handle(intent)
+    }
+
     @OptIn(ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -20,6 +25,7 @@ class MainActivity : ComponentActivity() {
         // Test tags double as resource ids, so UiAutomator (baseline profile journeys, benchmarks) can find them.
         // The first frame is the start of "after startup": deferred work (integrity, global emote preload) waits for it plus 2 s.
         window.decorView.doOnPreDraw { it.post { tv.frostline.core.ui.StartupGate.onFirstFrame() } }
+        DeepLinks.handle(intent)
         setContent { FrostlineTheme { Box(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) { AppNav(container) } } }
     }
 }

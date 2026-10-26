@@ -86,11 +86,28 @@ class EmoteEngine(
     private val tracker = EmoteRateTracker()
     private val order = AtomicLong()
 
-    /** The one shared atlas (48 px size class): stills and animation frames live in its few large bitmaps. */
-    val atlas = EmoteAtlas(ATLAS_MAX_PAGES)
+    /**
+     * Two atlases of 1024 x 1024 pages (4 MB): one page of stills, at most two of animation frames, all at 48 px. Evicted least recently used first. [setAtlasEnabled] false gives every emote a bitmap of its own instead.
+     */
+    val stillAtlas = EmoteAtlas(cell = STILL_CELL, maxPages = STILL_PAGES)
+    val stripAtlas = EmoteAtlas(cell = STRIP_CELL, maxPages = STRIP_PAGES)
     /** At most [STILL_CAP_ENTRIES] stills, least recently used out first (weight 1 each). */
-    private val stills = WeightedLru<String, EmoteEntry>(STILL_CAP_ENTRIES.toLong(), { 1L }) { _, e -> e.still?.let(atlas::free); e.still = null; e.bump() }
-    private val strips = WeightedLru<String, EmoteEntry>(STRIP_CAP_CELLS.toLong(), { (it.strip?.cells ?: 0).toLong() }) { _, e -> e.strip?.let(atlas::free); e.strip = null }
+    private val stills = WeightedLru<String, EmoteEntry>(STILL_CAP_ENTRIES.toLong(), { 1L }) { _, e -> e.still?.let(stillAtlas::free); e.still = null; e.bump() }
+    private val strips = WeightedLru<String, EmoteEntry>(STRIP_CAP_CELLS.toLong(), { (it.strip?.cells ?: 0).toLong() }) { _, e -> e.strip?.let(stripAtlas::free); e.strip = null; e.bump() }
+
+    /** Settings > Emote atlas. Off: per-emote bitmaps. Switching drops everything decoded; it is rebuilt on demand. */
+    fun setAtlasEnabled(on: Boolean) {
+        if (stillAtlas.enabled == on) return
+        stills.clear(); strips.clear()
+        stillAtlas.enabled = on; stripAtlas.enabled = on
+        stillAtlas.release(); stripAtlas.release()
+    }
+
+    /** Chat is hidden or the player closed: give the atlas pages back. Pictures are decoded again from the disk cache when needed. */
+    fun trimMemory() {
+        stills.clear(); strips.clear()
+        stillAtlas.release(); stripAtlas.release()
+    }
 
     private val stillPool = pool(3, "emote-still", Thread.MIN_PRIORITY + 1)
     private val animPool = pool(2, "emote-anim", Thread.MIN_PRIORITY)
@@ -127,7 +144,7 @@ class EmoteEngine(
         private set
     /** Class name / reason of the last decode or sampling failure, for the debug line (no URLs, no data). */
     @Volatile var lastFailure: String = ""
-    val memoryBytes: Long get() = atlas.bytes
+    val memoryBytes: Long get() = stillAtlas.bytes + stripAtlas.bytes
     val hotCount: Int get() = strips.size
 
     val chatGate = EmoteGate { seq ->
@@ -178,12 +195,30 @@ class EmoteEngine(
         val coil = runCatching { coil3.SingletonImageLoader.get(appContext).memoryCache }.getOrNull()
         val coilN = coil?.keys?.size ?: 0
         val coilB = coil?.size ?: 0L
-        val pages = atlas.pageCount
-        val total = atlas.bytes + coilB
-        return "bitmaps  ${pages + coilN} / ${total / 1024} KB: atlas $pages pg ${atlas.bytes / 1024} KB (${stills.size} stills, ${strips.size} strips, ${atlas.usedCells} cells), coil $coilN ${coilB / 1024} KB"
+        val pages = stillAtlas.pageCount + stripAtlas.pageCount
+        val total = memoryBytes + coilB
+        return "bitmaps  ${pages + coilN} / ${total / 1024} KB: " + (if (stillAtlas.enabled) "atlas" else "per-emote") +
+            " $pages tex ${memoryBytes / 1024} KB (${stills.size} stills, ${strips.size} strips), coil $coilN ${coilB / 1024} KB"
     }
 
-    fun entry(url: String): EmoteEntry = entries.getOrPut(url) { EmoteEntry(url) }
+    fun entry(url: String): EmoteEntry {
+        entries[url]?.let { return it }
+        if (entries.size >= MAX_ENTRIES) pruneEntries()
+        return entries.getOrPut(url) { EmoteEntry(url) }
+    }
+
+    /** Hard cap on the url map (channel switches would otherwise grow it for ever): drops entries holding no picture and nothing in flight. */
+    private fun pruneEntries() {
+        val it = entries.entries.iterator()
+        while (it.hasNext()) {
+            val e = it.next().value
+            if (e.still == null && e.strip == null && !e.stillPending.get() && !e.animPending.get()) it.remove()
+        }
+        if (usage.size > MAX_ENTRIES) usage.keys.retainAll(entries.keys)
+    }
+
+    /** Debug overlay: sizes of the engine's caches. */
+    fun cacheCounts(): String = "entries ${entries.size}, stills ${stills.size}, strips ${strips.size}"
 
     // ------------------------------------------------------------------ requests
 
@@ -220,23 +255,23 @@ class EmoteEngine(
 
     /**
      * App open: download every global emote file and decode their stills, then pre-decode the global animations
-     * (up to [GLOBAL_ANIM_BYTES]), most used first.
+     * (up to [GLOBAL_ANIM_CELLS] atlas cells), most used first.
      */
     fun preloadGlobals(emotes: List<Emote>) {
         globalsJob?.cancel()
-        globalsJob = scope.launch { preload(emotes, animBudget = GLOBAL_ANIM_BYTES) }
+        globalsJob = scope.launch { preload(emotes, animBudget = GLOBAL_ANIM_CELLS) }
     }
 
     /** Stream open: that channel's emote files + stills first, then its animations in the background. */
     fun preloadChannel(emotes: List<Emote>) {
         channelJob?.cancel()
-        channelJob = scope.launch { preload(emotes, animBudget = (HOT_CAP_BYTES * 0.85).toLong()) }
+        channelJob = scope.launch { preload(emotes, animBudget = (STRIP_CAP_CELLS * 0.85).toLong()) }
     }
 
     /** The signed-in user's own Twitch emotes (picker): files and stills only, plus a few animations. */
     fun preloadUser(emotes: List<Emote>) {
         userJob?.cancel()
-        userJob = scope.launch { preload(emotes, animBudget = STILL_CAP_BYTES / 3) }
+        userJob = scope.launch { preload(emotes, animBudget = USER_ANIM_CELLS) }
     }
 
     private suspend fun preload(emotes: List<Emote>, animBudget: Long) {
@@ -247,7 +282,7 @@ class EmoteEngine(
         while (waited < 120 && list.any { it.stillPending.get() }) { delay(500); waited++ }
         val todo = list.filter { it.animated != false }.toMutableList()
         while (todo.isNotEmpty() && isActiveJob()) {
-            if (strips.bytes * CELL_BYTES >= animBudget) break
+            if (strips.bytes >= animBudget) break
             if (!active) break
             if (mode == EmoteMode.Fast || animPool.queue.size >= 2) { delay(400); continue }
             val next = todo.maxByOrNull { usage[it.url]?.get() ?: 0 } ?: break
@@ -268,10 +303,10 @@ class EmoteEngine(
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
             val raw = stillOf(d)
-            val bmp = fitToAtlas(raw)
-            val region = allocate(bmp.width, bmp.height, 1)
+            val bmp = fitToAtlas(raw, stillAtlas)
+            val region = allocate(stillAtlas, bmp.width, bmp.height, 1)
             if (region != null) {
-                atlas.write(region, 0, bmp)
+                stillAtlas.write(region, 0, bmp)
                 e.still = region
                 stills.put(e.url, e)
                 e.bump()
@@ -299,7 +334,7 @@ class EmoteEngine(
             val frames = sample(d)
             if (frames == null) { e.animated = false; return }
             val strip = packStrip(frames) ?: return // the atlas has no room right now: try again later
-            if (mode == EmoteMode.Fast || !active) { atlas.free(strip); return } // chat got fast (or hidden) while this was sampling: drop it
+            if (mode == EmoteMode.Fast || !active) { stripAtlas.free(strip); return } // chat got fast (or hidden) while this was sampling: drop it
             e.strip = strip
             strips.put(e.url, e)
             e.bump()
@@ -377,9 +412,9 @@ class EmoteEngine(
 
     /** Packs the sampled [frames] into the atlas (all in one page) and recycles them. Null when there is no room. */
     private fun packStrip(frames: List<Bitmap>): AtlasRegion? {
-        val fitted = frames.map { fitToAtlas(it) }
-        val region = allocate(fitted[0].width, fitted[0].height, fitted.size)
-        if (region != null) fitted.forEachIndexed { i, f -> atlas.write(region, i, f) }
+        val fitted = frames.map { fitToAtlas(it, stripAtlas) }
+        val region = allocate(stripAtlas, fitted[0].width, fitted[0].height, fitted.size)
+        if (region != null) fitted.forEachIndexed { i, f -> stripAtlas.write(region, i, f) }
         fitted.forEachIndexed { i, f -> if (f !== frames[i]) f.recycle() }
         frames.forEach { it.recycle() }
         return region
@@ -389,10 +424,10 @@ class EmoteEngine(
      * Room for [count] images in the atlas. When every page is full, the least recently used strip, then still, is
      * dropped and the allocation retried, so the atlas never grows past its page budget.
      */
-    private fun allocate(w: Int, h: Int, count: Int): AtlasRegion? {
+    private fun allocate(atlas: EmoteAtlas, w: Int, h: Int, count: Int): AtlasRegion? {
         repeat(MAX_EVICTIONS) {
             atlas.tryAlloc(w, h, count)?.let { return it }
-            if (!strips.evictOldest() && !stills.evictOldest()) return null
+            if (!(if (atlas === stripAtlas) strips.evictOldest() else stills.evictOldest())) return null
         }
         return null
     }
@@ -469,7 +504,6 @@ class EmoteEngine(
         stills.clear()
         strips.clear()
         entries.clear()
-        atlas.clear()
         dir.listFiles()?.forEach { it.delete() }
         diskBytes = 0
     }
@@ -487,16 +521,18 @@ class EmoteEngine(
         const val MAX_FRAMES = 40
         const val MAX_SAMPLE_MS = 4_000L
         const val BUSY_LINES = 12
-        /** Stills kept at once (LRU). */
+        /** Stills kept at once (LRU): one 1024 px page of 50 px cells (400 cells). */
         const val STILL_CAP_ENTRIES = 300
-        /** Atlas cells the animation strips may hold (1000 cells = 10 MB of the 16 MB, four-page atlas). */
-        const val STRIP_CAP_CELLS = 1000
-        const val ATLAS_MAX_PAGES = 4
+        const val STILL_CELL = 50
+        const val STRIP_CELL = 50
+        const val STILL_PAGES = 1
+        /** Animation strips: two pages (800 cells), 700 used. Big enough that the hot set is not decoded again and again (CPU). */
+        const val STRIP_CAP_CELLS = 700
+        const val STRIP_PAGES = 2
         const val MAX_EVICTIONS = 64
-        private const val CELL_BYTES = AtlasGeometry.CELL * AtlasGeometry.CELL * 4L
-        const val HOT_CAP_BYTES = STRIP_CAP_CELLS * CELL_BYTES
-        const val STILL_CAP_BYTES = STILL_CAP_ENTRIES * 2 * CELL_BYTES / 3 // an estimate (about 1.5 cells per still), used for the user-emote preload budget
-        const val GLOBAL_ANIM_BYTES = HOT_CAP_BYTES / 2
+        const val MAX_ENTRIES = 3000
+        const val GLOBAL_ANIM_CELLS = 300L
+        const val USER_ANIM_CELLS = 150L
         const val DISK_CAP_BYTES = 64L * 1024 * 1024
         const val RETRY_MS = 60_000L
         const val PRIO_VISIBLE = 0

@@ -95,6 +95,15 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
         }
     }
 
+    // Deep link (testing): replace whatever is open with that channel's player, signed in or as a guest.
+    val deepLink by DeepLinks.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(deepLink, signedIn) {
+        val login = deepLink ?: return@LaunchedEffect
+        if (!signedIn) return@LaunchedEffect
+        DeepLinks.pending.value = null
+        nav.navigate("player/$login") { popUpTo(HOME) }
+    }
+
     NavHost(
         navController = nav,
         startDestination = startRoute,

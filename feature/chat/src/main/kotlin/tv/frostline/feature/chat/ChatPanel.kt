@@ -34,7 +34,6 @@ import androidx.compose.ui.focus.focusRequester
 import tv.frostline.core.ui.tryFocus
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -169,8 +168,6 @@ internal fun ChatPanel(
     ) {
     Box(
         modifier
-            // Its own layer: new lines and emote frames redraw this panel, not the rest of the window.
-            .graphicsLayer()
             .background(FrostColors.Surface)
             .onFocusChanged { c.panelFocused = it.hasFocus }
             .focusGroup()

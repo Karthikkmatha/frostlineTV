@@ -199,6 +199,15 @@ fun SettingsContent(
             )
         }
         item {
+            TvChoiceRow(
+                label = "Emote atlas",
+                value = if (ui.chat.emoteAtlas) "On" else "Off (bitmap per emote)",
+                description = "Debug. Packs emotes into a few shared 512 px texture pages. Off gives every emote its own bitmap.",
+                onClick = { onChatChange { it.copy(emoteAtlas = !it.emoteAtlas) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_atlas"),
+            )
+        }
+        item {
             TvToggleRow(
                 label = "7TV emotes",
                 description = null,

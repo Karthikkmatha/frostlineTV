@@ -14,7 +14,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
@@ -150,11 +149,9 @@ internal fun ChatTextLine(id: String, seq: Long, prep: PreparedLine, fontSp: Int
         }
     }
     val holder = remember { LayoutHolder() }
-    val layerMod = if (anyStrip) Modifier.graphicsLayer() else Modifier
     Layout(
         modifier = modifier
             .semantics { text = AnnotatedString(prep.spoken) }
-            .then(layerMod)
             .drawBehind {
                 val tl = holder.layout ?: return@drawBehind
                 drawText(tl)
