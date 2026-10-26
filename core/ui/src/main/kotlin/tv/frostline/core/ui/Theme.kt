@@ -11,7 +11,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Typography
 import androidx.tv.material3.darkColorScheme
 
 /** Palette. Every text/background pairing used by the app is checked for WCAG AA in ContrastTest. */
@@ -48,9 +52,30 @@ fun brandName(): AnnotatedString = buildAnnotatedString {
     withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append("TV") }
 }
 
+/** Screen safe area (5% overscan on a 960x540 dp screen). The player video itself stays full-bleed. */
+object FrostLayout {
+    val SafeX = 48.dp
+    val SafeY = 27.dp
+    /** Gap between the collapsed rail and the content. */
+    val RailGutter = 16.dp
+    /** Gap between rows of cards and between cards of a row. */
+    val CardGap = 14.dp
+}
+
+/** The one type scale. System font; sizes in sp. */
+val FrostTypography = Typography(
+    displaySmall = TextStyle(fontSize = 36.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold),
+    headlineSmall = TextStyle(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.SemiBold),
+    titleMedium = TextStyle(fontSize = 18.sp, lineHeight = 24.sp, fontWeight = FontWeight.Medium),
+    bodyLarge = TextStyle(fontSize = 16.sp, lineHeight = 22.sp),
+    labelLarge = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.Medium),
+    bodySmall = TextStyle(fontSize = 13.sp, lineHeight = 18.sp, color = FrostColors.Muted),
+)
+
 @Composable
 fun FrostlineTheme(content: @Composable () -> Unit) {
     MaterialTheme(
+        typography = FrostTypography,
         colorScheme = darkColorScheme(
             primary = FrostColors.Primary,
             onPrimary = FrostColors.OnSurface,

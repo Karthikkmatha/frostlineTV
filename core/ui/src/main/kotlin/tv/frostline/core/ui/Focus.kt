@@ -20,6 +20,8 @@ class FocusMemory {
     var key: String? = null
     var scrollIndex: Int = 0
     var scrollOffset: Int = 0
+    /** First visible item and offset of each horizontal row of a rows screen, by row key. */
+    val rowScroll: HashMap<String, Pair<Int, Int>> = HashMap()
 }
 
 fun Modifier.rememberFocusIn(key: String, memory: FocusMemory): Modifier =

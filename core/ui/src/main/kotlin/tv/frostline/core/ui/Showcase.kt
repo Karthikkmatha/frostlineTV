@@ -1,6 +1,7 @@
 package tv.frostline.core.ui
 
 import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -48,7 +49,7 @@ fun ShowcaseScreen() {
         verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 27.dp),
     ) {
-        item { Text("Showcase (debug)", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface) }
+        item { Text("Showcase (debug)", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface) }
 
         item { Section("Buttons: live (D-pad over them), disabled, static focused and pressed") }
         item {
@@ -90,11 +91,11 @@ fun ShowcaseScreen() {
         item { Section("List rows and toggles") }
         item {
             Column(Modifier.width(560.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                FrostListItem({}, Modifier.fillMaxWidth().testTag("sc_row")) { Text("List row", fontSize = 15.sp, fontWeight = FontWeight.Medium) }
-                FrostListItem({}, Modifier.fillMaxWidth(), supporting = { Text("With a supporting line", fontSize = 12.sp, color = FrostColors.Muted) }) {
-                    Text("List row with description", fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                FrostListItem({}, Modifier.fillMaxWidth().testTag("sc_row")) { Text("List row", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
+                FrostListItem({}, Modifier.fillMaxWidth(), supporting = { Text("With a supporting line", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) }) {
+                    Text("List row with description", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                 }
-                FrostListItem({}, Modifier.fillMaxWidth(), selected = true) { Text("Selected row", fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+                FrostListItem({}, Modifier.fillMaxWidth(), selected = true) { Text("Selected row", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
                 TvToggleRow("Toggle on", "Switch with a description", toggleA, { toggleA = it }, Modifier.testTag("sc_toggle_on"))
                 TvToggleRow("Toggle off", null, toggleB, { toggleB = it })
                 TvChoiceRow("Choice row", "Stable", {})
@@ -106,9 +107,9 @@ fun ShowcaseScreen() {
         item { Section("Round controls (player)") }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                FrostSurface({}, Modifier.size(44.dp), shape = CircleShape) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("II", fontSize = 14.sp) } }
+                FrostSurface({}, Modifier.size(44.dp), shape = CircleShape) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("II", style = MaterialTheme.typography.bodySmall) } }
                 FrostSurface({}, Modifier.size(72.dp), shape = CircleShape, containerColor = FrostColors.Primary, focusedContainerColor = FrostColors.PrimaryFocused) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(">", fontSize = 22.sp) }
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(">", style = MaterialTheme.typography.headlineSmall) }
                 }
             }
         }
@@ -117,15 +118,15 @@ fun ShowcaseScreen() {
 
 @Composable
 private fun Section(title: String) {
-    Text(title, fontSize = 13.sp, color = FrostColors.Lavender, modifier = Modifier.padding(top = 8.dp))
+    Text(title, style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, modifier = Modifier.padding(top = 8.dp))
 }
 
 @Composable
 private fun CardBody() {
     Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(FrostColors.SurfaceAlt))
     Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text("Channel name", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
-        Text("Stream title goes here", fontSize = 11.sp, color = FrostColors.Muted)
+        Text("Channel name", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+        Text("Stream title goes here", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
     }
 }
 
@@ -138,5 +139,5 @@ private fun Static(label: String, container: androidx.compose.ui.graphics.Color,
             .then(if (scale >= 1f) Modifier.border(BorderStroke(FrostTokens.FocusBorderWidth, FrostColors.Violet), shape) else Modifier)
             .padding(horizontal = FrostTokens.HorizontalPadding),
         contentAlignment = Alignment.Center,
-    ) { Text(label, fontSize = FrostTokens.LabelSize, fontWeight = FrostTokens.LabelWeight, color = FrostColors.OnSurface, maxLines = 1) }
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, color = FrostColors.OnSurface, maxLines = 1) }
 }

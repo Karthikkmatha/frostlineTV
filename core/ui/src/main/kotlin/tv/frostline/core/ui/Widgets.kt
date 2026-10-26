@@ -1,6 +1,7 @@
 package tv.frostline.core.ui
 
 import androidx.compose.foundation.background
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.heightIn
@@ -78,7 +79,7 @@ fun TvTextField(
         contentAlignment = Alignment.CenterStart,
     ) {
         if (value.isEmpty()) {
-            Text(placeholder, color = FrostColors.Muted, fontSize = 15.sp)
+            Text(placeholder, color = FrostColors.Muted, style = MaterialTheme.typography.bodyLarge)
         }
         BasicTextField(
             value = value,
@@ -86,7 +87,7 @@ fun TvTextField(
             // Read-only fields do not start an input session, so focus alone cannot raise the IME.
             readOnly = !editing,
             singleLine = true,
-            textStyle = TextStyle(color = FrostColors.OnSurface, fontSize = 15.sp),
+            textStyle = MaterialTheme.typography.bodyLarge.copy(color = FrostColors.OnSurface),
             cursorBrush = SolidColor(FrostColors.Violet),
             visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
             keyboardOptions = KeyboardOptions(imeAction = imeAction),
@@ -127,11 +128,11 @@ fun TvToggleRow(
     FrostListItem(
         onClick = { onToggle(!checked) },
         modifier = modifier.fillMaxWidth(),
-        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
+        supporting = description?.let { d -> { Text(d, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) } },
         trailing = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 // The word as well as the switch, so state never relies on colour or shape alone.
-                Text(if (checked) "On" else "Off", fontSize = 13.sp, color = FrostColors.Lavender)
+                Text(if (checked) "On" else "Off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender)
                 Switch(
                     checked = checked,
                     onCheckedChange = null,
@@ -144,7 +145,7 @@ fun TvToggleRow(
                 )
             }
         },
-    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
 }
 
 /** A settings row that cycles through choices on OK, showing the current one as text. */
@@ -160,9 +161,9 @@ fun TvChoiceRow(
     FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
-        trailing = { Text(value, fontSize = 14.sp, color = FrostColors.Lavender, maxLines = 1) },
-    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+        supporting = description?.let { d -> { Text(d, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) } },
+        trailing = { Text(value, style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, maxLines = 1) },
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
 }
 
 /**
@@ -195,14 +196,14 @@ fun TvStepperRow(
                 }
             },
         selected = adjusting,
-        supporting = description?.let { d -> { Text(d, fontSize = 12.sp, color = FrostColors.Muted) } },
+        supporting = description?.let { d -> { Text(d, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) } },
         trailing = {
             Text(
                 if (adjusting) "\u25C0  $value  \u25B6" else "$value  (OK to adjust)",
-                fontSize = 14.sp, color = FrostColors.OnSurface, maxLines = 1,
+                style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, maxLines = 1,
             )
         },
-    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
 }
 
 /** A static, non-focusable placeholder shaped like a card; shown while a grid loads. Not animated, so it costs nothing. */

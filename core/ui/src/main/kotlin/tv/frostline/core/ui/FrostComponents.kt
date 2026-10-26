@@ -6,6 +6,15 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -47,13 +56,17 @@ object FrostTokens {
 
     val ButtonHeight: Dp = 40.dp
     val RowMinHeight: Dp = 56.dp
+    /** Rows of the side-panel sheets. */
+    val SheetRowHeight: Dp = 52.dp
+    val IconButtonSize: Dp = 48.dp
+    /** Selected-but-unfocused chip and tab: a muted primary. */
+    val SelectedMuted = FrostColors.Primary.copy(alpha = 0.6f)
     val HorizontalPadding: Dp = 20.dp
     val IconGap: Dp = 8.dp
-    val LabelSize = 15.sp
-    val LabelWeight = FontWeight.Medium
 
     val FocusBorderWidth: Dp = 2.dp
-    const val SmallButtonFocusScale = 1.1f
+    /** 1.05 never clips: tight containers (chat grid) also keep 10 dp of inner padding. */
+    const val SmallButtonFocusScale = 1.05f
     const val CardFocusScale = 1.05f
     /** Full-width rows: a 1.05 scale would push past the sheet that holds them. */
     const val RowFocusScale = 1.02f
@@ -70,8 +83,11 @@ object FrostTokens {
 
 enum class FrostButtonStyle { Primary, Secondary }
 
-/** A pill button, 40 dp high, label Medium 15 sp, optional leading icon 8 dp from the label. */
-@OptIn(ExperimentalTvMaterial3Api::class)
+/**
+ * A pill button, 40 dp high, label labelLarge, optional leading icon 8 dp from the label. The label (and icon plus
+ * label) is centred in the button, whatever width the caller gives it. [focusedScale] is 1.05 so the focused button
+ * never grows past a tight container.
+ */
 @Composable
 fun FrostButton(
     text: String,
@@ -81,34 +97,54 @@ fun FrostButton(
     style: FrostButtonStyle = FrostButtonStyle.Primary,
     icon: (@Composable () -> Unit)? = null,
     horizontalPadding: Dp = FrostTokens.HorizontalPadding,
+    focusedScale: Float = FrostTokens.SmallButtonFocusScale,
 ) {
     val primary = style == FrostButtonStyle.Primary
-    val ring = FrostTokens.border(FrostTokens.PillShape)
-    androidx.tv.material3.Button(
+    FrostSurface(
         onClick = onClick,
-        modifier = modifier.height(FrostTokens.ButtonHeight),
+        modifier = modifier.height(FrostTokens.ButtonHeight).semantics { role = Role.Button },
         enabled = enabled,
-        shape = ButtonDefaults.shape(shape = FrostTokens.PillShape),
-        contentPadding = PaddingValues(horizontal = horizontalPadding, vertical = 0.dp),
-        colors = ButtonDefaults.colors(
-            containerColor = if (primary) FrostColors.Primary else FrostColors.Container,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = if (primary) FrostColors.PrimaryFocused else FrostColors.ContainerFocused,
-            focusedContentColor = FrostColors.OnSurface,
-            pressedContainerColor = if (primary) FrostColors.PrimaryFocused else FrostColors.ContainerFocused,
-            pressedContentColor = FrostColors.OnSurface,
-            disabledContainerColor = FrostColors.SurfaceAlt,
-            disabledContentColor = FrostColors.Muted,
-        ),
-        scale = ButtonDefaults.scale(focusedScale = FrostTokens.SmallButtonFocusScale, pressedScale = FrostTokens.PressedScale),
-        border = ButtonDefaults.border(focusedBorder = ring, pressedBorder = ring),
-        glow = ButtonDefaults.glow(focusedGlow = FrostTokens.FocusGlow),
+        shape = FrostTokens.PillShape,
+        focusedScale = focusedScale,
+        containerColor = if (primary) FrostColors.Primary else FrostColors.Container,
+        focusedContainerColor = if (primary) FrostColors.PrimaryFocused else FrostColors.ContainerFocused,
+        disabledContainerColor = FrostColors.SurfaceAlt,
     ) {
-        if (icon != null) {
-            icon()
-            Spacer(Modifier.width(FrostTokens.IconGap))
+        // align(Center) in the surface's Box: centred in whatever width the caller gave, compact when it wraps.
+        Row(
+            Modifier.align(Alignment.Center).padding(horizontal = horizontalPadding),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                icon()
+                Spacer(Modifier.width(FrostTokens.IconGap))
+            }
+            Text(text, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
         }
-        Text(text, fontSize = FrostTokens.LabelSize, fontWeight = FrostTokens.LabelWeight, maxLines = 1, softWrap = false, overflow = TextOverflow.Clip)
+    }
+}
+
+/** A circular icon button (48 dp by default) with the same focus scale, ring and glow as every other control. */
+@Composable
+fun FrostIconButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = FrostTokens.IconButtonSize,
+    active: Boolean = false,
+    containerColor: Color? = null,
+    focusedScale: Float = FrostTokens.SmallButtonFocusScale,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    FrostSurface(
+        onClick = onClick,
+        modifier = modifier.size(size).semantics { role = Role.Button },
+        shape = CircleShape,
+        focusedScale = focusedScale,
+        containerColor = containerColor ?: if (active) FrostColors.Primary else FrostColors.Container,
+        focusedContainerColor = if (active) FrostColors.PrimaryFocused else FrostColors.ContainerFocused,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center, content = content)
     }
 }
 
@@ -123,8 +159,10 @@ fun FrostSecondaryButton(
     horizontalPadding: Dp = FrostTokens.HorizontalPadding,
 ) = FrostButton(text, onClick, modifier, enabled, FrostButtonStyle.Secondary, icon, horizontalPadding)
 
-/** A selectable pill chip (tabs, filters), 40 dp high. */
-@OptIn(ExperimentalTvMaterial3Api::class)
+/**
+ * A selectable pill chip (tabs, filters), 40 dp high. Unfocused: no border (selected: a muted primary fill). Focused:
+ * the focus treatment (ring, glow, scale).
+ */
 @Composable
 fun FrostChip(
     label: String,
@@ -133,45 +171,18 @@ fun FrostChip(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
 ) {
-    val ring = FrostTokens.border(FrostTokens.PillShape)
-    androidx.tv.material3.FilterChip(
-        selected = selected,
+    FrostSurface(
         onClick = onClick,
-        modifier = modifier.height(FrostTokens.ButtonHeight),
+        modifier = modifier.height(FrostTokens.ButtonHeight).semantics { role = Role.Tab; this.selected = selected },
         enabled = enabled,
-        shape = FilterChipDefaults.shape(shape = FrostTokens.PillShape),
-        colors = FilterChipDefaults.colors(
-            containerColor = FrostColors.Container,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.ContainerFocused,
-            focusedContentColor = FrostColors.OnSurface,
-            pressedContainerColor = FrostColors.ContainerFocused,
-            pressedContentColor = FrostColors.OnSurface,
-            selectedContainerColor = FrostColors.Primary,
-            selectedContentColor = FrostColors.OnSurface,
-            disabledContainerColor = FrostColors.SurfaceAlt,
-            disabledContentColor = FrostColors.Muted,
-            focusedSelectedContainerColor = FrostColors.PrimaryFocused,
-            focusedSelectedContentColor = FrostColors.OnSurface,
-            pressedSelectedContainerColor = FrostColors.PrimaryFocused,
-            pressedSelectedContentColor = FrostColors.OnSurface,
-        ),
-        scale = FilterChipDefaults.scale(
-            focusedScale = FrostTokens.SmallButtonFocusScale,
-            pressedScale = FrostTokens.PressedScale,
-            focusedSelectedScale = FrostTokens.SmallButtonFocusScale,
-            pressedSelectedScale = FrostTokens.PressedScale,
-        ),
-        border = FilterChipDefaults.border(
-            focusedBorder = ring, pressedBorder = ring, focusedSelectedBorder = ring, pressedSelectedBorder = ring,
-        ),
-        glow = FilterChipDefaults.glow(focusedGlow = FrostTokens.FocusGlow, focusedSelectedGlow = FrostTokens.FocusGlow),
+        shape = FrostTokens.PillShape,
+        containerColor = if (selected) FrostTokens.SelectedMuted else FrostColors.Container,
+        focusedContainerColor = if (selected) FrostColors.PrimaryFocused else FrostColors.ContainerFocused,
+        disabledContainerColor = FrostColors.SurfaceAlt,
     ) {
-        Text(
-            label,
-            fontSize = FrostTokens.LabelSize, fontWeight = FrostTokens.LabelWeight, maxLines = 1,
-            modifier = Modifier.padding(horizontal = 8.dp),
-        )
+        Row(Modifier.align(Alignment.Center).padding(horizontal = FrostTokens.HorizontalPadding - 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+        }
     }
 }
 
@@ -183,6 +194,7 @@ fun FrostCard(
     modifier: Modifier = Modifier,
     onLongClick: (() -> Unit)? = null,
     focusedScale: Float = FrostTokens.CardFocusScale,
+    containerColor: Color = FrostColors.Container,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val ring = FrostTokens.border(FrostTokens.CardShape)
@@ -192,7 +204,7 @@ fun FrostCard(
         onLongClick = onLongClick,
         shape = CardDefaults.shape(shape = FrostTokens.CardShape),
         colors = CardDefaults.colors(
-            containerColor = FrostColors.Container,
+            containerColor = containerColor,
             contentColor = FrostColors.OnSurface,
             focusedContainerColor = FrostColors.ContainerFocused,
             focusedContentColor = FrostColors.OnSurface,
@@ -221,6 +233,7 @@ fun FrostListItem(
     supporting: (@Composable () -> Unit)? = null,
     leading: (@Composable BoxScope.() -> Unit)? = null,
     trailing: (@Composable () -> Unit)? = null,
+    minHeight: Dp = FrostTokens.RowMinHeight,
     headline: @Composable () -> Unit,
 ) {
     val ring = FrostTokens.border(FrostTokens.RowShape)
@@ -228,7 +241,7 @@ fun FrostListItem(
         selected = selected,
         onClick = onClick,
         headlineContent = headline,
-        modifier = modifier.heightIn(min = FrostTokens.RowMinHeight),
+        modifier = modifier.heightIn(min = minHeight),
         enabled = enabled,
         onLongClick = onLongClick,
         supportingContent = supporting,
@@ -278,6 +291,7 @@ fun FrostSurface(
     focusedScale: Float = FrostTokens.SmallButtonFocusScale,
     containerColor: Color = FrostColors.Container,
     focusedContainerColor: Color = FrostColors.ContainerFocused,
+    disabledContainerColor: Color = containerColor,
     contentColor: Color = FrostColors.OnSurface,
     focusedContentColor: Color = FrostColors.OnSurface,
     content: @Composable BoxScope.() -> Unit,
@@ -296,7 +310,7 @@ fun FrostSurface(
             focusedContentColor = focusedContentColor,
             pressedContainerColor = focusedContainerColor,
             pressedContentColor = focusedContentColor,
-            disabledContainerColor = containerColor,
+            disabledContainerColor = disabledContainerColor,
             disabledContentColor = FrostColors.Muted,
         ),
         scale = ClickableSurfaceDefaults.scale(focusedScale = focusedScale, pressedScale = if (focusedScale == 1f) 1f else FrostTokens.PressedScale),
