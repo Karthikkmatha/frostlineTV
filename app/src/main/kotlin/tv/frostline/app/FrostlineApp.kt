@@ -39,12 +39,21 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
             tv.frostline.core.ui.StartupGate.awaitIdle()
             runCatching {
                 val r = androidx.profileinstaller.ProfileVerifier.getCompilationStatusAsync().get()
-                tv.frostline.core.ui.ProfileStatus.set(when (r.profileInstallResultCode) {
-                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE,
-                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING -> "compiled"
-                    androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION -> "awaiting"
-                    else -> "none"
-                })
+                val code = r.profileInstallResultCode
+                val verifierCompiled = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE ||
+                    code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING
+                val enqueued = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION
+                // ProfileVerifier only knows installs done by the profile installer; the odex file knows everything (also `cmd package compile`).
+                val filter = runCatching {
+                    val odex = java.io.File(applicationInfo.sourceDir).parentFile?.resolve("oat")?.walkTopDown()?.firstOrNull { it.name == "base.odex" }
+                    odex?.inputStream()?.use { ins ->
+                        val buf = ByteArray(64 * 1024)
+                        var n = 0
+                        while (n < buf.size) { val k = ins.read(buf, n, buf.size - n); if (k < 0) break; n += k }
+                        tv.frostline.core.ui.ProfileState.filterIn(buf.copyOf(n))
+                    }
+                }.getOrNull()
+                tv.frostline.core.ui.ProfileStatus.set(tv.frostline.core.ui.ProfileState.text(verifierCompiled, enqueued, filter))
             }.onFailure { tv.frostline.core.ui.ProfileStatus.set("none") }
         }
         // With a linked web session, capture the integrity token and keep it fresh (it refreshes itself when it expires).
