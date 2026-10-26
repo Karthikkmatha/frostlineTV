@@ -72,7 +72,7 @@ function Get-Sample([string]$AppPid) {
     foreach ($line in ($top -split "`n")) {
         $tok = $line.Trim() -split '\s+'
         for ($k = 0; $k -lt $tok.Count - 1; $k++) {
-            if ($tok[$k] -match '^[RSDZTIt]$' -and $tok[$k + 1] -match '^\d+(\.\d+)?$' -and $tok[0] -match '^\d+$') { $cpu += [double]$tok[$k + 1]; break }
+            if ($tok[$k] -match '^[RSDZTIt]$' -and $tok[$k + 1] -match '^\d+(\.\d+)?$' -and $tok[0] -match '^\d+$') { $v = [double]$tok[$k + 1]; if ($v -le 100) { $cpu += $v }; break } # one thread cannot use more than one core: a bigger number is another column
         }
     }
     $fds = $(if ($fdText -match 'Permission|denied|No such') { -1 } else { Get-Num $fdText '(\d+)' })

@@ -34,6 +34,7 @@ New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $env:TV_HOST = $TvHost
 $env:TV_PORT = "$Port"
 . (Join-Path $PSScriptRoot 'tvlib.ps1')
+. (Join-Path $PSScriptRoot 'stressverdict.ps1')
 
 $log = Join-Path $OutDir 'soak.log'
 $csv = Join-Path $OutDir 'soak.csv'
@@ -84,7 +85,7 @@ if ($ts.Count -ge 3) {
     $lines += "PSS      first $($pss[0]) MB, last $($pss[$pss.Count - 1]) MB, max $(($pss | Measure-Object -Maximum).Maximum) MB, slope $(Fmt (Get-Slope $ts.ToArray() $pss.ToArray())) MB/h"
     $lines += "threads  first $($thr[0]), last $($thr[$thr.Count - 1]), slope $(Fmt (Get-Slope $ts.ToArray() $thr.ToArray()))/h"
     $lines += "fds      first $($fdl[0]), last $($fdl[$fdl.Count - 1]), slope $(Fmt (Get-Slope $ts.ToArray() $fdl.ToArray()))/h (-1 = hidden from shell)"
-    $lines += "CPU      mean $([math]::Round(($cpus | Measure-Object -Average).Average, 1))%, max $(($cpus | Measure-Object -Maximum).Maximum)%, slope $(Fmt (Get-Slope $ts.ToArray() $cpus.ToArray())) pt/h"
+    $lines += (Format-CpuLine $cpus.ToArray())
 }
 $lines += "process restarts/crashes seen: $crashes"
 $lines += "CSV: $csv"
