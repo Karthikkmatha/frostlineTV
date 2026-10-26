@@ -44,11 +44,15 @@ class IrcSessionTest {
         f: FakeFactory,
         creds: IrcCredentials? = null,
         silenceMs: Long = 360_000L,
+        pingAfterMs: Long = 90_000L,
+        pongTimeoutMs: Long = 20_000L,
     ) = IrcSession(
         scope = backgroundScope,
         factory = f,
         credentials = { creds },
         silenceTimeoutMs = silenceMs,
+        pingAfterMs = pingAfterMs,
+        pongTimeoutMs = pongTimeoutMs,
         jitter = { 0.0 },
         anonymousNick = { "justinfan12345" },
         clock = { testScheduler.currentTime },
@@ -232,6 +236,29 @@ class IrcSessionTest {
         handshake(f, s)
         advanceTimeBy(1_600); runCurrent()
         assertEquals(ConnState.Reconnecting(1), s.state.value)
+    }
+
+    @Test fun unansweredPingReconnectsLongBeforeTheSilenceTimeout() = runTest {
+        val f = FakeFactory()
+        val s = session(f, silenceMs = 360_000, pingAfterMs = 2_000, pongTimeoutMs = 1_000)
+        s.start("chan")
+        handshake(f, s)
+        advanceTimeBy(15_500); runCurrent() // tick every 15 s: the ping goes out, the next tick sees no answer
+        assertTrue(f.transports[0].sent.contains("PING :frostline"))
+        advanceTimeBy(15_000); runCurrent()
+        assertEquals(ConnState.Reconnecting(1), s.state.value)
+    }
+
+    @Test fun answeredPingKeepsTheConnection() = runTest {
+        val f = FakeFactory()
+        val s = session(f, silenceMs = 360_000, pingAfterMs = 2_000, pongTimeoutMs = 1_000)
+        s.start("chan")
+        handshake(f, s)
+        advanceTimeBy(15_500); runCurrent()
+        assertTrue(f.transports[0].sent.contains("PING :frostline"))
+        f.listeners[0].onText(":tmi.twitch.tv PONG tmi.twitch.tv :frostline\r\n")
+        repeat(6) { advanceTimeBy(15_000); runCurrent(); f.listeners[0].onText(":tmi.twitch.tv PONG tmi.twitch.tv :frostline\r\n") }
+        assertEquals(ConnState.Connected, s.state.value)
     }
 
     @Test fun trafficKeepsTheWatchdogQuiet() = runTest {

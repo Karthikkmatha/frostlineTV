@@ -116,4 +116,22 @@ class RefreshTest {
         assertEquals("Bearer renewed", retry.getHeader("Authorization"))
         assertEquals("test-client", retry.getHeader("Client-Id"))
     }
+
+    @Test fun refreshLoopWakesOftenAndBacksOffOnFailure() {
+        val lead = 10 * 60_000L
+        assertEquals(5 * 60_000L, TokenManager.nextWaitMs(clock + 3 * 3_600_000L, clock, lead, 0)) // never sleeps longer than 5 min
+        assertEquals(5_000L, TokenManager.nextWaitMs(clock + 60_000L, clock, lead, 0)) // inside the lead window: soon
+        assertEquals(5_000L, TokenManager.nextWaitMs(clock - 1, clock, lead, 0)) // expired while asleep
+        assertEquals(5_000L, TokenManager.nextWaitMs(clock, clock, lead, 1))
+        assertEquals(10_000L, TokenManager.nextWaitMs(clock, clock, lead, 2))
+        assertEquals(5 * 60_000L, TokenManager.nextWaitMs(clock, clock, lead, 20))
+    }
+
+    @Test fun checkNowRefreshesAnExpiredTokenAfterSleep() = runBlocking {
+        val vault = Fixtures.vault(tmp.root)
+        vault.saveTokens(TokenSet("old", "r", clock - 60_000L, userId = "7"))
+        server.enqueue(Fixtures.json(Fixtures.tokenJson("woke", "r2")))
+        TokenManager(vault, oauth(), now = { clock }).checkNow()
+        assertEquals("woke", vault.currentTokens()?.accessToken)
+    }
 }

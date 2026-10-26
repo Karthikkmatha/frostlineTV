@@ -46,18 +46,38 @@ class TokenManager(
     /** Clears the tokens, the web session and guest mode. */
     suspend fun signOut() = vault.clearAll()
 
-    /** Keeps the token fresh while the app runs. */
+    /**
+     * Keeps the token fresh while the app runs. It wakes at least every 5 minutes (a coroutine delay does not count the
+     * time the device slept, so one long wait could end after the token expired), refreshes inside the lead window, and
+     * backs off (5 s doubling to 5 min) while refreshing fails.
+     */
     fun startBackgroundRefresh(scope: CoroutineScope): Job = scope.launch {
+        var failures = 0
         while (true) {
             val t = vault.currentTokens()
             if (t == null) {
+                failures = 0
                 delay(30_000)
                 continue
             }
-            val wait = (t.expiresAtMs - refreshLeadMs - now()).coerceAtLeast(5_000L)
-            delay(wait.coerceAtMost(30 * 60_000L))
+            delay(nextWaitMs(t.expiresAtMs, now(), refreshLeadMs, failures))
+            val before = vault.currentTokens()
             accessToken()
+            val after = vault.currentTokens()
+            failures = if (after != null && after.refreshToken != null && now() >= after.expiresAtMs - refreshLeadMs && after.accessToken == before?.accessToken) failures + 1 else 0
         }
+    }
+
+    /** Wake-up or app-resume hook: refresh now when the token is inside the lead window (or expired while asleep). */
+    suspend fun checkNow() { accessToken() }
+
+    companion object {
+        const val MAX_WAIT_MS = 5 * 60_000L
+
+        /** How long the refresh loop sleeps before looking again. */
+        fun nextWaitMs(expiresAtMs: Long, nowMs: Long, leadMs: Long, failures: Int): Long =
+            if (failures > 0) minOf(MAX_WAIT_MS, 5_000L shl minOf(failures - 1, 6))
+            else (expiresAtMs - leadMs - nowMs).coerceIn(5_000L, MAX_WAIT_MS)
     }
 
     private suspend fun refreshLocked(t: TokenSet): TokenSet? {

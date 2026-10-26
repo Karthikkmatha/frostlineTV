@@ -105,6 +105,9 @@ class IrcSession(
     private val credentials: suspend () -> IrcCredentials?,
     private val url: String = TWITCH_IRC_URL,
     private val silenceTimeoutMs: Long = 6 * 60_000L,
+    /** After this long without any frame we send our own PING; no answer within [pongTimeoutMs] means a dead link. */
+    private val pingAfterMs: Long = 90_000L,
+    private val pongTimeoutMs: Long = 20_000L,
     private val jitter: () -> Double = { Random.nextDouble() },
     private val anonymousNick: () -> String = { "justinfan${Random.nextInt(10_000, 99_999)}" },
     private val clock: () -> Long = System::currentTimeMillis,
@@ -245,12 +248,28 @@ class IrcSession(
         watchdog?.cancel()
         watchdog = scope.launch {
             lastRx = clock()
+            var pingSentAt = 0L
             while (true) {
-                delay(silenceTimeoutMs / 4)
+                delay(minOf(silenceTimeoutMs / 4, 15_000L))
                 if (gen != generation) return@launch
-                if (clock() - lastRx > silenceTimeoutMs) {
+                val now = clock()
+                val idle = now - lastRx
+                if (idle > silenceTimeoutMs) {
                     lost(gen)
                     return@launch
+                }
+                if (pingSentAt != 0L && lastRx >= pingSentAt) pingSentAt = 0L // anything received answers the ping
+                if (pingSentAt != 0L) {
+                    if (now - pingSentAt > pongTimeoutMs) { // PING went unanswered: the socket is dead even though it looks open
+                        lost(gen)
+                        return@launch
+                    }
+                } else if (idle > pingAfterMs) {
+                    val t = synchronized(lock) { transport }
+                    if (t != null && _state.value == ConnState.Connected) {
+                        t.send("PING :frostline")
+                        pingSentAt = now
+                    }
                 }
             }
         }
