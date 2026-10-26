@@ -31,7 +31,7 @@ class FpsCounter {
     }
 }
 
-private fun Context.findWindow(): Window? {
+internal fun Context.findWindow(): Window? {
     var c: Context? = this
     while (c is ContextWrapper) {
         if (c is Activity) return c.window

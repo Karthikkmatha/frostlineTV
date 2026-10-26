@@ -69,6 +69,7 @@ fun VodPlayerScreen(
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
     tv.frostline.core.ui.DropImageMemoryWhileShown()
     val fps = rememberUiFps(debug && showFps)
+    val jank = tv.frostline.core.ui.rememberJankLine(debug)
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
     val channelId by viewModel.channelId.collectAsStateWithLifecycle()
 
@@ -208,7 +209,7 @@ fun VodPlayerScreen(
                         .background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOfNotNull(chatDebug.ifEmpty { null }))
+            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOfNotNull(chatDebug.ifEmpty { null }))
             if (qualityOpen) {
                 QualitySheet(
                     variants = ui.variants,

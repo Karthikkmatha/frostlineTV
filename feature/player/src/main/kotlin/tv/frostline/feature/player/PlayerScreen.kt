@@ -73,6 +73,7 @@ fun PlayerScreen(
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
     val fps = rememberUiFps(debug && showFps)
+    val jank = tv.frostline.core.ui.rememberJankLine(debug)
     val emoteLine by produceState("", debug) {
         while (debug) {
             value = tv.frostline.feature.chat.EmoteEngine.current?.debugLine().orEmpty()
@@ -221,7 +222,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + "webview  $webViewLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "integrity $integrityLine" + "webview  $webViewLine" + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))
@@ -282,7 +283,7 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
 
 /** [fps] is the measured UI frame rate (read here, so only the overlay recomposes), or null when that line is off. */
 @Composable
-internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier, extra: List<String> = emptyList()) {
+internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier, extra: List<String> = emptyList(), jank: androidx.compose.runtime.State<String>? = null) {
     Column(
         modifier.background(Color(0xB3050507), RoundedCornerShape(8.dp)).padding(10.dp).testTag("debug_overlay"),
     ) {
@@ -293,7 +294,7 @@ internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx
             "video    ${m.width}x${m.height} @ ${m.videoBitrate / 1000} kbps",
             "net      ${m.bandwidthBps / 1000} kbps",
             "latency  ${liveOffsetMs?.let { "$it ms" } ?: "-"}",
-        ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }) + extra
+        ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }, jank?.value) + extra
         lines.forEach { Text(it, fontSize = 12.sp, color = FrostColors.Lavender, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) }
     }
 }

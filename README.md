@@ -123,3 +123,24 @@ turned into a `PreparedLine` (annotated text with one placeholder character per 
 thread before it is published; the UI measures it once per id and width (`LineLayoutCache`, over `TextMeasurer`) and draws the
 text and the pictures in one draw block, the pictures as src rects of the shared emote atlas. Lines are published in
 batches (200 ms slow, 300 ms busy, 500 ms fast) as a 150-reference list with stable keys.
+
+### GPU memory audit (what becomes a texture)
+
+- Emotes and badges: stills and animation frames live in the shared `EmoteAtlas` (one size class, 48 px tall): 1000x1000
+  pages of 50 px cells (4 MB each, at most four = 16 MB, a page is only added when the others are full). Drawn with src rects.
+  At most 300 stills (LRU) and 1000 cells of animation strips (LRU); a full atlas evicts the least recently used strip, then still.
+- Thumbnails, avatars and category art: Coil (`SizedImage` decodes at the exact display size as a hardware bitmap), one
+  8 MB memory cache; it is emptied while a player is on screen, and Home's lazy grids only compose what is on screen.
+- The integrity WebView is created per capture, then `stopLoading`, `loadUrl("about:blank")`, `removeAllViews`, `destroy`; the
+  debug overlay line `webview` shows live/created/destroyed counts and the renderer processes still seen 3 s later.
+- Video (SurfaceView, decoder buffers), the window surface and Skia's own caches are outside the app's control.
+- Debug overlay (Settings > Debug overlay): `bitmaps` (count and bytes of the atlas and Coil caches), `memory` (PSS split),
+  `webview`, `jank` (janky frames over the last 10 s, JankStats), `ui fps`, `emotes`.
+
+### Playback and startup
+
+- ExoPlayer is built with video and audio renderers only (no text, metadata or camera-motion renderers), platform AudioTrack
+  playback params for the live catch-up speed (no Java Sonic processing), decoder fallback, a 0 s back buffer for live.
+  Stable keeps 8-15 s (24 MB cap); Low latency 3-9 s with a 5 s offset target (4-8 s range).
+- The live offset (`currentLiveOffset`) and the VOD position tick at 1 Hz only while the controls or the debug overlay show.
+- Integrity capture and the global emote preload wait for the first frame plus 2 s (`StartupGate`).
