@@ -32,6 +32,11 @@ internal const val GIVE_UP_FRAMES = 150
 val OverscanX: Dp = 48.dp
 val OverscanY: Dp = 27.dp
 
+/** Brings an entry of the enclosing [FocusGrid] into composition (it is a lazy grid), so it can be given focus. */
+fun interface GridScroller { suspend fun scrollTo(key: String) }
+
+val LocalGridScroller = androidx.compose.runtime.staticCompositionLocalOf { GridScroller { } }
+
 /**
  * One item of a [FocusGrid]. [content] receives a modifier that must be applied to the item's single
  * focus stop (it records focus for restoration and carries the restore FocusRequester).
@@ -107,6 +112,11 @@ fun FocusGrid(
         if (settled) { firstRun[0] = false; signal.consumed = tick }
     }
 
+    val scroller = GridScroller { key ->
+        val i = entries.indexOfFirst { it.key == key }
+        if (i >= 0) state.scrollToItem(i)
+    }
+    androidx.compose.runtime.CompositionLocalProvider(LocalGridScroller provides scroller) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minCellWidth),
         state = state,
@@ -129,5 +139,6 @@ fun FocusGrid(
             }
             entry.content(m)
         }
+    }
     }
 }

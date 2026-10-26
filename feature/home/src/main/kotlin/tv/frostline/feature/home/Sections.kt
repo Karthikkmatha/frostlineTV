@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
@@ -64,6 +65,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
     val resume by vm.resume.collectAsStateWithLifecycle()
     // Up from Continue watching goes to the last Live now card, not to the side rail.
     val lastLive = remember { androidx.compose.ui.focus.FocusRequester() }
+    val uiScope = androidx.compose.runtime.rememberCoroutineScope()
     val entries = remember(st, resume) {
         buildList {
             if (st.needsSignIn) {
@@ -92,10 +94,21 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
                     add(header("h:resume", "Continue watching"))
                     add(
                         GridEntry("resume:row", fullSpan = true) { m ->
+                            val scroller = LocalGridScroller.current
                             // Same start inset as the Live now cards (16 dp), plus room for the focus ring and scale so the first card is not clipped.
                             LazyRow(
                                 m.focusGroup().onPreviewKeyEvent { e ->
-                                    if (st.live.isNotEmpty() && e.key == Key.DirectionUp && e.type == KeyEventType.KeyDown) { lastLive.tryFocus(); true } else false
+                                    if (st.live.isNotEmpty() && e.key == Key.DirectionUp && e.type == KeyEventType.KeyDown) {
+                                        if (!lastLive.tryFocus()) {
+                                            // The last Live card scrolled out of the lazy grid: bring it back, then focus it.
+                                            val key = "live:${st.live.last().userId}"
+                                            uiScope.launch {
+                                                scroller.scrollTo(key)
+                                                repeat(30) { androidx.compose.runtime.withFrameNanos { }; if (lastLive.tryFocus()) return@launch }
+                                            }
+                                        }
+                                        true
+                                    } else false
                                 },
                                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
                                 horizontalArrangement = Arrangement.spacedBy(14.dp),

@@ -114,6 +114,19 @@ class FollowingUiTest {
         rule.onNodeWithText(stream.title).assertIsFocused()
     }
 
+    @Test fun upFromContinueWatchingGoesToTheLastLiveCard() {
+        val streams = (1..8).map { stream.copy(id = "$it", userId = "1$it", userLogin = "chan$it", userName = "Chan$it", title = "Title number $it") }
+        val resume = ResumeEntity("555", 600_000, 3_600_000, "Last night", "", "someone", 1L)
+        val vm = HomeViewModel(HelixRepository(FakeApi(streams)), FakeResume(listOf(resume))) { "99" }
+        rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, {}) } }
+        rule.waitForIdle()
+        rule.onNodeWithText("Last night").requestFocus()
+        rule.waitForIdle()
+        rule.onNodeWithText("Last night").performKeyInput { pressKey(Key.DirectionUp) }
+        rule.waitForIdle()
+        rule.onNodeWithText("Title number 8").assertIsFocused()
+    }
+
     @Test fun continueWatchingOpensTheVideo() {
         val resume = ResumeEntity("555", 600_000, 3_600_000, "Last night", "", "someone", 1L)
         val vm = HomeViewModel(HelixRepository(FakeApi(listOf(stream))), FakeResume(listOf(resume))) { "99" }
