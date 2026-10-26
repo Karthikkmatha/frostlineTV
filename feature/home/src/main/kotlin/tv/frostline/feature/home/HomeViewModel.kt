@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import tv.frostline.core.twitch.NetworkRetry
 import tv.frostline.core.data.ResumeDao
 import tv.frostline.core.data.ResumeEntity
+import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.twitch.FollowedChannel
 import tv.frostline.core.twitch.HelixGame
 import tv.frostline.core.twitch.HelixRepository
@@ -86,6 +87,8 @@ class FocusSignal {
 class HomeViewModel(
     private val helix: HelixRepository,
     resumeDao: ResumeDao,
+    /** Where the last searches are kept (null in tests). */
+    private val settings: SettingsStore? = null,
     private val userId: suspend () -> String?,
 ) : ViewModel() {
     private val _section = MutableStateFlow(HomeSection.Following)
@@ -100,6 +103,18 @@ class HomeViewModel(
 
     val resume: StateFlow<List<ResumeEntity>> =
         resumeDao.observeAll().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** The last five searches, newest first. */
+    val recentSearches: StateFlow<List<String>> =
+        (settings?.recentSearches ?: kotlinx.coroutines.flow.flowOf(emptyList())).stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun clearRecentSearches() { viewModelScope.launch { settings?.clearRecentSearches() } }
+
+    /** Runs a stored search again, now. */
+    fun searchRecent(q: String) {
+        _search.update { it.copy(query = q) }
+        searchNow()
+    }
 
     val focusSignal = FocusSignal()
     private val memories = HashMap<String, FocusMemory>()
@@ -286,7 +301,9 @@ class HomeViewModel(
                 val ch = async { helix.searchChannels(q) }
                 val cat = async { helix.searchCategories(q) }
                 val channels = ch.await()
-                _search.update { it.copy(channels = channels, categories = cat.await(), searched = true, loading = false) }
+                val categories = cat.await()
+                if (channels.isNotEmpty() || categories.isNotEmpty()) settings?.addRecentSearch(q)
+                _search.update { it.copy(channels = channels, categories = categories, searched = true, loading = false) }
                 launch {
                     val avatars = avatarsFor(channels.map { c -> c.id })
                     if (avatars.isNotEmpty()) _search.update { it.copy(avatars = avatars) }

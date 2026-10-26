@@ -62,6 +62,8 @@ import tv.frostline.core.ui.ThumbBadge
 import tv.frostline.core.ui.FocusMemory
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostEmptyState
+import tv.frostline.core.ui.StateIcons
 import tv.frostline.core.ui.FrostCard
 import tv.frostline.core.ui.FrostChip
 import tv.frostline.core.ui.rememberPreviewBucket
@@ -176,10 +178,10 @@ fun ChannelContent(state: ChannelState, actions: ChannelActions, memory: FocusMe
         item(key = "header", span = { GridItemSpan(maxLineSpan) }) { Header(state, actions, firstFocus.takeIf { state.live != null }) }
         if (state.error != null) {
             item(key = "error", span = { GridItemSpan(maxLineSpan) }) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(state.error, style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface)
-                    FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry).focusRequester(if (state.live == null) firstFocus else FocusRequester()))
-                }
+                FrostEmptyState(
+                    StateIcons.Error, state.error, actionLabel = "Retry", onAction = actions.onRetry,
+                    actionModifier = Modifier.testTag(ChannelTags.Retry).focusRequester(if (state.live == null) firstFocus else FocusRequester()),
+                )
             }
             return@LazyVerticalGrid
         }
@@ -287,13 +289,12 @@ private const val PAGE_AHEAD = 6
 private fun LazyGridScope.footer(loading: Boolean, error: String?, empty: Boolean, emptyText: String, actions: ChannelActions) {
     when {
         error != null -> item(key = "footer-error", span = { GridItemSpan(maxLineSpan) }) {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(error, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
-                FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry))
-            }
+            FrostEmptyState(StateIcons.Error, error, actionLabel = "Retry", onAction = actions.onRetry, actionModifier = Modifier.testTag(ChannelTags.Retry))
         }
         loading -> item(key = "footer-loading", span = { GridItemSpan(maxLineSpan) }) { Text("Loading...", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) }
-        empty -> item(key = "footer-empty", span = { GridItemSpan(maxLineSpan) }) { Text(emptyText, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag(ChannelTags.Empty)) }
+        empty -> item(key = "footer-empty", span = { GridItemSpan(maxLineSpan) }) {
+            FrostEmptyState(StateIcons.Video, emptyText, Modifier.testTag(ChannelTags.Empty), actionLabel = "Refresh", onAction = actions.onRetry)
+        }
     }
 }
 

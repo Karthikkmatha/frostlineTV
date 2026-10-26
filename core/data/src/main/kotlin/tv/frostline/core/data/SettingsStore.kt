@@ -94,11 +94,29 @@ class SettingsStore(private val store: DataStore<Preferences>) {
         store.edit { it[DEBUG_OVERLAY] = value }
     }
 
+    /** The last [RECENT_SEARCHES_MAX] search queries, newest first (Search screen, before typing). */
+    val recentSearches: Flow<List<String>> = store.data.map { p -> p[RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() }.orEmpty() }
+
+    suspend fun addRecentSearch(query: String) {
+        val q = query.trim().replace('\n', ' ')
+        if (q.length < 2) return
+        store.edit { p ->
+            val old = p[RECENT_SEARCHES]?.split('\n').orEmpty().filter { it.isNotBlank() && !it.equals(q, ignoreCase = true) }
+            p[RECENT_SEARCHES] = (listOf(q) + old).take(RECENT_SEARCHES_MAX).joinToString("\n")
+        }
+    }
+
+    suspend fun clearRecentSearches() {
+        store.edit { it.remove(RECENT_SEARCHES) }
+    }
+
     suspend fun setShowFps(value: Boolean) {
         store.edit { it[SHOW_FPS] = value }
     }
 
     private companion object {
+        const val RECENT_SEARCHES_MAX = 5
+        val RECENT_SEARCHES = stringPreferencesKey("recent_searches_v1")
         val LIVE_MODE = stringPreferencesKey("live_mode_v1")
         val AUTO_CLAIM = booleanPreferencesKey("points_auto_claim_v1")
         val SHOW_FPS = booleanPreferencesKey("debug_fps_v1")

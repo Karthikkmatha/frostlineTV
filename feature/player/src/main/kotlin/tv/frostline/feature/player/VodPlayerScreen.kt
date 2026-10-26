@@ -38,6 +38,7 @@ import androidx.media3.ui.compose.SURFACE_TYPE_SURFACE_VIEW
 import androidx.tv.material3.Text
 import tv.frostline.core.twitch.Durations
 import tv.frostline.core.ui.FrostColors
+import androidx.compose.foundation.layout.size
 import tv.frostline.core.ui.FrostButton
 import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.rememberUiFps
@@ -259,6 +260,7 @@ private fun VodError(message: String, onRetry: () -> Unit, modifier: Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        androidx.tv.material3.Icon(androidx.compose.ui.res.painterResource(tv.frostline.core.ui.StateIcons.Error), contentDescription = null, tint = FrostColors.Muted, modifier = Modifier.size(48.dp))
         Text(message, style = MaterialTheme.typography.titleMedium, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
         FrostButton("Try again", onRetry, Modifier.focusRequester(retry))
         Text("Press Back to leave", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)

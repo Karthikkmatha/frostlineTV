@@ -41,6 +41,8 @@ import tv.frostline.core.ui.FrostButton
 import tv.frostline.core.ui.FrostButtonStyle
 import tv.frostline.core.ui.FrostChip
 import tv.frostline.core.ui.FrostColors
+import tv.frostline.core.ui.FrostEmptyState
+import tv.frostline.core.ui.StateIcons
 import tv.frostline.core.ui.SkeletonMediaCard
 import tv.frostline.core.ui.TvTextField
 import tv.frostline.core.ui.tryFocus
@@ -62,10 +64,14 @@ private fun boxartSkeletons(key: String, n: Int) = (0 until n).map { i ->
     GridEntry("$key:sk$i", focusable = false) { SkeletonMediaCard(thumbWidth = CardSizes.BoxartWidth, thumbHeight = CardSizes.BoxartHeight) }
 }
 
-private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridEntry> = listOf(
-    note("$key:err", message),
-    GridEntry("$key:retry", fullSpan = true) { m -> FrostButton("Retry", onRetry, m.padding(vertical = 4.dp)) },
-)
+/** Empty or error state of a list: icon, one line, and a button (the grid's focus target). */
+private fun state(key: String, icon: Int, message: String, actionLabel: String? = null, onAction: (() -> Unit)? = null) =
+    GridEntry("$key:state", fullSpan = true, focusable = actionLabel != null) { m ->
+        FrostEmptyState(icon, message, actionLabel = actionLabel, onAction = onAction, actionModifier = m)
+    }
+
+private fun retry(key: String, message: String, onRetry: () -> Unit): List<GridEntry> =
+    listOf(state(key, StateIcons.Error, message, "Retry", onRetry))
 
 @Composable
 fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit, onOpenVod: (String) -> Unit) {
@@ -82,14 +88,13 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
         buildList<GridEntry> {
             if (st.needsSignIn) {
                 add(header("h:live", "Following"))
-                add(note("f:signin", "Sign in to see your follows"))
-                add(GridEntry("f:settings", fullSpan = true) { m -> FrostButton("Open Settings to sign in", { vm.select(HomeSection.Settings) }, m) })
+                add(state("f:signin", StateIcons.Person, "Sign in to see who you follow", "Open Settings") { vm.select(HomeSection.Settings) })
             } else {
                 add(header("h:live", "Live now"))
                 when {
                     st.error != null -> addAll(retry("f", st.error!!, vm::loadFollowing))
                     st.live.isEmpty() && st.loading -> { add(note("f:loading", "Loading your follows...")); addAll(listSkeletons("f")) }
-                    st.live.isEmpty() -> add(note("f:none", "None of the channels you follow are live."))
+                    st.live.isEmpty() -> add(state("f:none", StateIcons.Tv, "Nobody you follow is live", "Browse Top") { vm.select(HomeSection.Top) })
                     else -> st.live.forEachIndexed { i, s ->
                         val last = i == st.live.lastIndex
                         add(
@@ -182,17 +187,19 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (
                 st.category != null -> {
                     add(header("h:cat", st.category!!.name, FrostColors.Lavender))
                     if (st.categoryStreams.isEmpty()) {
-                        add(note("t:loading", if (st.loading) "Loading..." else "Nobody is live in this category."))
-                        if (st.loading) addAll(listSkeletons("c"))
+                        if (st.loading) { add(note("t:loading", "Loading...")); addAll(listSkeletons("c")) }
+                        else add(state("t:none", StateIcons.Tv, "Nobody is live in this category", "Back to categories") { vm.closeCategory() })
                     }
                     st.categoryStreams.forEach { s -> add(streamCard("cs", s)) }
                 }
                 st.tab == TopTab.Streams -> {
                     if (st.streams.isEmpty() && st.loading) addAll(listSkeletons("ts"))
+                    else if (st.streams.isEmpty()) add(state("ts:none", StateIcons.Tv, "No streams right now", "Retry", vm::loadTop))
                     st.streams.forEach { s -> add(streamCard("ts", s)) }
                 }
                 else -> {
                     if (st.categories.isEmpty() && st.loading) addAll(boxartSkeletons("tc", 12))
+                    else if (st.categories.isEmpty()) add(state("tc:none", StateIcons.Tv, "No categories right now", "Retry", vm::loadTop))
                     st.categories.forEach { g -> add(GridEntry("tc:${g.id}") { m -> CategoryCard(g, m) { vm.openCategory(g) } }) }
                 }
             }
@@ -209,9 +216,10 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (
 @Composable
 fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (String) -> Unit) {
     val st by vm.search.collectAsStateWithLifecycle()
+    val recent by vm.recentSearches.collectAsStateWithLifecycle()
     val open by rememberUpdatedState(onOpen)
     val openPage by rememberUpdatedState(onOpenChannelPage)
-    val entries = remember(st) {
+    val entries = remember(st, recent) {
         buildList<GridEntry> {
             add(
                 GridEntry("search:field", fullSpan = true) { m ->
@@ -226,9 +234,18 @@ fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage
                 },
             )
             when {
-                st.error != null -> add(note("s:err", st.error!!))
+                st.error != null -> addAll(retry("s", st.error!!, vm::searchNow))
                 st.loading -> add(note("s:loading", "Searching..."))
-                st.searched && st.channels.isEmpty() && st.categories.isEmpty() -> add(note("s:none", "No results."))
+                st.searched && st.channels.isEmpty() && st.categories.isEmpty() ->
+                    add(state("s:none", StateIcons.Search, "No results for \"${st.query.trim()}\"", "Clear search") { vm.setQuery("") })
+                !st.searched && st.query.trim().length < 2 -> {
+                    add(state("s:hint", StateIcons.Search, "Search for a channel or a category"))
+                    if (recent.isNotEmpty()) {
+                        add(header("h:recent", "Recent searches"))
+                        recent.forEach { q -> add(GridEntry("recent:$q", fullSpan = true) { m -> FrostButton(q, { vm.searchRecent(q) }, m, style = FrostButtonStyle.Secondary) }) }
+                        add(GridEntry("recent:clear", fullSpan = true) { m -> FrostButton("Clear recent searches", vm::clearRecentSearches, m) })
+                    }
+                }
             }
             if (st.channels.isNotEmpty()) {
                 add(header("h:channels", "Channels"))

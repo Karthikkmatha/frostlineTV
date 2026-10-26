@@ -177,7 +177,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                 val vm: HomeViewModel = viewModel(
                     factory = viewModelFactory {
                         initializer {
-                            HomeViewModel(container.twitch.helix, container.database.resumeDao()) { container.userId() }
+                            HomeViewModel(container.twitch.helix, container.database.resumeDao(), container.settings) { container.userId() }
                         }
                     },
                 )
