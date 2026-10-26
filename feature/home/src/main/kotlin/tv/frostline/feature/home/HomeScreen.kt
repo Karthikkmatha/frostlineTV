@@ -15,7 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
@@ -58,8 +58,9 @@ fun HomeScreen(
                 HomeSection.Search -> SearchContent(viewModel, onOpenChannel, onOpenChannelPage)
                 HomeSection.Settings -> {
                     val first = remember { FocusRequester() }
-                    // Entering Settings from the rail lands on its first item (Account), not on whatever is nearest.
-                    Box(Modifier.fillMaxSize().focusProperties { enter = { first } }.focusGroup()) { settingsContent(first) }
+                    // Entering Settings from the rail lands on the row that had focus last (focusRestorer); the first time, on its
+                    // first item (Account), not on whatever is nearest.
+                    Box(Modifier.fillMaxSize().focusRestorer { first }) { settingsContent(first) }
                 }
             }
         }
