@@ -11,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -18,7 +21,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import tv.frostline.core.ui.FocusMemory
-import tv.frostline.core.ui.rememberFocusIn
+import tv.frostline.core.ui.LocalFocusRingEnabled
+import tv.frostline.core.ui.tryFocus
+import androidx.compose.ui.focus.onFocusChanged
+
+/** Frames a restore keeps trying (about 3 s at 60 fps), and how long a missing saved card is waited for (about 2.5 s). */
+internal const val RESTORE_FRAMES = 180
+internal const val GIVE_UP_FRAMES = 150
 
 val OverscanX: Dp = 48.dp
 val OverscanY: Dp = 27.dp
@@ -55,29 +64,47 @@ fun FocusGrid(
         }
     }
     val requester = remember { FocusRequester() }
-    val target = entries.firstOrNull { it.focusable && it.key == memory.key }?.key
-        ?: entries.firstOrNull { it.focusable }?.key
+    val saved = memory.key
+    val savedPresent = saved != null && entries.any { it.focusable && it.key == saved }
+    // A saved key whose card is not in the list yet (the list is still loading) is waited for, not replaced by the
+    // first focusable entry: otherwise the fallback focus overwrites the memory and the opened card is lost for good.
+    val waitingForSaved = saved != null && !savedPresent
+    var gaveUp by remember { mutableStateOf(false) }
+    val target = when {
+        savedPresent -> saved
+        waitingForSaved && !gaveUp -> null
+        else -> entries.firstOrNull { it.focusable }?.key
+    }
+    val settled = LocalFocusRingEnabled.current
 
     val tick = signal.tick
     // A grid that is composed again (coming back from the player or a channel page) must put focus back on the
     // entry that was opened, even though the signal it already consumed has not moved on: without this, focus
     // falls to the first focusable thing on screen, the side rail.
     val firstRun = remember { booleanArrayOf(true) }
-    LaunchedEffect(tick, target) {
-        if (target != null && (firstRun[0] || tick > signal.consumed)) {
-            val index = entries.indexOfFirst { it.key == target }
-            if (index >= 0) state.scrollToItem(index)
-            repeat(if (firstRun[0]) 20 else 6) {
-                withFrameNanos { }
-                val result: Any? = runCatching { requester.requestFocus() }.getOrNull()
-                if (result == true || result is Unit) {
-                    signal.consumed = tick
-                    firstRun[0] = false
-                    return@LaunchedEffect
-                }
-            }
-            firstRun[0] = false
+    // The attempt is retried every frame until the card holds focus while the screen transition has finished: a
+    // request made earlier can be granted to a card of a screen that is still fading out, or before the card is laid out.
+    LaunchedEffect(tick, target, settled) {
+        if (!(firstRun[0] || tick > signal.consumed)) return@LaunchedEffect
+        if (target == null) {
+            if (!waitingForSaved) return@LaunchedEffect
+            repeat(GIVE_UP_FRAMES) { withFrameNanos { } }
+            gaveUp = true
+            memory.key = null
+            return@LaunchedEffect
         }
+        val index = entries.indexOfFirst { it.key == target }
+        val visible = state.layoutInfo.visibleItemsInfo.any { it.key == target }
+        if (index >= 0 && !visible) state.scrollToItem(index)
+        repeat(RESTORE_FRAMES) {
+            withFrameNanos { }
+            if (requester.tryFocus() && settled) {
+                signal.consumed = tick
+                firstRun[0] = false
+                return@LaunchedEffect
+            }
+        }
+        if (settled) { firstRun[0] = false; signal.consumed = tick }
     }
 
     LazyVerticalGrid(
@@ -96,7 +123,7 @@ fun FocusGrid(
         ) { entry ->
             val m = if (entry.focusable) {
                 (if (entry.key == target) Modifier.focusRequester(requester) else Modifier)
-                    .rememberFocusIn(entry.key, memory)
+                    .onFocusChanged { if (it.hasFocus && (saved == null || savedPresent || gaveUp)) memory.key = entry.key }
             } else {
                 Modifier
             }

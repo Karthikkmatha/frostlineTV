@@ -134,13 +134,24 @@ fun ChannelContent(state: ChannelState, actions: ChannelActions, memory: FocusMe
     val subFocus = remember { FocusRequester() }
     val restoring = memory.key != null
     val ready = !state.loading
-    LaunchedEffect(ready) {
+    val settled = tv.frostline.core.ui.LocalFocusRingEnabled.current
+    LaunchedEffect(ready, settled) {
         if (!ready) return@LaunchedEffect
-        if (restoring) {
-            // Back from a video: the card that was opened gets focus again (its row is composed from the saved scroll).
-            repeat(6) {
+        val key = memory.key
+        val offset = when (state.tab) { ChannelTab.Videos -> 3; ChannelTab.Clips -> 3; else -> -1 }
+        val idx = if (key == null || offset < 0) -1 else when (state.tab) {
+            ChannelTab.Videos -> state.currentVideos.items.indexOfFirst { "v:" + it.id == key }
+            ChannelTab.Clips -> state.currentClips.items.indexOfFirst { "c:" + it.id == key }
+            else -> -1
+        }
+        if (restoring && idx >= 0) {
+            // Back from a video: the card that was opened gets focus again. Its row is brought into view first when
+            // the saved scroll did not already show it, then the request is repeated every frame until the card has
+            // focus and the screen transition is over (a request granted earlier can be lost to the screen fading out).
+            if (grid.layoutInfo.visibleItemsInfo.none { it.key == key }) grid.scrollToItem(idx + offset)
+            repeat(180) {
                 withFrameNanos { }
-                if (restore.tryFocus()) return@LaunchedEffect
+                if (restore.tryFocus() && settled) return@LaunchedEffect
             }
         }
         repeat(6) {

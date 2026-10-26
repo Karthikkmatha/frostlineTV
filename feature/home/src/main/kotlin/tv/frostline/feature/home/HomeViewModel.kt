@@ -209,6 +209,8 @@ class HomeViewModel(
     }
 
     fun openCategory(game: HelixGame) {
+        // A category page always opens on its first card, not on the card that was open in the previous category.
+        memory("top-cat").apply { key = null; scrollIndex = 0; scrollOffset = 0 }
         _top.update { it.copy(tab = TopTab.Categories, category = game, categoryStreams = emptyList(), loading = true, error = null) }
         _section.value = HomeSection.Top
         focusSignal.request()
