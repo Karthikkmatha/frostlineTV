@@ -8,7 +8,7 @@
   Needs Settings > Debug overlay ON in the app (debug deep links are ignored otherwise) and a live stream open.
   Phases: 1 baseline (2 min), 2 ten channel switches 90 s apart, 3 six chat-toggle cycles 15 s apart, 4 four open-vod and back
   round trips of 30 s, 5 three reconnects (IRC + Hermes), 6 three refresh-token + refresh-integrity 60 s apart.
-  PASS when each phase ends within +-10 MB post-GC PSS of the baseline and within +-5 threads and fds.
+  PASS when each phase ends no more than +10 MB ABOVE the baseline post-GC PSS, and no more than +5 threads and +5 fds above it. A drop is fine (the rule is one-sided).
   An offline channel is not detected: pick -Channels that are live.
   Reads from the TV, plus `am start` deep links. Does not install anything.
 #>
@@ -116,8 +116,8 @@ foreach ($p in 1..6) {
     $max = ($r | Measure-Object Pss -Maximum).Maximum
     $dt = $last.Threads - $first.Threads
     $df = if ($first.Fds -lt 0 -or $last.Fds -lt 0) { 'n/a' } else { $last.Fds - $first.Fds }
-    $ok = ([math]::Abs($last.Pss - $base.Pss) -le 10) -and ([math]::Abs($last.Threads - $base.Threads) -le 5)
-    if ($base.Fds -ge 0 -and $last.Fds -ge 0) { $ok = $ok -and ([math]::Abs($last.Fds - $base.Fds) -le 5) }
+    $ok = (($last.Pss - $base.Pss) -le 10) -and (($last.Threads - $base.Threads) -le 5)
+    if ($base.Fds -ge 0 -and $last.Fds -ge 0) { $ok = $ok -and (($last.Fds - $base.Fds) -le 5) }
     if (-not $ok) { $pass = $false }
     $lines += ('{0,-16} {1,7} {2,7} {3,7} {4,9} {5,9}  {6}' -f $names[$p], $first.Pss, $last.Pss, $max, $dt, $df, $(if ($ok) { 'ok' } else { 'FAIL' }))
 }
@@ -126,7 +126,7 @@ $lines += ('Post-GC PSS slope: {0:N2} MB per step; baseline end {1} MB, final {2
 $lines += "CPU mean $([math]::Round(($rows | Measure-Object Cpu -Average).Average, 1))%, max $(($rows | Measure-Object Cpu -Maximum).Maximum)%"
 if ($crashes -gt 0 -or $appPid -ne $startPid) { $pass = $false }
 $lines += "Crashes / pid changes: $crashes (pid $startPid -> $appPid); crash buffer lines for the app: $crashBuf; debug actions that logged err: $dbgErr"
-$lines += "VERDICT: $(if ($pass) { 'PASS' } else { 'FAIL' })  (within +-10 MB PSS and +-5 threads/fds of baseline, no crash)"
+$lines += "VERDICT: $(if ($pass) { 'PASS' } else { 'FAIL' })  (at most +10 MB PSS and +5 threads/fds above baseline, drops are fine, no crash)"
 $lines += "Files: $OutDir (stress.csv, stress.log)"
 $lines | Set-Content (Join-Path $OutDir 'summary.txt')
 $lines
