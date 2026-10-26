@@ -1,6 +1,7 @@
 package tv.frostline.feature.player
 
 import androidx.compose.foundation.background
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,6 +31,9 @@ import androidx.tv.material3.Text
 import tv.frostline.core.twitchinternal.StreamVariant
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.FrostListItem
+import tv.frostline.core.ui.FrostSheetSurface
+import tv.frostline.core.ui.FrostSheetTitle
+import tv.frostline.core.ui.FrostTokens
 
 /** Quality choices: Auto plus the variants of the master playlist. [selected] null = Auto. */
 @OptIn(ExperimentalComposeUiApi::class, ExperimentalTvMaterial3Api::class)
@@ -49,20 +53,17 @@ fun QualitySheet(
             if (r == true || r == Unit) return@LaunchedEffect
         }
     }
-    Column(
+    FrostSheetSurface(
         modifier
             .fillMaxHeight()
-            .width(300.dp)
-            .background(FrostColors.Surface)
-            .padding(horizontal = 16.dp, vertical = 27.dp)
+            .width(340.dp)
             .testTag("quality_sheet")
             // Keep D-pad focus inside the sheet while it is open.
             .focusProperties { exit = { FocusRequester.Cancel } }
             .focusGroup(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Quality", fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FrostSheetTitle("Quality")
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             item(key = "auto") {
                 QualityRow("Auto", selected == null, { onSelect(null) }, Modifier.focusRequester(if (selected == null) initial else FocusRequester()).testTag("q_auto"))
             }
@@ -79,6 +80,7 @@ private fun QualityRow(label: String, isSelected: Boolean, onClick: () -> Unit, 
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         selected = isSelected,
-        trailing = if (isSelected) ({ Text("\u2713", fontSize = 16.sp, color = FrostColors.Lavender) }) else null,
-    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium) }
+        minHeight = FrostTokens.SheetRowHeight,
+        trailing = if (isSelected) ({ Text("\u2713", style = MaterialTheme.typography.bodyLarge, color = FrostColors.Lavender) }) else null,
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
 }

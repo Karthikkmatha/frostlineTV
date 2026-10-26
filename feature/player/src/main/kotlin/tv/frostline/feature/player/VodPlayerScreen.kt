@@ -1,6 +1,7 @@
 package tv.frostline.feature.player
 
 import androidx.activity.compose.BackHandler
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -195,7 +196,7 @@ fun VodPlayerScreen(
             )
 
             if (ui.loading && ui.error == null) {
-                Text("Loading...", fontSize = 16.sp, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center))
+                Text("Loading...", style = MaterialTheme.typography.bodyLarge, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center))
             }
             ui.error?.let { msg ->
                 VodError(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
@@ -205,7 +206,7 @@ fun VodPlayerScreen(
             }
             ui.notice?.let {
                 Text(
-                    it, fontSize = 14.sp, color = FrostColors.OnSurface,
+                    it, style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface,
                     modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)
                         .background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -241,7 +242,7 @@ fun ResumePrompt(positionMs: Long, onResume: () -> Unit, onStartOver: () -> Unit
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        Text("Continue where you left off?", fontSize = 18.sp, color = FrostColors.OnSurface)
+        Text("Continue where you left off?", style = MaterialTheme.typography.titleMedium, color = FrostColors.OnSurface)
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             FrostButton("Resume from ${Durations.clock(positionMs)}", onResume, Modifier.focusRequester(first).testTag("resume_btn"))
             FrostSecondaryButton("Start over", onStartOver, Modifier.testTag("start_over_btn"))
@@ -258,8 +259,8 @@ private fun VodError(message: String, onRetry: () -> Unit, modifier: Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(message, fontSize = 18.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
+        Text(message, style = MaterialTheme.typography.titleMedium, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
         FrostButton("Try again", onRetry, Modifier.focusRequester(retry))
-        Text("Press Back to leave", fontSize = 12.sp, color = FrostColors.Muted)
+        Text("Press Back to leave", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
     }
 }

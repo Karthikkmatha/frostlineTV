@@ -1,6 +1,7 @@
 package tv.frostline.feature.player
 
 import androidx.activity.compose.BackHandler
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
@@ -50,7 +51,7 @@ import androidx.tv.material3.Icon
 import androidx.tv.material3.Text
 import kotlinx.coroutines.delay
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.FrostSurface
+import tv.frostline.core.ui.FrostIconButton
 import tv.frostline.core.ui.FrostTokens
 import tv.frostline.core.ui.FrostButton
 import tv.frostline.core.ui.FrostSecondaryButton
@@ -190,15 +191,15 @@ fun PlayerChrome(
             // Scrims keep white text readable over any video.
             Box(
                 Modifier.fillMaxWidth().align(Alignment.TopCenter)
-                    .background(Brush.verticalGradient(listOf(Color(0xCC050507), Color.Transparent)))
+                    .background(Brush.verticalGradient(listOf(Scrim, Color.Transparent)))
                     .padding(horizontal = 48.dp, vertical = 27.dp),
             ) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(channelName, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (title.isNotBlank()) Text(title, fontSize = 14.sp, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(channelName, style = MaterialTheme.typography.headlineSmall, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (title.isNotBlank()) Text(title, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         if (vod == null) LiveBadgeView(badge)
-                        else Text(vod.kindLabel, fontSize = 13.sp, color = FrostColors.Lavender, modifier = Modifier.testTag("vod_kind"))
+                        else Text(vod.kindLabel, style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, modifier = Modifier.testTag("vod_kind"))
                     }
                     FrostSecondaryButton(
                         "Channel",
@@ -207,7 +208,7 @@ fun PlayerChrome(
                             .focusProperties { up = stop; left = stop; right = gear; down = play },
                     )
                     IconControl(
-                        R.drawable.ic_gear, "Quality", onQuality, 44,
+                        R.drawable.ic_gear, "Quality", onQuality, 48,
                         enterChat.focusRequester(gear).testTag(ControlTags.Quality)
                             .focusProperties { up = stop; right = stop; left = channel; down = play },
                     )
@@ -217,7 +218,7 @@ fun PlayerChrome(
                 IconControl(
                     if (playing) R.drawable.ic_pause else R.drawable.ic_play,
                     if (playing) "Pause" else "Play",
-                    onPlayPause, 72,
+                    onPlayPause, 48,
                     enterChat.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
                         .focusProperties { up = channel; down = refresh; left = stop; right = stop },
                 )
@@ -235,7 +236,7 @@ fun PlayerChrome(
                     IconControl(
                         if (playing) R.drawable.ic_pause else R.drawable.ic_play,
                         if (playing) "Pause" else "Play",
-                        onPlayPause, 72,
+                        onPlayPause, 48,
                         Modifier.focusRequester(play).testTag(ControlTags.PlayPause)
                             .focusProperties { up = channel; down = refresh; left = skipBack; right = skipForward },
                     )
@@ -248,14 +249,14 @@ fun PlayerChrome(
             }
             Box(
                 Modifier.fillMaxWidth().align(Alignment.BottomCenter)
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color(0xCC050507))))
+                    .background(Brush.verticalGradient(listOf(Color.Transparent, Scrim)))
                     .padding(horizontal = 48.dp, vertical = 27.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (vod != null) {
                         vod.skipCounter?.let { c ->
                             Text(
-                                c, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface,
+                                c, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface,
                                 modifier = Modifier.align(Alignment.CenterHorizontally).testTag(ControlTags.SkipCounter),
                             )
                         }
@@ -263,18 +264,18 @@ fun PlayerChrome(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconControl(
-                            R.drawable.ic_refresh, "Refresh stream", onRefresh, 44,
+                            R.drawable.ic_refresh, "Refresh stream", onRefresh, 48,
                             Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
                                 .focusProperties { up = play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
                         )
                         if (showChatToggle) {
                             IconControl(
-                                R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 44,
+                                R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 48,
                                 enterChat.focusRequester(chat).testTag(ControlTags.Chat)
                                     .focusProperties { up = play; down = stop; left = refresh; right = stop },
                                 active = chatVisible,
                             )
-                            Text(if (chatVisible) "Chat on" else "Chat off", fontSize = 13.sp, color = FrostColors.Muted)
+                            Text(if (chatVisible) "Chat on" else "Chat off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
                         }
                     }
                 }
@@ -290,11 +291,11 @@ private fun SeekBar(positionMs: Long, durationMs: Long) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(Durations.clock(positionMs), fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Elapsed))
+        Text(Durations.clock(positionMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Elapsed))
         Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x66FFFFFF))) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FrostColors.Violet))
         }
-        Text(Durations.clock(durationMs), fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
+        Text(Durations.clock(durationMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
     }
 }
 
@@ -304,25 +305,21 @@ private fun SeekBar(positionMs: Long, durationMs: Long) {
  */
 @Composable
 private fun SkipButton(label: String, description: String, onPress: (repeat: Boolean) -> Unit, modifier: Modifier) {
-    FrostSurface(
+    FrostSecondaryButton(
+        label,
         onClick = { onPress(false) },
         modifier = modifier
-            .height(FrostTokens.ButtonHeight)
             .semantics { contentDescription = description }
             .onPreviewKeyEvent { e ->
                 if (!isSelect(e.key)) return@onPreviewKeyEvent false
                 if (e.type == KeyEventType.KeyDown) onPress(e.nativeKeyEvent.repeatCount > 0)
                 true
             },
-        shape = FrostTokens.PillShape,
-        containerColor = OverlayContainer,
-        focusedContainerColor = FrostColors.PrimaryFocused,
-    ) {
-        Box(Modifier.fillMaxHeight().padding(horizontal = FrostTokens.HorizontalPadding), contentAlignment = Alignment.Center) {
-            Text(label, fontSize = 16.sp, fontWeight = FontWeight.Medium)
-        }
-    }
+    )
 }
+
+/** Black at 70 % at the screen edge, fading to nothing: the top and bottom scrims. */
+private val Scrim = Color.Black.copy(alpha = 0.7f)
 
 /** Container of round controls over the video: the Container colour, a little see-through so the picture shows. */
 private val OverlayContainer = Color(0xCC262033)
@@ -336,7 +333,7 @@ fun LiveBadgeView(badge: LiveBadge, modifier: Modifier = Modifier) {
     }
     Row(modifier.testTag("live_badge"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(Modifier.size(8.dp).background(dot, CircleShape))
-        Text(badge.text, fontSize = 13.sp, color = if (badge.state == LiveState.Behind) FrostColors.Muted else FrostColors.Live)
+        Text(badge.text, style = MaterialTheme.typography.bodySmall, color = if (badge.state == LiveState.Behind) FrostColors.Muted else FrostColors.Live)
     }
 }
 
@@ -349,15 +346,13 @@ fun IconControl(
     modifier: Modifier = Modifier,
     active: Boolean = false,
 ) {
-    FrostSurface(
+    FrostIconButton(
         onClick = onClick,
-        modifier = modifier.size(size.dp),
-        shape = CircleShape,
+        modifier = modifier,
+        size = size.dp,
+        active = active,
         containerColor = if (active) FrostColors.Primary else OverlayContainer,
-        focusedContainerColor = FrostColors.PrimaryFocused,
     ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), contentDescription = description, modifier = Modifier.size((size * 0.5f).dp))
-        }
+        Icon(painterResource(icon), contentDescription = description, modifier = Modifier.size((size * 0.5f).dp))
     }
 }

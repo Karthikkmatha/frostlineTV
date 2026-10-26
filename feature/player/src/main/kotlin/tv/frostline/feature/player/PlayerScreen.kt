@@ -1,6 +1,7 @@
 package tv.frostline.feature.player
 
 import androidx.activity.compose.BackHandler
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -228,7 +229,7 @@ fun PlayerScreen(
             )
 
             if (ui.loading && ui.error == null) {
-                Text("Loading...", fontSize = 16.sp, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center))
+                Text("Loading...", style = MaterialTheme.typography.bodyLarge, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center))
             }
             ui.error?.let { msg ->
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
@@ -263,9 +264,9 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier)
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text(message, fontSize = 18.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
+        Text(message, style = MaterialTheme.typography.titleMedium, color = FrostColors.OnSurface, modifier = Modifier.testTag("player_error"))
         FrostButton("Try again", onRetry, Modifier.focusRequester(retry))
-        Text("Press Back to leave", fontSize = 12.sp, color = FrostColors.Muted)
+        Text("Press Back to leave", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
     }
 }
 
@@ -273,7 +274,7 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier)
 private fun Toast(text: String, modifier: Modifier) {
     Text(
         text,
-        fontSize = 14.sp,
+        style = MaterialTheme.typography.bodySmall,
         color = FrostColors.OnSurface,
         modifier = modifier.background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
     )
@@ -288,7 +289,7 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Raiding ${notice.targetName} in ${notice.secondsLeft} s", fontSize = 16.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("raid_text"))
+        Text("Raiding ${notice.targetName} in ${notice.secondsLeft} s", style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface, modifier = Modifier.testTag("raid_text"))
         FrostSecondaryButton("Cancel", onCancel, Modifier.focusRequester(cancel).testTag("raid_cancel"))
     }
 }
