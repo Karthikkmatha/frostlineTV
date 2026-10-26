@@ -1,6 +1,7 @@
 package tv.frostline.feature.auth
 
 import androidx.compose.foundation.Canvas
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -77,22 +78,22 @@ fun SignInLanding(ui: SignInUi, onWebSignIn: () -> Unit, onGuest: () -> Unit, on
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
 
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 64.dp, vertical = 32.dp),
+        Modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp),
         horizontalArrangement = Arrangement.spacedBy(48.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(brandName(), fontSize = 40.sp, color = FrostColors.OnSurface)
-            Text("A native Twitch client for your TV.", fontSize = 15.sp, color = FrostColors.Muted)
+            Text(brandName(), style = MaterialTheme.typography.displaySmall, color = FrostColors.OnSurface)
+            Text("A native Twitch client for your TV.", style = MaterialTheme.typography.bodyLarge, color = FrostColors.Muted)
             Spacer(Modifier.height(16.dp))
             FrostButton("Sign in with Twitch", onWebSignIn, Modifier.focusRequester(first).testTag("btn_web_signin"))
             FrostSecondaryButton("Skip — watch as guest", onGuest, Modifier.testTag("btn_guest"))
             Text(
                 "Signing in unlocks your follows and chat. As a guest you can browse Top, Categories and Search and watch streams.",
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.Muted,
             )
-            ui.message?.let { Text(it, fontSize = 13.sp, color = FrostColors.Live) }
+            ui.message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FrostColors.Live) }
         }
         CodePanel(ui, onNewCode, Modifier.width(300.dp))
     }
@@ -105,14 +106,14 @@ private fun CodePanel(ui: SignInUi, onNewCode: () -> Unit, modifier: Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text("Or sign in on your phone", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+        Text("Or sign in on your phone", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
         val code = ui.code
         if (code != null && ui.codeStatus == CodeStatus.Ready) {
             QrCode(code.verificationUri, Modifier.size(180.dp).testTag("qr"))
-            Text("Scan, or go to twitch.tv/activate and enter", fontSize = 12.sp, color = FrostColors.Muted)
+            Text("Scan, or go to twitch.tv/activate and enter", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
             Text(
                 code.userCode,
-                fontSize = 30.sp,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace,
                 letterSpacing = 4.sp,
@@ -125,7 +126,7 @@ private fun CodePanel(ui: SignInUi, onNewCode: () -> Unit, modifier: Modifier) {
                     delay(500)
                 }
             }
-            Text("Expires in ${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}", fontSize = 12.sp, color = FrostColors.Muted)
+            Text("Expires in ${remaining / 60}:${(remaining % 60).toString().padStart(2, '0')}", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
         } else {
             Text(
                 when (val s = ui.codeStatus) {
@@ -134,7 +135,7 @@ private fun CodePanel(ui: SignInUi, onNewCode: () -> Unit, modifier: Modifier) {
                     CodeStatus.Denied -> "Sign-in was declined on Twitch."
                     is CodeStatus.Error -> "Something went wrong: ${s.message}"
                 },
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.Muted,
                 modifier = Modifier.testTag("code_status"),
             )

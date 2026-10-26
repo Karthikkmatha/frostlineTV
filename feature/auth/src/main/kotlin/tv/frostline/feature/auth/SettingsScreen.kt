@@ -1,6 +1,7 @@
 package tv.frostline.feature.auth
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
@@ -81,8 +82,9 @@ fun SettingsContent(
     commit: String = "",
 ) {
     LazyColumn(
-        // Overscan-safe: 48 dp on the right, 27 dp top and bottom.
-        Modifier.fillMaxSize().padding(start = 16.dp, end = 48.dp, top = 27.dp).testTag("settings_list"),
+        // Overscan-safe: 48 dp on the right, 27 dp top and bottom (as list padding, so rows scroll to the safe edge).
+        Modifier.fillMaxSize().padding(start = 16.dp, end = 48.dp).testTag("settings_list"),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 27.dp, bottom = 27.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         item { Heading("Account") }
@@ -92,7 +94,7 @@ fun SettingsContent(
                     ui.signedIn -> if (ui.login != null) "Signed in as ${ui.login}" else "Signed in"
                     else -> "Watching as guest"
                 },
-                fontSize = 14.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.OnSurface,
             )
         }
@@ -102,7 +104,7 @@ fun SettingsContent(
             LaunchedEffect(confirming) { if (confirming) runCatching { cancel.requestFocus() } }
             if (ui.signedIn && confirming) {
                 androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                    Text("Sign out of this account?", fontSize = 14.sp, color = FrostColors.OnSurface)
+                    Text("Sign out of this account?", style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface)
                     FrostSecondaryButton("Cancel", onClick = { confirming = false }, modifier = Modifier.focusRequester(cancel).testTag("btn_sign_out_cancel"))
                     FrostButton("Yes, sign out", onClick = { confirming = false; onSignOut() }, modifier = Modifier.testTag("btn_sign_out_confirm"))
                 }
@@ -118,7 +120,7 @@ fun SettingsContent(
                 ui.webLinked -> "Web session linked (used for Turbo and subscriber playback)."
                 else -> "Web session not linked. Link it to get ad-free playback on Turbo or subscribed channels."
             }
-            Text(status, fontSize = 13.sp, color = if (ui.webExpired) FrostColors.Live else FrostColors.Muted, modifier = Modifier.widthIn(max = 560.dp))
+            Text(status, style = MaterialTheme.typography.bodySmall, color = if (ui.webExpired) FrostColors.Live else FrostColors.Muted, modifier = Modifier.widthIn(max = 560.dp))
         }
         item {
             androidx.compose.foundation.layout.Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -285,15 +287,15 @@ fun SettingsContent(
 
         item { Spacer(Modifier.height(12.dp)) }
         item { Heading("About") }
-        item { Text(brandName(), fontSize = 16.sp, color = FrostColors.OnSurface) }
-        item { Text("Version $versionName" + if (commit.isNotBlank()) " (commit $commit)" else "", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("about_version")) }
-        item { Text("An independent Twitch client for Android TV. Not affiliated with Twitch.", fontSize = 13.sp, color = FrostColors.Muted) }
+        item { Text(brandName(), style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface) }
+        item { Text("Version $versionName" + if (commit.isNotBlank()) " (commit $commit)" else "", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("about_version")) }
+        item { Text("An independent Twitch client for Android TV. Not affiliated with Twitch.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted) }
         item { Spacer(Modifier.height(27.dp)) }
     }
 }
 
 @Composable
-private fun Heading(text: String) = Text(text, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
 
 internal fun formatBytes(b: Long): String = when {
     b < 1024 -> "$b B"
