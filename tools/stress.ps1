@@ -37,22 +37,22 @@ $log = Join-Path $OutDir 'stress.log'
 $appPid = Get-AppPid
 if (-not $appPid) { throw "$Package is not running on $TvHost. Start the app and a stream first." }
 $startPid = $appPid
-$rows = New-Object System.Collections.Generic.List[object]
-$crashes = 0
-$step = 0
+# All mutable state lives in one object: `$script:` variables are not the same variables when this file is dot-sourced
+# (`& { . .\tools\stress.ps1 ... }` from Start-Process), which left the rows empty and the summary at 0 steps.
+$st = @{ Rows = (New-Object System.Collections.Generic.List[object]); Crashes = 0; Step = 0; Pid = $appPid }
 
 function Send-Link([string]$Uri) { Invoke-Tv @("am start -a android.intent.action.VIEW -d $Uri $Package") | Out-Null }
 
 # GC, wait, measure, record.
 function Measure-Step([int]$Phase, [string]$Action) {
-    $script:step++
+    $st.Step++
     Send-Link 'frostline://debug/gc'
     Start-Sleep -Seconds 5
-    $s = Get-Sample $script:appPid
-    if ($s.Alive -and $s.Pid -ne $script:appPid) { $script:crashes++; $script:appPid = $s.Pid; "$(Get-Date -Format o) pid changed at step $($script:step) ($Action)" | Add-Content $log }
-    if (-not $s.Alive) { $script:crashes++; "$(Get-Date -Format o) process gone at step $($script:step) ($Action)" | Add-Content $log; $np = Get-AppPid; if ($np) { $script:appPid = $np } }
-    "$($script:step),$Phase,$Action,$(Get-Date -Format o),$($s.Pss),$($s.Java),$($s.Native),$($s.Gfx),$($s.Threads),$($s.Fds),$($s.Cpu),$($s.Alive)" | Add-Content $csv
-    $script:rows.Add([pscustomobject]@{ Step = $script:step; Phase = $Phase; Pss = $s.Pss; Threads = $s.Threads; Fds = $s.Fds; Cpu = $s.Cpu })
+    $s = Get-Sample $st.Pid
+    if ($s.Alive -and $s.Pid -ne $st.Pid) { $st.Crashes++; $st.Pid = $s.Pid; "$(Get-Date -Format o) pid changed at step $($st.Step) ($Action)" | Add-Content $log }
+    if (-not $s.Alive) { $st.Crashes++; "$(Get-Date -Format o) process gone at step $($st.Step) ($Action)" | Add-Content $log; $np = Get-AppPid; if ($np) { $st.Pid = $np } }
+    "$($st.Step),$Phase,$Action,$(Get-Date -Format o),$($s.Pss),$($s.Java),$($s.Native),$($s.Gfx),$($s.Threads),$($s.Fds),$($s.Cpu),$($s.Alive)" | Add-Content $csv
+    $st.Rows.Add([pscustomobject]@{ Step = $st.Step; Phase = $Phase; Pss = $s.Pss; Threads = $s.Threads; Fds = $s.Fds; Cpu = $s.Cpu })
 }
 
 Send-Link 'frostline://debug/gc'
@@ -100,6 +100,9 @@ $dbgRaw = Invoke-Tv @("logcat -d -s FrostlineDebug:I | grep -c ' err'")
 $dbgErr = [regex]::Match((Get-Section $dbgRaw "logcat -d -s FrostlineDebug:I | grep -c ' err'"), '\d+').Value
 if (-not $dbgErr) { $dbgErr = '?' }
 
+$rows = $st.Rows
+$crashes = $st.Crashes
+$appPid = $st.Pid
 $base = $rows | Where-Object { $_.Phase -eq 1 } | Select-Object -Last 1
 $names = @{ 1 = 'baseline'; 2 = 'channel switch'; 3 = 'chat toggle'; 4 = 'vod round trip'; 5 = 'reconnect'; 6 = 'token/integrity' }
 $pass = $true

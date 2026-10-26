@@ -13,6 +13,8 @@ import tv.frostline.baselineprofile.Journeys.openVodFromChannel
 /**
  * Records the classes and methods the four journeys touch. Run (device in ANDROID_SERIAL):
  * `gradlew :app:generateReleaseBaselineProfile`. The result lands in app/src/release/generated/baselineProfiles/.
+ * Nothing here may clear or uninstall the app: that wipes the user's sign-in. gradle.properties sets
+ * `android.injected.androidTest.leaveApksInstalledAfterRun=true` so the test run leaves both apks installed.
  */
 @RunWith(AndroidJUnit4::class)
 class BaselineProfileGenerator {

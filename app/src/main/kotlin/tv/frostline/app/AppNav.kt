@@ -125,6 +125,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                         val vod = id?.let { container.twitch.helix.videos(it, tv.frostline.core.twitch.VideoKind.Broadcasts).items.firstOrNull() }
                         if (vod != null) { nav.navigate("vod/${vod.id}"); true } else false
                     }
+                    "stats" -> { android.util.Log.i("FrostlineDebug", tv.frostline.core.ui.HealthStats.statsLogLine()); true }
                     "back" -> if (nav.currentDestination?.route == VOD) nav.popBackStack() else false
                     else -> false
                 }

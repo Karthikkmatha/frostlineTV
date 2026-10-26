@@ -45,6 +45,19 @@ function Get-Slope([double[]]$X, [double[]]$Y) {
     return $num / $den
 }
 
+# threads/fds/sockets as the app itself counts them, for TVs where the shell user cannot read /proc/<pid>/fd (profileable, not
+# debuggable, so run-as does not work either). frostline://debug/stats makes the app log
+# "FrostlineDebug stats n=<seq> threads=.. fds=.. sockets=.." (needs Settings > Debug overlay ON). Returns $null when it did not log.
+function Get-AppStats {
+    Invoke-Tv @("am start -a android.intent.action.VIEW -d frostline://debug/stats $Package") | Out-Null
+    Start-Sleep -Seconds 2
+    $cmd = "logcat -d -s FrostlineDebug:I | grep ' stats n=' | tail -n 1"
+    $text = Get-Section (Invoke-Tv @($cmd)) $cmd
+    $m = [regex]::Match($text, 'stats n=(\d+) threads=(\d+) fds=(\d+) sockets=(\d+)')
+    if (-not $m.Success) { return $null }
+    [pscustomobject]@{ Seq = [int]$m.Groups[1].Value; Threads = [int]$m.Groups[2].Value; Fds = [int]$m.Groups[3].Value; Sockets = [int]$m.Groups[4].Value }
+}
+
 # One measurement: PSS (total/java/native/graphics, MB), threads, fds (-1 when hidden from the shell user), process CPU %, alive.
 function Get-Sample([string]$AppPid) {
     $cmds = @("top -H -b -n 1 -p $AppPid", "dumpsys meminfo $Package", "ls /proc/$AppPid/task | wc -l", "ls /proc/$AppPid/fd | wc -l", "pidof $Package")
@@ -62,13 +75,19 @@ function Get-Sample([string]$AppPid) {
             if ($tok[$k] -match '^[RSDZTIt]$' -and $tok[$k + 1] -match '^\d+(\.\d+)?$' -and $tok[0] -match '^\d+$') { $cpu += [double]$tok[$k + 1]; break }
         }
     }
+    $fds = $(if ($fdText -match 'Permission|denied|No such') { -1 } else { Get-Num $fdText '(\d+)' })
+    $thr = Get-Num (Get-Section $raw $cmds[2]) '(\d+)'
+    if ($fds -lt 0) { # hidden from the shell user: take the app's own count
+        $st = Get-AppStats
+        if ($st) { $fds = $st.Fds; if ($thr -lt 0) { $thr = $st.Threads } }
+    }
     [pscustomobject]@{
         Pss = [math]::Round($pss / 1024.0, 1)
         Java = [math]::Round((Get-Num $mem '(?m)Java Heap:\s+(\d+)') / 1024.0, 1)
         Native = [math]::Round((Get-Num $mem '(?m)Native Heap:\s+(\d+)') / 1024.0, 1)
         Gfx = [math]::Round((Get-Num $mem '(?m)^\s*Graphics:\s+(\d+)') / 1024.0, 1)
-        Threads = (Get-Num (Get-Section $raw $cmds[2]) '(\d+)')
-        Fds = $(if ($fdText -match 'Permission|denied|No such') { -1 } else { Get-Num $fdText '(\d+)' })
+        Threads = $thr
+        Fds = $fds
         Cpu = $cpu
         Pid = $pidNow
         Alive = [bool]$pidNow
