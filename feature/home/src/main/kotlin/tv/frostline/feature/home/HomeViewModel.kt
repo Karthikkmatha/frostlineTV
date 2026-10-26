@@ -61,6 +61,8 @@ data class TopState(
     val categories: List<HelixGame> = emptyList(),
     val category: HelixGame? = null,
     val categoryStreams: List<HelixStream> = emptyList(),
+    /** Profile image URL by broadcaster id (Top streams and category streams). */
+    val avatars: Map<String, String> = emptyMap(),
 )
 
 data class SearchState(
@@ -70,6 +72,8 @@ data class SearchState(
     val error: String? = null,
     val channels: List<SearchChannel> = emptyList(),
     val categories: List<HelixGame> = emptyList(),
+    /** Profile image URL by channel id. */
+    val avatars: Map<String, String> = emptyMap(),
 )
 
 /** Tells the visible grid to move focus into content; consumed once per request. */
@@ -103,6 +107,22 @@ class HomeViewModel(
 
     private var followingLoadedAt = 0L
     private var searchJob: Job? = null
+
+    /** Profile image URLs fetched so far (user id to url). Lists show them from here at once; only unknown ids hit Helix (100 per request). */
+    private val avatarCache = HashMap<String, String>()
+
+    private suspend fun avatarsFor(ids: Collection<String>): Map<String, String> {
+        val wanted = ids.filter { it.isNotEmpty() }.distinct()
+        val missing = synchronized(avatarCache) { wanted.filter { it !in avatarCache } }
+        if (missing.isNotEmpty()) {
+            val got = runCatching { helix.profileImages(missing) }.getOrNull()
+            if (got != null) synchronized(avatarCache) {
+                if (avatarCache.size > AVATAR_CACHE_MAX) avatarCache.clear()
+                avatarCache.putAll(got)
+            }
+        }
+        return synchronized(avatarCache) { wanted.mapNotNull { id -> avatarCache[id]?.let { id to it } }.toMap() }
+    }
 
     private val attempts = HashMap<String, Int>()
     private val retryJobs = HashMap<String, Job>()
@@ -162,8 +182,8 @@ class HomeViewModel(
                     val live = liveD.await()
                     _following.update { it.copy(live = live) }
                     launch {
-                        val avatars = runCatching { helix.profileImages(live.map { s -> s.userId }) }.getOrNull()
-                        if (avatars != null) _following.update { it.copy(avatars = avatars) }
+                        val avatars = avatarsFor(live.map { s -> s.userId })
+                        if (avatars.isNotEmpty()) _following.update { it.copy(avatars = avatars) }
                     }
                     val all = allD.await()
                     _following.update { it.copy(loading = false, offline = offlineChannels(all, live)) }
@@ -193,7 +213,12 @@ class HomeViewModel(
                 coroutineScope {
                     val s = async { helix.topStreams() }
                     val c = async { helix.topCategories() }
-                    _top.update { it.copy(streams = s.await(), categories = c.await()) }
+                    val streams = s.await()
+                    _top.update { it.copy(streams = streams, categories = c.await()) }
+                    launch {
+                        val avatars = avatarsFor(streams.map { x -> x.userId })
+                        if (avatars.isNotEmpty()) _top.update { it.copy(avatars = it.avatars + avatars) }
+                    }
                 }
                 _top.update { it.copy(loading = false) }
                 succeeded("top")
@@ -215,6 +240,8 @@ class HomeViewModel(
             try {
                 val s = helix.categoryStreams(game.id)
                 _top.update { it.copy(categoryStreams = s, loading = false) }
+                val avatars = avatarsFor(s.map { x -> x.userId })
+                if (avatars.isNotEmpty()) _top.update { it.copy(avatars = it.avatars + avatars) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -258,7 +285,12 @@ class HomeViewModel(
             coroutineScope {
                 val ch = async { helix.searchChannels(q) }
                 val cat = async { helix.searchCategories(q) }
-                _search.update { it.copy(channels = ch.await(), categories = cat.await(), searched = true, loading = false) }
+                val channels = ch.await()
+                _search.update { it.copy(channels = channels, categories = cat.await(), searched = true, loading = false) }
+                launch {
+                    val avatars = avatarsFor(channels.map { c -> c.id })
+                    if (avatars.isNotEmpty()) _search.update { it.copy(avatars = avatars) }
+                }
                 succeeded("search")
             }
         } catch (e: CancellationException) {
@@ -270,5 +302,6 @@ class HomeViewModel(
 
     private companion object {
         const val STALE_MS = 60_000L
+        const val AVATAR_CACHE_MAX = 600
     }
 }

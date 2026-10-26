@@ -165,7 +165,7 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (
     val entries = remember(st) {
         buildList<GridEntry> {
             fun streamCard(prefix: String, s: HelixStream) = GridEntry("$prefix:${s.id}", fullSpan = true) { m ->
-                WideStreamCard(s, null, m, onLongClick = { vm.onLeaving(); openPage(s.userLogin) }) { vm.onLeaving(); open(s.userLogin) }
+                WideStreamCard(s, st.avatars[s.userId], m, onLongClick = { vm.onLeaving(); openPage(s.userLogin) }) { vm.onLeaving(); open(s.userLogin) }
             }
             if (st.category == null) {
                 add(
@@ -234,7 +234,7 @@ fun SearchContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage
                 add(header("h:channels", "Channels"))
                 st.channels.forEach { c ->
                     add(GridEntry("sc:${c.id}", fullSpan = true) { m ->
-                        ChannelCard(c, m.fillMaxWidth(), onLongClick = { vm.onLeaving(); openPage(c.login) }) { vm.onLeaving(); open(c.login) }
+                        ChannelCard(c, st.avatars[c.id], m.fillMaxWidth(), onLongClick = { vm.onLeaving(); openPage(c.login) }) { vm.onLeaving(); open(c.login) }
                     })
                 }
             }

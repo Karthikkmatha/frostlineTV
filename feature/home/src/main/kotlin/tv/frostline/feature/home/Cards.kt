@@ -91,13 +91,13 @@ fun CategoryCard(game: HelixGame, modifier: Modifier, onClick: () -> Unit) {
 
 /** A search result channel: the avatar on a card, LIVE pill when on air. */
 @Composable
-fun ChannelCard(channel: SearchChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+fun ChannelCard(channel: SearchChannel, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     FrostMediaCard(
         onClick = onClick, modifier = modifier, onLongClick = onLongClick,
         title = channel.displayName.ifBlank { channel.login },
         subtitle = if (channel.isLive) channel.gameName else "Offline",
     ) {
-        AvatarCircle(channel.thumbnailUrl, 88.dp, Modifier.align(Alignment.Center))
+        AvatarCircle(avatarUrl?.takeIf { it.isNotEmpty() } ?: channel.thumbnailUrl, 88.dp, Modifier.align(Alignment.Center))
         if (channel.isLive) ThumbBadge("LIVE", Modifier.align(Alignment.TopStart).padding(8.dp), background = FrostColors.Live, color = androidx.compose.ui.graphics.Color.White, bold = true)
     }
 }
