@@ -37,7 +37,7 @@ import tv.frostline.core.twitchinternal.engagementDebugText
 import java.util.UUID
 
 /** The viewer's web session. [toString] never shows the token. */
-class EngagementSession(val authToken: String, val userId: String, val helixToken: String? = null) {
+class EngagementSession(val authToken: String, val userId: String) {
     override fun toString() = "EngagementSession(userId=$userId)"
 }
 
@@ -223,35 +223,19 @@ class EngagementEngine(
             val uid = webId ?: s.userId
             val note = if (webId != null && webId != s.userId) " (web user differs from sign-in)" else ""
             val topic = PointsEvents.topic(uid)
-            // The web session's token first; the Helix token only if the server rejects the web one. The debug line says
-            // which kind was used (never the token itself).
-            val attempts = buildList {
-                add("web" to BearerToken.bare(s.authToken))
-                s.helixToken?.takeIf { it.isNotEmpty() && it != s.authToken }?.let { add("helix" to BearerToken.bare(it)) }
-            }
+            // The web-session token only: Hermes authenticates the connection with it once (after the welcome, again on every reconnect).
             kotlinx.coroutines.coroutineScope {
-                var idx = 0
-                while (true) {
-                    val (kind, tok) = attempts[idx]
-                    val rejected = kotlinx.coroutines.CompletableDeferred<Unit>()
-                    val mirror = launch {
-                        hermes.topicStatus.collect { m ->
-                            m[topic]?.let {
-                                setDebug("hm-points", "$it$note [$kind token]")
-                                if (it.startsWith("rejected")) rejected.complete(Unit)
-                            }
-                        }
+                val mirror = launch {
+                    hermes.topicStatus.collect { m -> m[topic]?.let { setDebug("hm-points", it + note) } }
+                }
+                val authMirror = launch { hermes.authStatus.collect { setDebug("hm-auth", it) } }
+                try {
+                    hermes.events(listOf(topic), BearerToken.bare(s.authToken)).collect { ev ->
+                        lastUserEventAt = clock()
+                        PointsEvents.parse(ev.payload)?.let(::onPoints)
                     }
-                    val collector = launch {
-                        hermes.events(listOf(topic), tok).collect { ev ->
-                            lastUserEventAt = clock()
-                            PointsEvents.parse(ev.payload)?.let(::onPoints)
-                        }
-                    }
-                    if (idx >= attempts.lastIndex) { collector.join(); mirror.cancel(); break }
-                    rejected.await()
-                    collector.cancelAndJoin(); mirror.cancel()
-                    idx++
+                } finally {
+                    mirror.cancel(); authMirror.cancel()
                 }
             }
         } catch (e: Throwable) {
@@ -561,10 +545,10 @@ class EngagementEngine(
  * Signed in AND a linked web session (the `auth-token` from the WebView sign-in; the Helix device-code token does not
  * work for GQL). The user id comes from the stored tokens, else from [fetchId]. Null means the feature stays hidden.
  */
-internal suspend fun resolveEngagementSession(web: String?, signedIn: Boolean, storedUserId: String?, helixToken: String? = null, fetchId: suspend () -> String?): EngagementSession? {
+internal suspend fun resolveEngagementSession(web: String?, signedIn: Boolean, storedUserId: String?, fetchId: suspend () -> String?): EngagementSession? {
     if (!signedIn || web.isNullOrEmpty()) return null
     val id = storedUserId ?: fetchId() ?: return null
-    return EngagementSession(web, id, helixToken)
+    return EngagementSession(web, id)
 }
 
 /** Wires the engine to the app: the web session from the vault, the channel id from Helix, auto-claim from Settings. */
@@ -582,7 +566,7 @@ class EngagementViewModel(
         hermes = hermes,
         session = {
             val tokens = vault.currentTokens()
-            resolveEngagementSession(vault.currentWebSession(), tokens != null, tokens?.userId, tokens?.accessToken) { runCatching { helix.me().id }.getOrNull() }
+            resolveEngagementSession(vault.currentWebSession(), tokens != null, tokens?.userId) { runCatching { helix.me().id }.getOrNull() }
         },
         noSession = {
             when {

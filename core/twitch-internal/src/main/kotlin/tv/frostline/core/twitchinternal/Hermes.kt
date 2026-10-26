@@ -35,6 +35,8 @@ internal object HermesProtocol {
         data class Welcome(val keepaliveSec: Int = 30) : Message
         data object Reconnect : Message
         data object Keepalive : Message
+        /** Answer to the connection-level authenticate frame: [parentId] is the frame's id, [result] is "ok" or the server's short error. */
+        data class AuthResponse(val parentId: String?, val result: String) : Message
         data class Notification(val subscriptionId: String, val payload: String) : Message
         data class Other(val type: String) : Message
     }
@@ -44,7 +46,17 @@ internal object HermesProtocol {
     /** A token as the server wants it in the bearer key: bare, without an "OAuth " / "Bearer " prefix. */
     fun bareToken(token: String): String = BearerToken.bare(token)
 
-    fun subscribe(topic: String, nonce: String, subscriptionId: String, timestamp: String, authToken: String? = null): String =
+    /** The first frame after the welcome on a signed-in connection, as twitch.tv sends it. [token] is the bare web-session token. */
+    fun authenticate(id: String, token: String, timestamp: String): String =
+        buildJsonObject {
+            put("id", id)
+            put("type", "authenticate")
+            put("authenticate", buildJsonObject { put("token", bareToken(token)) })
+            put("timestamp", timestamp)
+        }.toString()
+
+    /** A subscribe carries no auth field: the connection is authenticated once, by [authenticate]. */
+    fun subscribe(topic: String, nonce: String, subscriptionId: String, timestamp: String): String =
         buildJsonObject {
             put("type", "subscribe")
             put("id", nonce)
@@ -52,7 +64,6 @@ internal object HermesProtocol {
                 put("id", subscriptionId)
                 put("type", "pubsub")
                 put("pubsub", buildJsonObject { put("topic", topic) })
-                if (authToken != null) put("auth", buildJsonObject { put("type", "bearer"); put("key", bareToken(authToken)) })
             })
             put("timestamp", timestamp)
         }.toString()
@@ -86,6 +97,12 @@ internal object HermesProtocol {
             )
             "reconnect" -> Message.Reconnect
             "keepalive" -> Message.Keepalive
+            "authenticateResponse" -> {
+                val r = root["authenticateResponse"] as? JsonObject
+                val result = r?.get("result")?.jsonPrimitive?.contentOrNull ?: "unknown"
+                val err = r?.get("error")?.jsonPrimitive?.contentOrNull
+                Message.AuthResponse(root["parentId"]?.jsonPrimitive?.contentOrNull, (if (err != null) "$result $err" else result).take(80))
+            }
             "notification" -> {
                 val n = root["notification"] as? JsonObject ?: return null
                 val sub = (n["subscription"] as? JsonObject)?.get("id")?.jsonPrimitive?.contentOrNull ?: return null
@@ -141,8 +158,9 @@ object RaidEvents {
 }
 
 /**
- * Hermes websocket (the PubSub replacement). Raid topics need no token; the viewer's points topic takes the web
- * session as a bearer in its subscribe frame. Reconnects with a capped backoff until the collector goes away, and
+ * Hermes websocket (the PubSub replacement). Raid topics need no token; for the viewer's own topics the connection is
+ * authenticated once with the web-session token (an authenticate frame right after the welcome, the way twitch.tv does),
+ * and the subscribes carry no auth. Reconnects with a capped backoff until the collector goes away, and
  * drops a socket that has gone silent for longer than the server's keepalive allows.
  */
 internal class HermesWebSocketClient(
@@ -152,6 +170,7 @@ internal class HermesWebSocketClient(
     private val retryDelayMs: (Int) -> Long = { attempt -> minOf(30_000L, 1_000L shl minOf(attempt, 5)) },
     private val clockMs: () -> Long = System::currentTimeMillis,
     private val watchdogEveryMs: Long = 5_000L,
+    private val authTimeoutMs: Long = 5_000L,
 ) : HermesClient {
 
     private val _status = kotlinx.coroutines.flow.MutableStateFlow("idle")
@@ -159,6 +178,9 @@ internal class HermesWebSocketClient(
 
     private val _topicStatus = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
     override val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> = _topicStatus
+
+    private val _authStatus = kotlinx.coroutines.flow.MutableStateFlow("none")
+    override val authStatus: kotlinx.coroutines.flow.StateFlow<String> = _authStatus
 
     private fun setTopic(topic: String, state: String) = _topicStatus.update { it + (topic to state) }
 
@@ -177,6 +199,18 @@ internal class HermesWebSocketClient(
                 val waiting = java.util.concurrent.CopyOnWriteArrayList<String>()
                 val lastMessage = java.util.concurrent.atomic.AtomicLong(clockMs())
                 val keepalive = java.util.concurrent.atomic.AtomicInteger(30)
+                val authId = java.util.concurrent.atomic.AtomicReference<String?>(null)
+                val subscribed = java.util.concurrent.atomic.AtomicBoolean(false)
+                fun subscribeAll(webSocket: WebSocket) {
+                    if (!subscribed.compareAndSet(false, true)) return
+                    topics.forEach { topic ->
+                        val sub = UUID.randomUUID().toString()
+                        val nonce = UUID.randomUUID().toString()
+                        byId[sub] = topic; byId[nonce] = topic; waiting += topic
+                        setTopic(topic, "subscribing")
+                        webSocket.send(HermesProtocol.subscribe(topic, nonce, sub, now()))
+                    }
+                }
                 val socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
                     override fun onMessage(webSocket: WebSocket, text: String) {
                         lastMessage.set(clockMs())
@@ -184,14 +218,29 @@ internal class HermesWebSocketClient(
                             is HermesProtocol.Message.Welcome -> {
                                 attempt = 0
                                 keepalive.set(m.keepaliveSec)
-                                _status.value = "welcome, subscribing ${topics.size}"
-                                topics.forEach { topic ->
-                                    val sub = UUID.randomUUID().toString()
-                                    val nonce = UUID.randomUUID().toString()
-                                    byId[sub] = topic; byId[nonce] = topic; waiting += topic
-                                    setTopic(topic, "subscribing")
-                                    webSocket.send(HermesProtocol.subscribe(topic, nonce, sub, now(), authToken))
+                                if (authToken.isNullOrBlank()) {
+                                    _status.value = "welcome, subscribing ${topics.size}"
+                                    subscribeAll(webSocket)
+                                } else {
+                                    // Authenticate first (every connection, so also after a reconnect), then subscribe.
+                                    val id = UUID.randomUUID().toString()
+                                    authId.set(id)
+                                    _authStatus.value = "authenticating"
+                                    _status.value = "welcome, authenticating"
+                                    webSocket.send(HermesProtocol.authenticate(id, authToken, now()))
+                                    launch {
+                                        delay(authTimeoutMs)
+                                        if (authId.get() == id) { // no answer in time: carry on with the public topics
+                                            _authStatus.value = "timeout"
+                                            subscribeAll(webSocket)
+                                        }
+                                    }
                                 }
+                            }
+                            is HermesProtocol.Message.AuthResponse -> if (authId.getAndSet(null) != null) {
+                                _authStatus.value = m.result
+                                _status.value = "authenticated (${m.result}), subscribing ${topics.size}"
+                                subscribeAll(webSocket)
                             }
                             HermesProtocol.Message.Reconnect -> {
                                 webSocket.close(1000, null)

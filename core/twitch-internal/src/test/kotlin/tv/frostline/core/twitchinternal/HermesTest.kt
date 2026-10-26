@@ -77,7 +77,7 @@ class HermesTest {
             }
             server.enqueue(MockResponse().withWebSocketUpgrade(listener))
             val url = server.url("/v1").toString().replaceFirst("http", "ws")
-            val client = TwitchInternal.hermes(url)
+            val client = HermesWebSocketClient(url = url, retryDelayMs = { 50L }, authTimeoutMs = 200L)
             val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("community-points-user-v1.1", "raid.2"), "tok").collect { } }
             val m = withTimeout(10_000) { client.topicStatus.first { it["raid.2"] == "subscribed" && it["community-points-user-v1.1"]?.startsWith("rejected") == true } }
             assertEquals("rejected: error unauthorized", m["community-points-user-v1.1"])
@@ -94,12 +94,115 @@ class HermesTest {
         assertTrue(!m.contains("auth", ignoreCase = true))
     }
 
-    @Test fun theBearerKeyIsBareEvenIfTheStoredTokenCarriesAPrefix() {
+    @Test fun theAuthenticateFrameCarriesTheBareTokenAndSubscribesCarryNone() {
         for (raw in listOf("abc123", "OAuth abc123", "oauth abc123", "Bearer abc123", "  abc123 ")) {
-            val m = HermesProtocol.subscribe("community-points-user-v1.7", "n", "s", "2026-01-01T00:00:00Z", raw)
-            assertTrue(m, m.contains("\"auth\":{\"type\":\"bearer\",\"key\":\"abc123\"}"))
+            val m = HermesProtocol.authenticate("id1", raw, "2026-01-01T00:00:00Z")
+            assertTrue(m, m.contains("\"type\":\"authenticate\"") && m.contains("\"authenticate\":{\"token\":\"abc123\"}") && m.contains("\"id\":\"id1\""))
         }
         assertEquals("abc123", BearerToken.bare("OAuth abc123"))
+    }
+
+    @Test fun parsesTheAuthenticateResponse() {
+        assertEquals(
+            HermesProtocol.Message.AuthResponse("id1", "ok"),
+            HermesProtocol.parse("""{"type":"authenticateResponse","parentId":"id1","authenticateResponse":{"result":"ok"}}"""),
+        )
+        assertEquals(
+            HermesProtocol.Message.AuthResponse("id1", "error unauthorized"),
+            HermesProtocol.parse("""{"type":"authenticateResponse","parentId":"id1","authenticateResponse":{"result":"error","error":"unauthorized"}}"""),
+        )
+    }
+
+    /** A server that wants the authenticate frame first: user topics are refused until it came, public ones never are. */
+    private fun authServer(server: MockWebServer, authResult: String?, frames: MutableList<String>) {
+        val listener = object : WebSocketListener() {
+            var authed = false
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                webSocket.send("""{"type":"welcome","welcome":{"keepaliveSec":30}}""")
+            }
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                frames += text
+                if (text.contains("\"type\":\"authenticate\"")) {
+                    val id = Regex("\"id\":\"([^\"]+)\"").find(text)!!.groupValues[1]
+                    if (authResult == null) return // never answers
+                    authed = authResult == "ok"
+                    webSocket.send(
+                        if (authed) """{"type":"authenticateResponse","parentId":"$id","authenticateResponse":{"result":"ok"}}"""
+                        else """{"type":"authenticateResponse","parentId":"$id","authenticateResponse":{"result":"error","error":"$authResult"}}""",
+                    )
+                    return
+                }
+                val nonce = Regex("\"id\":\"([^\"]+)\",\"subscribe\"").find(text)?.groupValues?.get(1) ?: return
+                val user = text.contains("community-points")
+                webSocket.send(
+                    if (user && !authed) """{"type":"subscribeResponse","id":"$nonce","subscribeResponse":{"result":"error","error":"unauthorized"}}"""
+                    else """{"type":"subscribeResponse","id":"$nonce","subscribeResponse":{"result":"ok"}}""",
+                )
+            }
+        }
+        server.enqueue(MockResponse().withWebSocketUpgrade(listener))
+    }
+
+    @Test fun authenticatesFirstThenSubscribesWithoutAnyAuthField() = runBlocking {
+        val server = MockWebServer().also { it.start() }
+        try {
+            val frames = java.util.concurrent.CopyOnWriteArrayList<String>()
+            authServer(server, "ok", frames)
+            val client = TwitchInternal.hermes(server.url("/v1").toString().replaceFirst("http", "ws"))
+            val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("community-points-user-v1.1"), "OAuth tok").collect { } }
+            withTimeout(10_000) { client.topicStatus.first { it["community-points-user-v1.1"] == "subscribed" } }
+            assertEquals("ok", client.authStatus.value)
+            assertTrue(frames.first().contains("\"type\":\"authenticate\"") && frames.first().contains("\"token\":\"tok\""))
+            val subs = frames.filter { it.contains("\"type\":\"subscribe\"") }
+            assertEquals(1, subs.size)
+            assertTrue(subs.all { !it.contains("auth", ignoreCase = true) && !it.contains("tok") })
+            job.cancel()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test fun anAuthErrorStillSubscribesAndIsShown() = runBlocking {
+        val server = MockWebServer().also { it.start() }
+        try {
+            authServer(server, "unauthorized", java.util.concurrent.CopyOnWriteArrayList())
+            val client = TwitchInternal.hermes(server.url("/v1").toString().replaceFirst("http", "ws"))
+            val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("community-points-user-v1.1", "raid.2"), "tok").collect { } }
+            withTimeout(10_000) { client.topicStatus.first { it["raid.2"] == "subscribed" && it["community-points-user-v1.1"]?.startsWith("rejected") == true } }
+            assertEquals("error unauthorized", client.authStatus.value)
+            job.cancel()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test fun noAnswerToAuthenticateTimesOutAndSubscribesAnyway() = runBlocking {
+        val server = MockWebServer().also { it.start() }
+        try {
+            authServer(server, null, java.util.concurrent.CopyOnWriteArrayList())
+            val client = HermesWebSocketClient(url = server.url("/v1").toString().replaceFirst("http", "ws"), retryDelayMs = { 50L }, authTimeoutMs = 300L)
+            val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("raid.2"), "tok").collect { } }
+            withTimeout(10_000) { client.topicStatus.first { it["raid.2"] == "subscribed" } }
+            assertEquals("timeout", client.authStatus.value)
+            job.cancel()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test fun noTokenMeansNoAuthenticateFrame() = runBlocking {
+        val server = MockWebServer().also { it.start() }
+        try {
+            val frames = java.util.concurrent.CopyOnWriteArrayList<String>()
+            authServer(server, "ok", frames)
+            val client = TwitchInternal.hermes(server.url("/v1").toString().replaceFirst("http", "ws"))
+            val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("raid.2")).collect { } }
+            withTimeout(10_000) { client.topicStatus.first { it["raid.2"] == "subscribed" } }
+            assertTrue(frames.none { it.contains("\"type\":\"authenticate\"") })
+            job.cancel()
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test fun subscribesAfterWelcomeAndDeliversNotifications() = runBlocking {

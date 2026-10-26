@@ -96,6 +96,8 @@ private class FakeHermes : HermesClient {
     var auth: String? = null
     val auths = mutableListOf<String?>()
     val states = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
+    val authState = kotlinx.coroutines.flow.MutableStateFlow("none")
+    override val authStatus: kotlinx.coroutines.flow.StateFlow<String> get() = authState
     override val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> get() = states
     override fun events(topics: List<String>): Flow<HermesEvent> { asked += topics; return bus.filter { it.topic in topics } }
     override fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> { auth = authToken; auths += authToken; return events(topics) }
@@ -145,9 +147,9 @@ class EngagementEngineTest {
     private val hermes = FakeHermes()
     private val auto = MutableStateFlow(true)
 
-    private fun TestScope.engine(signedIn: Boolean = true, helixToken: String? = null) = EngagementEngine(
+    private fun TestScope.engine(signedIn: Boolean = true) = EngagementEngine(
         scope = backgroundScope, api = api, hermes = hermes,
-        session = { if (signedIn) EngagementSession("tok", "7", helixToken) else null },
+        session = { if (signedIn) EngagementSession("tok", "7") else null },
         autoClaim = auto, channelIdOf = { "9" },
         clock = { base + testScheduler.currentTime },
         pollEveryMs = 30_000, hermesFreshMs = 90_000, endedShownMs = 15_000, toastMs = 3_000,
@@ -223,38 +225,24 @@ class EngagementEngineTest {
         )
         runCurrent()
         fun line(k: String) = e.debug.value.first { it.startsWith(k) }
-        assertTrue(line("hm-points").endsWith("rejected: error unauthorized [web token]"))
+        assertTrue(line("hm-points").endsWith("rejected: error unauthorized"))
         assertTrue(line("hm-preds").endsWith("subscribed"))
         assertTrue(line("hm-polls").endsWith("ok (events)"))
     }
 
-    @Test fun theWebTokenGoesFirstAndTheDebugLineSaysWhichKindWasUsed() = runTest {
-        val e = engine(helixToken = "hx")
-        e.setChannel("chan"); runCurrent()
-        assertEquals(listOf<String?>("tok"), hermes.auths.filter { it != null }.take(1))
-        hermes.states.value = mapOf("community-points-user-v1.7" to "subscribed")
-        runCurrent()
-        assertTrue(e.debug.value.first { it.startsWith("hm-points") }.endsWith("subscribed [web token]"))
-        assertEquals(1, hermes.auths.size) // accepted: no fallback
-    }
-
-    @Test fun aRejectedWebTokenIsRetriedOnceWithTheHelixToken() = runTest {
-        val e = engine(helixToken = "hx")
-        e.setChannel("chan"); runCurrent()
-        hermes.states.value = mapOf("community-points-user-v1.7" to "rejected: error unauthorized")
-        runCurrent()
-        assertEquals(listOf<String?>("tok", "hx"), hermes.auths)
-        hermes.states.value = mapOf("community-points-user-v1.7" to "subscribed")
-        runCurrent()
-        assertTrue(e.debug.value.first { it.startsWith("hm-points") }.endsWith("subscribed [helix token]"))
-    }
-
-    @Test fun noHelixTokenMeansNoRetryAndNoPrefixIsSent() = runTest {
+    @Test fun onlyTheWebTokenIsEverUsedAndAuthShowsInTheOverlay() = runTest {
         val e = engine()
         e.setChannel("chan"); runCurrent()
+        assertEquals(listOf<String?>("tok"), hermes.auths.filter { it != null })
+        hermes.authState.value = "ok"
+        hermes.states.value = mapOf("community-points-user-v1.7" to "subscribed")
+        runCurrent()
+        assertTrue(e.debug.value.first { it.startsWith("hm-points") }.endsWith("subscribed"))
+        assertTrue(e.debug.value.first { it.startsWith("hm-auth") }.endsWith("ok"))
+        // A rejected topic is not retried with any other token.
         hermes.states.value = mapOf("community-points-user-v1.7" to "rejected: error unauthorized")
         runCurrent()
-        assertEquals(1, hermes.auths.size)
+        assertEquals(1, hermes.auths.filter { it != null }.size)
     }
 
     @Test fun predictionAndPollDebugLinesFollowTheBanner() = runTest {

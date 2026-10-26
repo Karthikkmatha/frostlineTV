@@ -34,27 +34,32 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
         // After the TV wakes (or the app comes back) a long sleep may have let the token run out: look at once.
         appScope.launch { tv.frostline.core.ui.WakeSignal.events.collect { runCatching { container.twitch.tokenManager.checkNow() } } }
         appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
-        // Baseline profile state for the debug overlay (after the first frame plus 2 s).
+        // Baseline profile state for the debug overlay. The dexopt state is read from the odex file itself (its compiler filter), found
+        // through /proc/self/maps; ProfileVerifier cannot see a `cmd package compile`. Read again every few seconds while the overlay is up.
+        tv.frostline.core.ui.ProfileStatus.evaluator = {
+            val status = runCatching { androidx.profileinstaller.ProfileVerifier.getCompilationStatusAsync().get() }.getOrNull()
+            val code = status?.profileInstallResultCode
+            val verifierCompiled = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE ||
+                code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING
+            val enqueued = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION
+            val mapped = runCatching {
+                java.io.File("/proc/self/maps").bufferedReader().use { r -> tv.frostline.core.ui.ProfileState.odexPathFromMaps(r.lineSequence(), packageName) }
+            }.getOrNull()
+            val odex = mapped?.let { java.io.File(it) }
+                ?: java.io.File(applicationInfo.sourceDir).parentFile?.resolve("oat")?.walkTopDown()?.firstOrNull { it.name == "base.odex" }
+            val filter = runCatching {
+                odex?.inputStream()?.use { ins ->
+                    val buf = ByteArray(64 * 1024)
+                    var n = 0
+                    while (n < buf.size) { val k = ins.read(buf, n, buf.size - n); if (k < 0) break; n += k }
+                    tv.frostline.core.ui.ProfileState.filterIn(buf.copyOf(n))
+                }
+            }.getOrNull()
+            tv.frostline.core.ui.ProfileState.text(verifierCompiled, enqueued, filter, odexMapped = mapped != null)
+        }
         appScope.launch {
             tv.frostline.core.ui.StartupGate.awaitIdle()
-            runCatching {
-                val r = androidx.profileinstaller.ProfileVerifier.getCompilationStatusAsync().get()
-                val code = r.profileInstallResultCode
-                val verifierCompiled = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE ||
-                    code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING
-                val enqueued = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION
-                // ProfileVerifier only knows installs done by the profile installer; the odex file knows everything (also `cmd package compile`).
-                val filter = runCatching {
-                    val odex = java.io.File(applicationInfo.sourceDir).parentFile?.resolve("oat")?.walkTopDown()?.firstOrNull { it.name == "base.odex" }
-                    odex?.inputStream()?.use { ins ->
-                        val buf = ByteArray(64 * 1024)
-                        var n = 0
-                        while (n < buf.size) { val k = ins.read(buf, n, buf.size - n); if (k < 0) break; n += k }
-                        tv.frostline.core.ui.ProfileState.filterIn(buf.copyOf(n))
-                    }
-                }.getOrNull()
-                tv.frostline.core.ui.ProfileStatus.set(tv.frostline.core.ui.ProfileState.text(verifierCompiled, enqueued, filter))
-            }.onFailure { tv.frostline.core.ui.ProfileStatus.set("none") }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { tv.frostline.core.ui.ProfileStatus.refresh() }
         }
         // With a linked web session, capture the integrity token and keep it fresh (it refreshes itself when it expires).
         // Not needed to show Following: it starts after the first frame plus 2 s.

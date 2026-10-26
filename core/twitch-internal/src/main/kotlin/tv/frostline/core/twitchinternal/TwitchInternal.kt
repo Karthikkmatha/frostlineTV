@@ -24,9 +24,12 @@ interface HermesClient {
     /** Per-topic state (connecting, subscribing, subscribed, "rejected: reason", ok (events), reconnecting), keyed by topic. No tokens. */
     val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> get() = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
 
+    /** Result of the connection-level authenticate frame for the overlay: none, authenticating, ok, timeout, or the server's short error. No tokens. */
+    val authStatus: kotlinx.coroutines.flow.StateFlow<String> get() = kotlinx.coroutines.flow.MutableStateFlow("none")
+
     fun events(topics: List<String>): Flow<HermesEvent>
 
-    /** For topics that need the viewer's web session. [authToken] is only ever put in the subscribe frame. */
+    /** For topics that need the viewer's web session. [authToken] is only ever sent in the connection's authenticate frame, once per connection. */
     fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> = events(topics)
 }
 
