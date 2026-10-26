@@ -16,7 +16,7 @@ object DeepLinks {
     /** `frostline://debug/<action>`, passed on only when Settings > Debug overlay is on. */
     val debugActions = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
-    private val ACTIONS = setOf("gc", "reconnect", "refresh-token", "refresh-integrity", "chat-toggle", "open-vod", "back", "stats")
+    private val ACTIONS = setOf("gc", "reconnect", "refresh-token", "refresh-integrity", "chat-toggle", "open-vod", "back", "stats", "showcase")
 
     /** [debugOn] is read only for debug links. */
     fun handle(intent: Intent?, scope: CoroutineScope? = null, debugOn: suspend () -> Boolean = { false }) {

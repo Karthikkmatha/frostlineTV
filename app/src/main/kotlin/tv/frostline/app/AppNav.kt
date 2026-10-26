@@ -45,12 +45,15 @@ private const val PLAYER = "player/{login}"
 private const val CHANNEL = "channel/{login}"
 private const val VOD = "vod/{id}"
 private const val CLIP = "clip/{slug}"
+private const val SHOWCASE = "debug_showcase"
 
 @Composable
 fun AppNav(container: AppContainer) {
     val start by produceState<String?>(initialValue = null) {
         value = if (container.vault.sessionActive.first()) HOME else SIGN_IN
     }
+    // Live stream previews carry a five-minute cache key; this keeps the key current.
+    tv.frostline.core.ui.PreviewClockEffect()
     start?.let { AppNavHost(container, it) }
 }
 
@@ -127,6 +130,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                     }
                     "stats" -> { android.util.Log.i("FrostlineDebug", tv.frostline.core.ui.HealthStats.statsLogLine()); true }
                     "back" -> if (nav.currentDestination?.route == VOD) nav.popBackStack() else false
+                    "showcase" -> { nav.navigate(SHOWCASE); true }
                     else -> false
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
@@ -278,6 +282,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                 VodPlayerScreen(vm, chat, onBack = { nav.popBackStack() }, onOpenChannel = ::openChannel)
             }
         }
+        composable(SHOWCASE) { Settled { tv.frostline.core.ui.ShowcaseScreen() } }
         composable(CLIP, arguments = listOf(navArgument("slug") { type = NavType.StringType })) { entry ->
             val slug = entry.arguments?.getString("slug").orEmpty()
             Settled {
