@@ -49,6 +49,8 @@ class EmoteEntry(val url: String) {
     /** null = not known yet, false = a plain image. */
     @Volatile var animated: Boolean? = null
     @Volatile var failedAt: Long = 0
+    /** Consecutive still failures: the retry wait doubles from 1 s up to a minute. */
+    @Volatile internal var failCount: Int = 0
     val stillPending = AtomicBoolean(false)
     /** A still decode is running right now (a second, higher-priority task for the same emote waits out). */
     internal val stillRunning = AtomicBoolean(false)
@@ -253,13 +255,15 @@ class EmoteEngine(
     fun ensureStill(e: EmoteEntry, priority: Int = PRIO_VISIBLE) {
         if (e.still != null) { stills.get(e.url); return }
         if (e.direct != null) return
-        if (clockMs() - e.failedAt < RETRY_MS && e.failedAt != 0L) return
+        if (e.failedAt != 0L && clockMs() - e.failedAt < retryWait(e)) return
         if (e.stillPending.compareAndSet(false, true)) {
             enqueueStill(e, priority)
         } else if (priority < e.stillPrio) {
             enqueueStill(e, priority) // queued at a lower priority and now on screen: a second task jumps the queue, the first finds the work done
         }
     }
+
+    private fun retryWait(e: EmoteEntry): Long = (1_000L shl e.failCount.coerceIn(0, 6)).coerceAtMost(RETRY_MS)
 
     private fun enqueueStill(e: EmoteEntry, priority: Int) {
         e.stillPrio = priority
@@ -352,11 +356,12 @@ class EmoteEngine(
         var shed = false
         try {
             if (e.still != null || e.direct != null) return
-            if (e.failedAt != 0L && clockMs() - e.failedAt < RETRY_MS) return
+            if (e.failedAt != 0L && clockMs() - e.failedAt < retryWait(e)) return
             // Chat outran the decoder: shed stale background work for lines that scrolled away (they are asked for again when shown).
             if (e.stillPrio >= PRIO_VISIBLE && e.visible.get() == 0 && stillPool.queue.size > SHED_QUEUE && clockMs() - e.stillQueuedAt > SHED_AFTER_MS) { shed = true; return }
-            val file = download(e.url) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
-            val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
+            val file = download(e.url) ?: run { stillFailed(e); return }
+            val d = decode(file) ?: run { stillFailed(e); return }
+            e.failCount = 0
             if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
             val raw = stillOf(d)
             val bmp = fitToAtlas(raw, stillAtlas)
@@ -382,7 +387,7 @@ class EmoteEngine(
             if (bmp !== raw) bmp.recycle()
             if (d !is BitmapDrawable) raw.recycle() // a bitmap we drew ourselves; a BitmapDrawable's is the decoder's, left to the GC
         } catch (_: Exception) {
-            e.failedAt = clockMs().coerceAtLeast(1)
+            stillFailed(e)
         } finally {
             e.stillRunning.set(false)
             e.stillPending.set(false)
@@ -391,6 +396,17 @@ class EmoteEngine(
                 e.stillRerun = false
                 ensureStill(e, PRIO_SCREEN)
             }
+        }
+    }
+
+    /** A still could not be fetched or decoded: wait a little (doubling), then try again if the emote is still on screen. */
+    private fun stillFailed(e: EmoteEntry) {
+        e.failedAt = clockMs().coerceAtLeast(1)
+        val wait = retryWait(e)
+        e.failCount++
+        scope.launch {
+            delay(wait + 50)
+            if (e.visible.get() > 0 && e.still == null && e.direct == null) ensureStill(e, PRIO_SCREEN)
         }
     }
 
@@ -563,7 +579,8 @@ class EmoteEngine(
                 if (!r.isSuccessful) return null
                 r.body.byteStream().use { input -> tmp.outputStream().use { out -> input.copyTo(out) } }
             }
-            if (tmp.renameTo(f)) f else null
+            // Another worker (an animation decode of the same file) may have won the rename: its file is as good.
+            if (tmp.renameTo(f) || f.length() > 0) f else null
         } catch (_: IOException) {
             null
         } finally {
