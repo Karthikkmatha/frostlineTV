@@ -21,6 +21,9 @@ interface HermesClient {
     /** Connection state for the debug overlay: connecting, welcome, subscribed, or the real failure (class / HTTP status). */
     val status: kotlinx.coroutines.flow.StateFlow<String> get() = kotlinx.coroutines.flow.MutableStateFlow("idle")
 
+    /** Per-topic state (connecting, subscribing, subscribed, "rejected: reason", ok (events), reconnecting), keyed by topic. No tokens. */
+    val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> get() = kotlinx.coroutines.flow.MutableStateFlow(emptyMap())
+
     fun events(topics: List<String>): Flow<HermesEvent>
 
     /** For topics that need the viewer's web session. [authToken] is only ever put in the subscribe frame. */

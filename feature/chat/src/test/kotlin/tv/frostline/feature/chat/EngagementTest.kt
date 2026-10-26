@@ -86,6 +86,8 @@ private class FakeHermes : HermesClient {
     val bus = MutableSharedFlow<HermesEvent>(extraBufferCapacity = 64)
     val asked = mutableListOf<List<String>>()
     var auth: String? = null
+    val states = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
+    override val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> get() = states
     override fun events(topics: List<String>): Flow<HermesEvent> { asked += topics; return bus.filter { it.topic in topics } }
     override fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> { auth = authToken; return events(topics) }
     suspend fun emit(topic: String, payload: String) = bus.emit(HermesEvent(topic, payload))
@@ -160,11 +162,11 @@ class EngagementEngineTest {
         assertTrue(hermes.asked.isEmpty())
     }
 
-    @Test fun guestDebugLinesAreAlwaysFiveAndSayWhyHidden() = runTest {
+    @Test fun guestDebugLinesAreAlwaysSevenAndSayWhyHidden() = runTest {
         val e = EngagementEngine(backgroundScope, api, hermes, { null }, { "no web session linked" }, auto, { "9" })
-        assertEquals(listOf("points", "rewards", "prediction", "poll", "hermes"), e.debug.value.map { it.trim().substringBefore(" ") })
+        assertEquals(listOf("points", "rewards", "prediction", "poll", "hm-points", "hm-preds", "hm-polls"), e.debug.value.map { it.trim().substringBefore(" ") })
         e.setChannel("chan"); runCurrent()
-        assertEquals(5, e.debug.value.size)
+        assertEquals(7, e.debug.value.size)
         assertTrue(e.debug.value.all { it.endsWith("hidden: no web session linked") })
     }
 
@@ -186,7 +188,7 @@ class EngagementEngineTest {
         assertTrue(u.available && u.rewardsLoad != RewardsLoad.Failed)
         assertEquals(1_000L, u.points!!.balance)
         assertEquals("ok", e.debug.value.first { it.startsWith("points") }.removePrefix("points").trim())
-        assertTrue(e.debug.value.first { it.startsWith("hermes") }.endsWith("connecting"))
+        assertTrue(e.debug.value.first { it.startsWith("hm-points") }.endsWith("connecting"))
     }
 
     @Test fun showsBalanceWithChannelNameAndIcon() = runTest {
@@ -200,6 +202,21 @@ class EngagementEngineTest {
         assertTrue(hermes.asked.any { it == listOf("community-points-user-v1.7") })
         assertTrue(hermes.asked.any { it == listOf("predictions-channel-v1.9") })
         assertTrue(hermes.asked.any { it == listOf("polls.9") })
+    }
+
+    @Test fun eachHermesTopicShowsItsOwnState() = runTest {
+        val e = engine()
+        e.setChannel("chan"); runCurrent()
+        hermes.states.value = mapOf(
+            "community-points-user-v1.7" to "rejected: error unauthorized",
+            "predictions-channel-v1.9" to "subscribed",
+            "polls.9" to "ok (events)",
+        )
+        runCurrent()
+        fun line(k: String) = e.debug.value.first { it.startsWith(k) }
+        assertTrue(line("hm-points").endsWith("rejected: error unauthorized"))
+        assertTrue(line("hm-preds").endsWith("subscribed"))
+        assertTrue(line("hm-polls").endsWith("ok (events)"))
     }
 
     @Test fun hermesBalanceUpdatesLive() = runTest {
@@ -267,7 +284,7 @@ class EngagementEngineTest {
         e.setChannel("chan"); runCurrent()
         assertFalse(e.ui.value.available)
         assertEquals("points     HTTP 401", e.debug.value.first { it.startsWith("points") })
-        assertEquals(5, e.debug.value.size)
+        assertEquals(7, e.debug.value.size)
     }
 
     private val chatty = CustomReward("r1", "Say hi", "Type", 200, null, true, true, false, true, null, null, null, 0)

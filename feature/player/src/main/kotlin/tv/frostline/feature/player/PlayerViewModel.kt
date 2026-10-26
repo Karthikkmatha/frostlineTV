@@ -120,6 +120,15 @@ class PlayerViewModel(
         },
     )
 
+    /** Debug overlay: the raid topic's own Hermes state. */
+    val raidLine: kotlinx.coroutines.flow.Flow<String> = combine(channelId, settings.followRaids, hermes.topicStatus) { id, on, st ->
+        when {
+            !on -> "off (setting)"
+            id == null -> "idle (no channel id)"
+            else -> st[RaidEvents.topic(id)] ?: "connecting"
+        }
+    }
+
     init {
         // Playback failed (or never started) and the network is back: rebuild the source.
         viewModelScope.launch {

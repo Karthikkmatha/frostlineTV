@@ -63,12 +63,12 @@ class EngagementEngine(
     private val debugMap = LinkedHashMap<String, String>()
     private val _debug = MutableStateFlow(renderDebug(idleDebug()))
     /**
-     * One line per part (points, rewards, prediction, poll, hermes), always present, for the debug overlay:
+     * One line per part (points, rewards, prediction, poll, and the three Hermes topics hm-points, hm-preds, hm-polls), always present, for the debug overlay:
      * idle, loading, ok, "hidden: reason", or an error as HTTP status, exception class or GQL message. No tokens.
      */
     val debug: StateFlow<List<String>> = _debug.asStateFlow()
 
-    private fun idleDebug() = linkedMapOf("points" to "idle", "rewards" to "idle", "prediction" to "idle", "poll" to "idle", "hermes" to "idle")
+    private fun idleDebug() = linkedMapOf("points" to "idle", "rewards" to "idle", "prediction" to "idle", "poll" to "idle", "hm-points" to "idle", "hm-preds" to "idle", "hm-polls" to "idle")
     private fun renderDebug(m: Map<String, String>) = m.map { "${it.key.padEnd(11)}${it.value}" }
 
     private fun setDebug(source: String, text: String) {
@@ -129,7 +129,9 @@ class EngagementEngine(
     private fun fail(source: String, e: Throwable) {
         if (e is CancellationException) throw e
         val part = when {
-            source.startsWith("hermes") -> "hermes"
+            source == "hermes-points" -> "hm-points"
+            source == "hermes-predictions" -> "hm-preds"
+            source == "hermes-polls" -> "hm-polls"
             source == "claim" -> "points"
             source == "redeem" -> "rewards"
             source == "predictions" || source == "predict" -> "prediction"
@@ -181,21 +183,25 @@ class EngagementEngine(
         _ui.update { u -> u.points?.let { u.copy(points = it.copy(balance = balance)) } ?: u }
     }
 
+    /** Mirrors one topic's own Hermes state into its debug line (subscribed, rejected: reason, ok (events), ...). */
+    private fun CoroutineScope.mirrorTopic(key: String, topic: String, note: String = "") {
+        launch {
+            hermes.topicStatus.collect { m -> m[topic]?.let { setDebug(key, it + note) } }
+        }
+    }
+
     private suspend fun userTopic(s: EngagementSession) {
         try {
-            setDebug("hermes", "connecting")
+            setDebug("hm-points", "connecting")
             // The topic must name the user of the web session, which can differ from the Helix sign-in.
             val webId = runCatching { api.webUserId(s.authToken) }.getOrNull()
             val uid = webId ?: s.userId
-            if (webId != null && webId != s.userId) setDebug("hermes", "connecting (web user differs from sign-in)")
+            val note = if (webId != null && webId != s.userId) " (web user differs from sign-in)" else ""
+            val topic = PointsEvents.topic(uid)
             kotlinx.coroutines.coroutineScope {
-                var gotEvent = false
-                // Real connection state (welcome, subscribed, rejected, failure class / HTTP status) until an event arrives.
-                launch { hermes.status.collect { st -> if (!gotEvent && st != "idle") setDebug("hermes", st) } }
-                hermes.events(listOf(PointsEvents.topic(uid)), s.authToken).collect { ev ->
-                    gotEvent = true
+                mirrorTopic("hm-points", topic, note)
+                hermes.events(listOf(topic), s.authToken).collect { ev ->
                     lastUserEventAt = clock()
-                    setDebug("hermes", "ok (user topic)")
                     PointsEvents.parse(ev.payload)?.let(::onPoints)
                 }
             }
@@ -331,6 +337,7 @@ class EngagementEngine(
             }
         }
         try {
+            mirrorTopic("hm-preds", PredictionEvents.topic(chId))
             hermes.events(listOf(PredictionEvents.topic(chId))).collect { ev ->
                 PredictionEvents.parse(ev.payload)?.let(::applyPrediction)
             }
@@ -423,6 +430,7 @@ class EngagementEngine(
             }
         }
         try {
+            mirrorTopic("hm-polls", PollEvents.topic(chId))
             hermes.events(listOf(PollEvents.topic(chId))).collect { ev ->
                 PollEvents.parse(ev.payload)?.let(::applyPoll)
             }

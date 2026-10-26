@@ -1,6 +1,7 @@
 package tv.frostline.core.twitchinternal
 
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okhttp3.Response
@@ -34,7 +35,8 @@ class HermesTest {
     }
 
     @Test fun parsesProtocolMessages() {
-        assertEquals(HermesProtocol.Message.Welcome, HermesProtocol.parse("""{"type":"welcome","welcome":{"keepaliveSec":30}}"""))
+        assertEquals(HermesProtocol.Message.Welcome(30), HermesProtocol.parse("""{"type":"welcome","welcome":{"keepaliveSec":30}}"""))
+        assertEquals(HermesProtocol.Message.Welcome(30), HermesProtocol.parse("""{"type":"welcome"}"""))
         assertEquals(HermesProtocol.Message.Keepalive, HermesProtocol.parse("""{"type":"keepalive"}"""))
         assertEquals(HermesProtocol.Message.Reconnect, HermesProtocol.parse("""{"type":"reconnect"}"""))
         val n = HermesProtocol.parse(
@@ -43,6 +45,46 @@ class HermesTest {
         assertEquals("s1", n.subscriptionId)
         assertEquals("""{"a":1}""", n.payload)
         assertNull(HermesProtocol.parse("not json"))
+    }
+
+    @Test fun subscribeResponseIdsCoverNonceAndSubscription() {
+        val ids = HermesProtocol.subscribeResponseIds("""{"type":"subscribeResponse","id":"n1","subscribeResponse":{"result":"ok","subscription":{"id":"s1"}}}""")
+        assertTrue("n1" in ids && "s1" in ids)
+        assertEquals("ok", HermesProtocol.subscribeResult("""{"type":"subscribeResponse","subscribeResponse":{"result":"ok"}}"""))
+        assertEquals("error unauthorized", HermesProtocol.subscribeResult("""{"type":"subscribeResponse","subscribeResponse":{"result":"error","error":"unauthorized"}}"""))
+    }
+
+    @Test fun watchdogCallsSilenceStaleOnlyAfterTwoKeepalives() {
+        assertTrue(!HermesWatchdog.isStale(0, 60_000, 30))
+        assertTrue(HermesWatchdog.isStale(0, 80_000, 30))
+    }
+
+    @Test fun reportsEachTopicSeparately() = runBlocking {
+        val server = MockWebServer().also { it.start() }
+        try {
+            val listener = object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    webSocket.send("""{"type":"welcome","welcome":{"keepaliveSec":30}}""")
+                }
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val nonce = Regex("\"id\":\"([^\"]+)\",\"subscribe\"").find(text)?.groupValues?.get(1) ?: return
+                    val bad = text.contains("community-points")
+                    webSocket.send(
+                        if (bad) """{"type":"subscribeResponse","id":"$nonce","subscribeResponse":{"result":"error","error":"unauthorized"}}"""
+                        else """{"type":"subscribeResponse","id":"$nonce","subscribeResponse":{"result":"ok"}}""",
+                    )
+                }
+            }
+            server.enqueue(MockResponse().withWebSocketUpgrade(listener))
+            val url = server.url("/v1").toString().replaceFirst("http", "ws")
+            val client = TwitchInternal.hermes(url)
+            val job = kotlinx.coroutines.GlobalScope.launch { client.events(listOf("community-points-user-v1.1", "raid.2"), "tok").collect { } }
+            val m = withTimeout(10_000) { client.topicStatus.first { it["raid.2"] == "subscribed" && it["community-points-user-v1.1"]?.startsWith("rejected") == true } }
+            assertEquals("rejected: error unauthorized", m["community-points-user-v1.1"])
+            job.cancel()
+        } finally {
+            server.shutdown()
+        }
     }
 
     @Test fun subscribeMessageNamesTheTopicAndCarriesNoToken() {

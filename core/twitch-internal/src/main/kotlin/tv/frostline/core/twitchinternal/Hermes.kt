@@ -4,7 +4,9 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -25,7 +27,7 @@ import java.util.concurrent.TimeUnit
 /** Pure Hermes wire format helpers (no I/O), so the protocol is unit-testable. */
 internal object HermesProtocol {
     sealed interface Message {
-        data object Welcome : Message
+        data class Welcome(val keepaliveSec: Int = 30) : Message
         data object Reconnect : Message
         data object Keepalive : Message
         data class Notification(val subscriptionId: String, val payload: String) : Message
@@ -47,6 +49,18 @@ internal object HermesProtocol {
             put("timestamp", timestamp)
         }.toString()
 
+    /** Ids a subscribeResponse may carry for the request it answers (the request nonce or the subscription id). */
+    fun subscribeResponseIds(text: String): List<String> {
+        val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return emptyList()
+        val r = root["subscribeResponse"] as? JsonObject
+        return listOfNotNull(
+            root["id"]?.jsonPrimitive?.contentOrNull,
+            root["parentId"]?.jsonPrimitive?.contentOrNull,
+            ((r?.get("subscription") as? JsonObject)?.get("id"))?.jsonPrimitive?.contentOrNull,
+            r?.get("id")?.jsonPrimitive?.contentOrNull,
+        )
+    }
+
     /** `ok`, or the server's result/error string of a subscribeResponse (short, no tokens). */
     fun subscribeResult(text: String): String {
         val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return "unreadable"
@@ -59,7 +73,9 @@ internal object HermesProtocol {
     fun parse(text: String): Message? {
         val root = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return null
         return when (val type = root["type"]?.jsonPrimitive?.contentOrNull) {
-            "welcome" -> Message.Welcome
+            "welcome" -> Message.Welcome(
+                ((root["welcome"] as? JsonObject)?.get("keepaliveSec")?.jsonPrimitive?.intOrNull ?: 30).coerceIn(5, 300),
+            )
             "reconnect" -> Message.Reconnect
             "keepalive" -> Message.Keepalive
             "notification" -> {
@@ -72,6 +88,12 @@ internal object HermesProtocol {
             else -> Message.Other(type)
         }
     }
+}
+
+/** Keepalive watchdog: the server sends a keepalive every `keepaliveSec`; silence for much longer means a dead socket. */
+internal object HermesWatchdog {
+    fun staleAfterMs(keepaliveSec: Int): Long = keepaliveSec * 2_000L + 10_000L
+    fun isStale(lastMessageAtMs: Long, nowMs: Long, keepaliveSec: Int): Boolean = nowMs - lastMessageAtMs > staleAfterMs(keepaliveSec)
 }
 
 /** A raid announcement for the channel being watched. */
@@ -111,67 +133,107 @@ object RaidEvents {
 }
 
 /**
- * Hermes websocket (the PubSub replacement). Anonymous: raid topics need no token. Reconnects with a
- * capped backoff until the collector goes away.
+ * Hermes websocket (the PubSub replacement). Raid topics need no token; the viewer's points topic takes the web
+ * session as a bearer in its subscribe frame. Reconnects with a capped backoff until the collector goes away, and
+ * drops a socket that has gone silent for longer than the server's keepalive allows.
  */
 internal class HermesWebSocketClient(
     private val url: String = HERMES_URL,
     private val client: OkHttpClient = OkHttpClient.Builder().pingInterval(30, TimeUnit.SECONDS).build(),
     private val now: () -> String = { java.time.Instant.now().toString() },
     private val retryDelayMs: (Int) -> Long = { attempt -> minOf(30_000L, 1_000L shl minOf(attempt, 5)) },
+    private val clockMs: () -> Long = System::currentTimeMillis,
+    private val watchdogEveryMs: Long = 5_000L,
 ) : HermesClient {
 
     private val _status = kotlinx.coroutines.flow.MutableStateFlow("idle")
     override val status: kotlinx.coroutines.flow.StateFlow<String> = _status
 
+    private val _topicStatus = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
+    override val topicStatus: kotlinx.coroutines.flow.StateFlow<Map<String, String>> = _topicStatus
+
+    private fun setTopic(topic: String, state: String) = _topicStatus.update { it + (topic to state) }
+
     override fun events(topics: List<String>): Flow<HermesEvent> = events(topics, null)
 
     override fun events(topics: List<String>, authToken: String?): Flow<HermesEvent> = channelFlow {
         var attempt = 0
-        while (isActive) {
-            val ended = CompletableDeferred<Boolean>()
-            _status.value = "connecting"
-            val byId = HashMap<String, String>()
-            val socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
-                override fun onMessage(webSocket: WebSocket, text: String) {
-                    when (val m = HermesProtocol.parse(text)) {
-                        HermesProtocol.Message.Welcome -> {
-                            attempt = 0
-                            _status.value = "welcome, subscribing ${topics.size}"
-                            topics.forEach { topic ->
-                                val sub = UUID.randomUUID().toString()
-                                byId[sub] = topic
-                                webSocket.send(HermesProtocol.subscribe(topic, UUID.randomUUID().toString(), sub, now(), authToken))
+        topics.forEach { setTopic(it, "connecting") }
+        try {
+            while (isActive) {
+                val ended = CompletableDeferred<Boolean>()
+                _status.value = "connecting"
+                topics.forEach { setTopic(it, "connecting") }
+                // Request nonce and subscription id both map back to the topic, whichever one the response echoes.
+                val byId = java.util.concurrent.ConcurrentHashMap<String, String>()
+                val waiting = java.util.concurrent.CopyOnWriteArrayList<String>()
+                val lastMessage = java.util.concurrent.atomic.AtomicLong(clockMs())
+                val keepalive = java.util.concurrent.atomic.AtomicInteger(30)
+                val socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
+                    override fun onMessage(webSocket: WebSocket, text: String) {
+                        lastMessage.set(clockMs())
+                        when (val m = HermesProtocol.parse(text)) {
+                            is HermesProtocol.Message.Welcome -> {
+                                attempt = 0
+                                keepalive.set(m.keepaliveSec)
+                                _status.value = "welcome, subscribing ${topics.size}"
+                                topics.forEach { topic ->
+                                    val sub = UUID.randomUUID().toString()
+                                    val nonce = UUID.randomUUID().toString()
+                                    byId[sub] = topic; byId[nonce] = topic; waiting += topic
+                                    setTopic(topic, "subscribing")
+                                    webSocket.send(HermesProtocol.subscribe(topic, nonce, sub, now(), authToken))
+                                }
                             }
+                            HermesProtocol.Message.Reconnect -> {
+                                webSocket.close(1000, null)
+                                ended.complete(true)
+                            }
+                            is HermesProtocol.Message.Notification -> {
+                                val topic = byId[m.subscriptionId] ?: return
+                                setTopic(topic, "ok (events)")
+                                trySend(HermesEvent(topic, m.payload))
+                            }
+                            is HermesProtocol.Message.Other -> if (m.type == "subscribeResponse") {
+                                val res = HermesProtocol.subscribeResult(text)
+                                val topic = HermesProtocol.subscribeResponseIds(text).firstNotNullOfOrNull { byId[it] }
+                                    ?: waiting.firstOrNull()
+                                topic?.let { waiting.remove(it) }
+                                val state = if (res == "ok") "subscribed" else "rejected: $res"
+                                if (topic != null) setTopic(topic, state)
+                                _status.value = if (res == "ok") "subscribed" else "subscribe rejected: $res"
+                            }
+                            else -> Unit
                         }
-                        HermesProtocol.Message.Reconnect -> {
-                            webSocket.close(1000, null)
+                    }
+
+                    override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { _status.value = "closed $code"; ended.complete(true) }
+                    override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                        _status.value = "failed ${t.javaClass.simpleName}" + (response?.let { " HTTP ${it.code}" } ?: "")
+                        ended.complete(true)
+                    }
+                })
+                val dog = launch {
+                    while (isActive) {
+                        delay(watchdogEveryMs)
+                        if (HermesWatchdog.isStale(lastMessage.get(), clockMs(), keepalive.get())) {
+                            _status.value = "silent, reconnecting"
                             ended.complete(true)
+                            break
                         }
-                        is HermesProtocol.Message.Notification -> {
-                            val topic = byId[m.subscriptionId] ?: return
-                            trySend(HermesEvent(topic, m.payload))
-                        }
-                        is HermesProtocol.Message.Other -> if (m.type == "subscribeResponse") {
-                            val res = HermesProtocol.subscribeResult(text)
-                            _status.value = if (res == "ok") "subscribed" else "subscribe rejected: $res"
-                        }
-                        else -> Unit
                     }
                 }
-
-                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { _status.value = "closed $code"; ended.complete(true) }
-                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    _status.value = "failed ${t.javaClass.simpleName}" + (response?.let { " HTTP ${it.code}" } ?: "")
-                    ended.complete(true)
+                try {
+                    ended.await()
+                } finally {
+                    dog.cancel()
+                    socket.cancel()
                 }
-            })
-            try {
-                ended.await()
-            } finally {
-                socket.cancel()
+                topics.forEach { t -> if (_topicStatus.value[t]?.startsWith("rejected") != true) setTopic(t, "reconnecting") }
+                delay(retryDelayMs(attempt++))
             }
-            delay(retryDelayMs(attempt++))
+        } finally {
+            _topicStatus.update { m -> m - topics.toSet() }
         }
     }
 
