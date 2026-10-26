@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -28,7 +29,7 @@ class FocusRestoreTest {
     @get:Rule val rule = createComposeRule()
 
     private fun cards(n: Int) = (0 until n).map { i ->
-        GridEntry("ts:$i") { m -> Box(m.height(90.dp).focusable()) { Text("card $i") } }
+        GridEntry("ts:$i") { m -> Box(m.height(90.dp).focusable().semantics(mergeDescendants = true) { }) { Text("card $i") } }
     }
 
     @Test fun backRestoresTheExactCardDeepInAScrolledGrid() {
@@ -54,12 +55,14 @@ class FocusRestoreTest {
         val memory = FocusMemory().also { it.key = "ts:5" }
         val signal = FocusSignal()
         var list by mutableStateOf(emptyList<GridEntry>())
+        rule.mainClock.autoAdvance = false
         rule.setContent { FocusGrid(list, memory, signal) }
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
         assertEquals("ts:5", memory.key) // nothing else took the memory while the list was empty
         rule.runOnUiThread { list = cards(12) } // the list arrives after the screen is back
-        rule.waitForIdle()
+        rule.mainClock.advanceTimeBy(500)
         rule.onNodeWithText("card 5").assertIsFocused()
+        rule.mainClock.autoAdvance = true
     }
 
     @Test fun aSavedCardThatIsGoneFallsBackToTheFirstOne() {

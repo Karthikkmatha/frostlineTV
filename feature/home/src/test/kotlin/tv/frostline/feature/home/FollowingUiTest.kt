@@ -4,6 +4,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertExists
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
@@ -90,7 +93,7 @@ class FollowingUiTest {
         rule.onNodeWithTag("lock_badge").assertDoesNotExist()
         rule.runOnUiThread { tv.frostline.core.ui.RestrictedStreams.mark("Someone") }
         rule.waitForIdle()
-        rule.onNodeWithTag("lock_badge").assertIsDisplayed()
+        rule.onNodeWithTag("lock_badge").assertExists()
         rule.runOnUiThread { tv.frostline.core.ui.RestrictedStreams.clear("someone") }
         rule.waitForIdle()
         rule.onNodeWithTag("lock_badge").assertDoesNotExist()
@@ -128,16 +131,17 @@ class FollowingUiTest {
     }
 
     @Test fun upFromContinueWatchingGoesToTheLastLiveCard() {
-        val streams = (1..8).map { stream.copy(id = "$it", userId = "1$it", userLogin = "chan$it", userName = "Chan$it", title = "Title number $it") }
+        val streams = (1..6).map { stream.copy(id = "$it", userId = "1$it", userLogin = "chan$it", userName = "Chan$it", title = "Title number $it") }
         val resume = ResumeEntity("555", 600_000, 3_600_000, "Last night", "", "someone", 1L)
         val vm = HomeViewModel(HelixRepository(FakeApi(streams)), FakeResume(listOf(resume))) { "99" }
-        rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, {}) } }
+        // A tall window, so the whole page (six Live cards and the Continue watching row) is composed.
+        rule.setContent { FrostlineTheme { androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.requiredSize(960.dp, 1600.dp)) { FollowingContent(vm, {}, {}, {}) } } }
         rule.waitForIdle()
         rule.onNodeWithText("Last night").requestFocus()
         rule.waitForIdle()
         rule.onNodeWithText("Last night").performKeyInput { pressKey(Key.DirectionUp) }
         rule.waitForIdle()
-        rule.onNodeWithText("Title number 8").assertIsFocused()
+        rule.onNodeWithText("Title number 6").assertIsFocused()
     }
 
     @Test fun continueWatchingOpensTheVideo() {

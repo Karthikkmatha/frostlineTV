@@ -18,6 +18,14 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
     /** One bounded Coil loader for the whole app; decodes animated emotes through the platform ImageDecoder. */
     override fun newImageLoader(context: PlatformContext): ImageLoader = ChatImages.loader(context)
 
+    /** Home and Top thumbnails are decoded again from the disk cache when needed: let go of them when the app is hidden or memory runs low. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN || level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW || level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
+            runCatching { coil3.SingletonImageLoader.get(this).memoryCache?.clear() }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
