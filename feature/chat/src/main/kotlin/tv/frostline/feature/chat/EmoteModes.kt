@@ -73,6 +73,8 @@ class EmoteRateTracker(private val windowMs: Long = 5_000L, private val holdMs: 
 class WeightedLru<K : Any, V : Any>(
     private val capacity: Long,
     private val weigh: (V) -> Long,
+    /** Entries for which this is true are never pushed out (e.g. emotes on screen); the cap may be exceeded by them. */
+    private val protect: (V) -> Boolean = { false },
     private val onEvict: (K, V) -> Unit = { _, _ -> },
 ) {
     private class Node<V>(val value: V, val weight: Long)
@@ -97,7 +99,7 @@ class WeightedLru<K : Any, V : Any>(
         val it = map.entries.iterator()
         while (total > capacity && it.hasNext()) {
             val e = it.next()
-            if (e.key == key) continue // the entry just added is the newest; keep it
+            if (e.key == key || protect(e.value.value)) continue // the entry just added is the newest; keep it
             total -= e.value.weight
             it.remove()
             onEvict(e.key, e.value.value)
@@ -109,8 +111,9 @@ class WeightedLru<K : Any, V : Any>(
         val victim: Pair<K, V>
         synchronized(this) {
             val it = map.entries.iterator()
-            if (!it.hasNext()) return false
-            val e = it.next()
+            var e: MutableMap.MutableEntry<K, Node<V>>? = null
+            while (it.hasNext()) { val c = it.next(); if (!protect(c.value.value)) { e = c; break } }
+            if (e == null) return false
             total -= e.value.weight
             it.remove()
             victim = e.key to e.value.value

@@ -68,18 +68,20 @@ class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024)
     val pageCount: Int @Synchronized get() = pages.size + privateCount
     val bytes: Long @Synchronized get() = pages.sumOf { it.bytes } + privateBytes
     val usedCells: Int @Synchronized get() = pages.sumOf { it.usedCells }
+    /** Cells of all pages created so far (the "slots" total of the debug line). */
+    val totalCells: Int @Synchronized get() = pages.size * cellsPerPage
 
     fun spanOf(w: Int): Int = (w + 2 * PAD + cell - 1) / cell
 
     /** Room for [count] images of [w] x [h] px, all in one page, or null when every page is full. */
     @Synchronized
-    fun tryAlloc(w: Int, h: Int, count: Int): AtlasRegion? {
+    fun tryAlloc(w: Int, h: Int, count: Int, grow: Boolean = true): AtlasRegion? {
         if (count < 1 || w < 1 || h < 1) return null
         if (!enabled) return allocPrivate(w, h, count)
         val span = spanOf(w)
         if (span > cols || h > maxImageH) return null
         for (p in pages) allocIn(p, w, h, count, span)?.let { return it }
-        if (pages.size < maxPages) {
+        if (grow && pages.size < maxPages) {
             val p = AtlasPage(pages.size, Bitmap.createBitmap(pageSize, pageSize, Bitmap.Config.ARGB_8888), cellsPerPage)
             pages += p
             return allocIn(p, w, h, count, span)

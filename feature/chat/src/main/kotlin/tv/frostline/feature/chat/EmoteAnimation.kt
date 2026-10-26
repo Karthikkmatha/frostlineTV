@@ -103,9 +103,13 @@ fun EmoteImage(
     val clock = LocalEmoteClock.current
     val gate = LocalEmoteGate.current
     val entry = remember(url, engine) { engine?.entry(url) }
+    DisposableEffect(entry, engine) {
+        if (engine != null && entry != null) engine.markVisible(entry)
+        onDispose { if (engine != null && entry != null) engine.markHidden(entry) }
+    }
     LaunchedEffect(entry, clock != null, engine?.active) {
         if (engine != null && entry != null) {
-            engine.ensureStill(entry, EmoteEngine.PRIO_VISIBLE)
+            engine.ensureStill(entry, EmoteEngine.PRIO_SCREEN)
             if (clock != null && engine.active && engine.mode != EmoteMode.Fast) engine.ensureAnimation(entry, priority)
         }
     }
@@ -122,7 +126,7 @@ fun EmoteImage(
     }
     // The still was evicted from the atlas while this emote is still on screen: ask for it again.
     LaunchedEffect(entry, hasStill) {
-        if (engine != null && entry != null && !hasStill) engine.ensureStill(entry, EmoteEngine.PRIO_VISIBLE)
+        if (engine != null && entry != null && !hasStill) engine.ensureStill(entry, EmoteEngine.PRIO_SCREEN)
     }
     ComposeCanvas(modifier.semantics { contentDescription = description }) {
         val e = entry ?: return@ComposeCanvas
@@ -144,7 +148,11 @@ internal fun DrawScope.drawEmoteEntry(e: EmoteEntry, x: Int, y: Int, boxW: Int, 
     val region: AtlasRegion = when {
         strip != null && (animating || still == null) -> strip
         still != null -> still
-        else -> { engine?.ensureStill(e, EmoteEngine.PRIO_VISIBLE); return }
+        else -> {
+            val direct = e.direct
+            if (direct != null) { drawDirect(direct, x, y, boxW, boxH); return }
+            engine?.ensureStill(e, EmoteEngine.PRIO_SCREEN); return
+        }
     }
     val frame = if (animating && region === strip) frameIndex(clock!!.tick, region.count) else 0
     val iw = region.w
@@ -160,4 +168,12 @@ internal fun DrawScope.drawEmoteEntry(e: EmoteEntry, x: Int, y: Int, boxW: Int, 
         dstSize = IntSize(dw, dh),
         filterQuality = FilterQuality.Low,
     )
+}
+
+/** The atlas had no slot: draw the emote's own decoded bitmap, centred in the box. */
+private fun DrawScope.drawDirect(img: androidx.compose.ui.graphics.ImageBitmap, x: Int, y: Int, boxW: Int, boxH: Int) {
+    val s = minOf(boxW.toFloat() / img.width, boxH.toFloat() / img.height)
+    val dw = (img.width * s).toInt().coerceAtLeast(1)
+    val dh = (img.height * s).toInt().coerceAtLeast(1)
+    drawImage(img, dstOffset = IntOffset(x + (boxW - dw) / 2, y + (boxH - dh) / 2), dstSize = IntSize(dw, dh), filterQuality = FilterQuality.Low)
 }

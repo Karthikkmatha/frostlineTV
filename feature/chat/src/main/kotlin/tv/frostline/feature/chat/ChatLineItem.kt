@@ -129,10 +129,15 @@ internal fun ChatTextLine(id: String, seq: Long, prep: PreparedLine, fontSp: Int
     val entries: Array<EmoteEntry>? = remember(prep, engine) {
         engine?.let { e -> Array(prep.images.size) { i -> e.entry(prep.images[i].url) } }
     }
+    // On screen while composed: these emotes are decoded first and never evicted (a busy chat used to push visible ones out).
+    DisposableEffect(entries, engine) {
+        if (engine != null && entries != null) for (e in entries) engine.markVisible(e)
+        onDispose { if (engine != null && entries != null) for (e in entries) engine.markHidden(e) }
+    }
     LaunchedEffect(entries, clock != null, engine?.active) {
         if (engine != null && entries != null) {
             for (i in entries.indices) {
-                engine.ensureStill(entries[i], EmoteEngine.PRIO_VISIBLE)
+                engine.ensureStill(entries[i], EmoteEngine.PRIO_SCREEN)
                 if (prep.images[i].isEmote && clock != null && engine.active && engine.mode != EmoteMode.Fast) engine.ensureAnimation(entries[i], EmoteEngine.PRIO_HOT)
             }
         }

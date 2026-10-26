@@ -50,6 +50,20 @@ class EmoteEntry(val url: String) {
     @Volatile var animated: Boolean? = null
     @Volatile var failedAt: Long = 0
     val stillPending = AtomicBoolean(false)
+    /** A still decode is running right now (a second, higher-priority task for the same emote waits out). */
+    internal val stillRunning = AtomicBoolean(false)
+    /** Priority and time of the queued still task, so a later on-screen request can jump the queue and stale ones can be shed. */
+    @Volatile internal var stillPrio: Int = Int.MAX_VALUE
+    @Volatile internal var stillQueuedAt: Long = 0L
+    /** How many chat lines / drawers showing this emote are on screen right now. Visible entries are never evicted. */
+    val visible = AtomicInteger(0)
+    /**
+     * Last resort when the atlas has no slot for a visible emote: its decoded picture, drawn directly. Held only while
+     * the emote is on screen (and capped), so it never grows.
+     */
+    @Volatile var direct: ImageBitmap? = null
+    /** True when something can be drawn for this emote. */
+    val drawable: Boolean get() = still != null || strip != null || direct != null
     val animPending = AtomicBoolean(false)
     /** Compose state, bumped when a decode lands, so canvases that read it redraw. */
     var version by mutableIntStateOf(0)
@@ -77,6 +91,8 @@ class EmoteEngine(
     context: Context,
     private val http: OkHttpClient = OkHttpClient.Builder().connectTimeout(10, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS).build(),
     private val clockMs: () -> Long = SystemClock::uptimeMillis,
+    /** Test seam: replaces the platform ImageDecoder. */
+    private val decodeOverride: ((File) -> Drawable?)? = null,
 ) {
     private val appContext = context.applicationContext
     private val dir = File(appContext.cacheDir, DIR_NAME).also { it.mkdirs() }
@@ -87,12 +103,18 @@ class EmoteEngine(
     private val order = AtomicLong()
 
     /**
-     * Two atlases of 1024 x 1024 pages (4 MB): one page of stills, at most two of animation frames, all at 48 px. Evicted least recently used first. [setAtlasEnabled] false gives every emote a bitmap of its own instead.
+     * Two atlases of 1024 x 1024 pages (4 MB): at most two pages of stills (the second only when the first is full of emotes on screen) and two of animation frames, all at 48 px. Evicted least recently used first. [setAtlasEnabled] false gives every emote a bitmap of its own instead.
      */
     val stillAtlas = EmoteAtlas(cell = STILL_CELL, maxPages = STILL_PAGES)
     val stripAtlas = EmoteAtlas(cell = STRIP_CELL, maxPages = STRIP_PAGES)
     /** At most [STILL_CAP_ENTRIES] stills, least recently used out first (weight 1 each). */
-    private val stills = WeightedLru<String, EmoteEntry>(STILL_CAP_ENTRIES.toLong(), { 1L }) { _, e -> e.still?.let(stillAtlas::free); e.still = null; e.bump() }
+    private val stills = WeightedLru<String, EmoteEntry>(STILL_CAP_ENTRIES.toLong(), { 1L }, { it.visible.get() > 0 }) { _, e ->
+        evictions.incrementAndGet(); e.still?.let(stillAtlas::free); e.still = null; e.bump()
+    }
+    /** Debug counters: stills pushed out of the atlas, allocations that found no slot, direct-bitmap holders. */
+    private val evictions = AtomicInteger()
+    private val misses = AtomicInteger()
+    private val directCount = AtomicInteger()
     private val strips = WeightedLru<String, EmoteEntry>(STRIP_CAP_CELLS.toLong(), { (it.strip?.cells ?: 0).toLong() }) { _, e -> e.strip?.let(stripAtlas::free); e.strip = null; e.bump() }
 
     /** Settings > Emote atlas. Off: per-emote bitmaps. Switching drops everything decoded; it is rebuilt on demand. */
@@ -191,6 +213,9 @@ class EmoteEngine(
      * Debug overlay: every bitmap this app holds in its own caches, with their bytes. The emote atlas is [AtlasPage]s
      * (stills + animation frames), Coil's memory cache holds thumbnails and avatars.
      */
+    fun atlasLine(): String =
+        "emotes: atlas p=${stillAtlas.pageCount}/$STILL_PAGES slots=${stillAtlas.usedCells}/${stillAtlas.totalCells.coerceAtLeast(stillAtlas.cols * stillAtlas.rows)} miss=${misses.get()} pending=${stillPool.queue.size} evict=${evictions.get()}"
+
     fun bitmapLine(): String {
         val coil = runCatching { coil3.SingletonImageLoader.get(appContext).memoryCache }.getOrNull()
         val coilN = coil?.keys?.size ?: 0
@@ -225,8 +250,32 @@ class EmoteEngine(
     /** Makes sure [e] has a still frame (download + decode). Priority: lower runs first. */
     fun ensureStill(e: EmoteEntry, priority: Int = PRIO_VISIBLE) {
         if (e.still != null) { stills.get(e.url); return }
+        if (e.direct != null) return
         if (clockMs() - e.failedAt < RETRY_MS && e.failedAt != 0L) return
-        if (e.stillPending.compareAndSet(false, true)) stillPool.execute(Task(priority, order.incrementAndGet()) { runStill(e) })
+        if (e.stillPending.compareAndSet(false, true)) {
+            enqueueStill(e, priority)
+        } else if (priority < e.stillPrio) {
+            enqueueStill(e, priority) // queued at a lower priority and now on screen: a second task jumps the queue, the first finds the work done
+        }
+    }
+
+    private fun enqueueStill(e: EmoteEntry, priority: Int) {
+        e.stillPrio = priority
+        e.stillQueuedAt = clockMs()
+        stillPool.execute(Task(priority, order.incrementAndGet()) { runStill(e) })
+    }
+
+    /** An emote of a composed chat line / drawer is on screen: protect it from eviction and decode it first. */
+    fun markVisible(e: EmoteEntry) {
+        e.visible.incrementAndGet()
+        ensureStill(e, PRIO_SCREEN)
+    }
+
+    fun markHidden(e: EmoteEntry) {
+        if (e.visible.decrementAndGet() <= 0) {
+            e.visible.set(0)
+            e.direct?.let { e.direct = null; directCount.decrementAndGet() }
+        }
     }
 
     /** Makes sure an animated [e] has its pre-decoded frames (no-op for plain images). */
@@ -297,8 +346,12 @@ class EmoteEngine(
     // ------------------------------------------------------------------ workers
 
     private fun runStill(e: EmoteEntry) {
+        if (!e.stillRunning.compareAndSet(false, true)) return // another task for this emote is decoding it
         try {
-            if (e.still != null) return
+            if (e.still != null || e.direct != null) return
+            if (e.failedAt != 0L && clockMs() - e.failedAt < RETRY_MS) return
+            // Chat outran the decoder: shed stale background work for lines that scrolled away (they are asked for again when shown).
+            if (e.stillPrio >= PRIO_VISIBLE && e.visible.get() == 0 && stillPool.queue.size > SHED_QUEUE && clockMs() - e.stillQueuedAt > SHED_AFTER_MS) return
             val file = download(e.url) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
@@ -310,12 +363,25 @@ class EmoteEngine(
                 e.still = region
                 stills.put(e.url, e)
                 e.bump()
+            } else {
+                misses.incrementAndGet()
+                // No slot even after evicting everything not on screen: draw the decoded bitmap directly while it is shown.
+                if (e.visible.get() > 0 && directCount.get() < MAX_DIRECT) {
+                    val copy = bmp.copy(Bitmap.Config.ARGB_8888, false)
+                    if (copy != null) {
+                        directCount.incrementAndGet()
+                        e.direct = copy.asImageBitmap()
+                        e.bump()
+                        if (e.visible.get() == 0) { e.direct = null; directCount.decrementAndGet() } // hidden meanwhile
+                    }
+                }
             }
             if (bmp !== raw) bmp.recycle()
             if (d !is BitmapDrawable) raw.recycle() // a bitmap we drew ourselves; a BitmapDrawable's is the decoder's, left to the GC
         } catch (_: Exception) {
             e.failedAt = clockMs().coerceAtLeast(1)
         } finally {
+            e.stillRunning.set(false)
             e.stillPending.set(false)
         }
     }
@@ -425,11 +491,20 @@ class EmoteEngine(
      * dropped and the allocation retried, so the atlas never grows past its page budget.
      */
     private fun allocate(atlas: EmoteAtlas, w: Int, h: Int, count: Int): AtlasRegion? {
-        repeat(MAX_EVICTIONS) {
-            atlas.tryAlloc(w, h, count)?.let { return it }
-            if (!(if (atlas === stripAtlas) strips.evictOldest() else stills.evictOldest())) return null
+        if (atlas === stripAtlas) {
+            repeat(MAX_EVICTIONS) {
+                atlas.tryAlloc(w, h, count)?.let { return it }
+                if (!strips.evictOldest()) return null
+            }
+            return null
         }
-        return null
+        // Stills: reuse free cells, then push out stills that are NOT on screen (oldest first); only when everything left is
+        // on screen does the atlas grow to its second page, and after that the caller falls back to a direct bitmap.
+        repeat(MAX_EVICTIONS) {
+            atlas.tryAlloc(w, h, count, grow = false)?.let { return it }
+            if (!stills.evictOldest()) return atlas.tryAlloc(w, h, count)
+        }
+        return atlas.tryAlloc(w, h, count)
     }
 
     private fun capture(d: Drawable, w: Int, h: Int, into: MutableList<Bitmap>) {
@@ -449,7 +524,7 @@ class EmoteEngine(
     }
 
     private fun decode(file: File): Drawable? = try {
-        ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) { decoder, info, _ ->
+        if (decodeOverride != null) decodeOverride.invoke(file) else ImageDecoder.decodeDrawable(ImageDecoder.createSource(file)) { decoder, info, _ ->
             decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
             val sw = info.size.width
             val sh = info.size.height
@@ -510,7 +585,13 @@ class EmoteEngine(
 
     private class Task(val prio: Int, val order: Long, val body: () -> Unit) : Runnable, Comparable<Task> {
         override fun run() = body()
-        override fun compareTo(other: Task): Int = if (prio != other.prio) prio.compareTo(other.prio) else order.compareTo(other.order)
+        // Lower prio first. Among on-screen / newly arrived work the NEWEST request goes first (the line just shown, not one that scrolled away);
+        // background preloads stay first-in first-out.
+        override fun compareTo(other: Task): Int = when {
+            prio != other.prio -> prio.compareTo(other.prio)
+            prio <= PRIO_VISIBLE -> other.order.compareTo(order)
+            else -> order.compareTo(other.order)
+        }
     }
 
     companion object {
@@ -522,10 +603,15 @@ class EmoteEngine(
         const val MAX_SAMPLE_MS = 4_000L
         const val BUSY_LINES = 12
         /** Stills kept at once (LRU): one 1024 px page of 50 px cells (400 cells). */
-        const val STILL_CAP_ENTRIES = 300
+        const val STILL_CAP_ENTRIES = 600
         const val STILL_CELL = 50
         const val STRIP_CELL = 50
-        const val STILL_PAGES = 1
+        const val STILL_PAGES = 2
+        /** Direct-bitmap fallbacks held at once (only for emotes on screen with no atlas slot). */
+        const val MAX_DIRECT = 64
+        /** Stale background still tasks are shed when the queue is longer than this and they waited longer than [SHED_AFTER_MS]. */
+        const val SHED_QUEUE = 48
+        const val SHED_AFTER_MS = 3_000L
         /** Animation strips: two pages (800 cells), 700 used. Big enough that the hot set is not decoded again and again (CPU). */
         const val STRIP_CAP_CELLS = 700
         const val STRIP_PAGES = 2
@@ -535,6 +621,7 @@ class EmoteEngine(
         const val USER_ANIM_CELLS = 150L
         const val DISK_CAP_BYTES = 64L * 1024 * 1024
         const val RETRY_MS = 60_000L
+        const val PRIO_SCREEN = -1
         const val PRIO_VISIBLE = 0
         const val PRIO_HOT = 1
         const val PRIO_PRELOAD = 2
