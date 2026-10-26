@@ -12,7 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
@@ -127,32 +127,37 @@ fun EmoteImage(
     ComposeCanvas(modifier.semantics { contentDescription = description }) {
         val e = entry ?: return@ComposeCanvas
         e.version // draw-phase read: a decode that lands later redraws without recomposing
-        val strip = e.strip
-        val still = e.still
-        // Animated: a src rect of the shared atlas page. Otherwise the still's cells (or the strip's first frame).
-        val animating = strip != null && clock != null && gate.allows(seq)
-        val region: AtlasRegion
-        val frame: Int
-        if (strip != null && (animating || still == null)) {
-            region = strip; frame = if (animating) frameIndex(clock!!.tick, strip.count) else 0
-        } else {
-            region = still ?: return@ComposeCanvas; frame = 0
-        }
-        val iw = region.w
-        val ih = region.h
-        val w = size.width.toInt()
-        val h = size.height.toInt()
-        if (w <= 0 || h <= 0) return@ComposeCanvas
-        val s = minOf(w.toFloat() / iw, h.toFloat() / ih)
-        val dw = (iw * s).toInt().coerceAtLeast(1)
-        val dh = (ih * s).toInt().coerceAtLeast(1)
-        drawImage(
-            region.image,
-            srcOffset = IntOffset(region.srcX(frame), region.srcY(frame)),
-            srcSize = IntSize(iw, ih),
-            dstOffset = IntOffset((w - dw) / 2, (h - dh) / 2),
-            dstSize = IntSize(dw, dh),
-            filterQuality = FilterQuality.Low,
-        )
+        drawEmoteEntry(e, 0, 0, size.width.toInt(), size.height.toInt(), clock, clock != null && gate.allows(seq), engine)
     }
+}
+
+/**
+ * Draws [e] centred in the box ([x], [y], [boxW] x [boxH]) from the shared atlas: the still, or when [animate] and a
+ * strip is ready, frame `tick % frames` of it. A src rect into a page bitmap; nothing is decoded and nothing allocated
+ * here. A picture whose cells were evicted asks the engine for its still again.
+ */
+internal fun DrawScope.drawEmoteEntry(e: EmoteEntry, x: Int, y: Int, boxW: Int, boxH: Int, clock: EmoteClock?, animate: Boolean, engine: EmoteEngine?) {
+    if (boxW <= 0 || boxH <= 0) return
+    val strip = e.strip
+    val still = e.still
+    val animating = strip != null && clock != null && animate
+    val region: AtlasRegion = when {
+        strip != null && (animating || still == null) -> strip
+        still != null -> still
+        else -> { engine?.ensureStill(e, EmoteEngine.PRIO_VISIBLE); return }
+    }
+    val frame = if (animating && region === strip) frameIndex(clock!!.tick, region.count) else 0
+    val iw = region.w
+    val ih = region.h
+    val s = minOf(boxW.toFloat() / iw, boxH.toFloat() / ih)
+    val dw = (iw * s).toInt().coerceAtLeast(1)
+    val dh = (ih * s).toInt().coerceAtLeast(1)
+    drawImage(
+        region.image,
+        srcOffset = IntOffset(region.srcX(frame), region.srcY(frame)),
+        srcSize = IntSize(iw, ih),
+        dstOffset = IntOffset(x + (boxW - dw) / 2, y + (boxH - dh) / 2),
+        dstSize = IntSize(dw, dh),
+        filterQuality = FilterQuality.Low,
+    )
 }

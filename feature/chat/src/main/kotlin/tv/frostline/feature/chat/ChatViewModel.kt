@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import tv.frostline.core.data.ChatOptions
 import tv.frostline.core.data.ChatSettings
 import tv.frostline.core.data.SettingsStore
 import tv.frostline.core.data.TokenVault
@@ -99,6 +100,7 @@ class ChatViewModel(
         settingsJob = viewModelScope.launch(worker) {
             settingsStore.chat.collect {
                 rebuildContext(it)
+                prepare(buffer.snapshot()) // a changed text size or timestamp setting: rebuild the line texts here, not on the main thread
                 // Hidden panel: keep buffering (so showing it again is instant) but stop publishing new lists.
                 val wasVisible = visible
                 visible = it.enabled
@@ -291,7 +293,16 @@ class ChatViewModel(
 
     private fun publish() {
         if (!visible) return
-        _lines.value = buffer.snapshot()
+        val snap = buffer.snapshot()
+        prepare(snap)
+        _lines.value = snap
+    }
+
+    /** Builds the annotated text and picture slots of every new line here, on the worker thread, so the UI only measures and draws. */
+    private fun prepare(lines: List<ChatLine>) {
+        val s = settings.value
+        val fontSp = ChatOptions.fontSizesSp[s.fontIndex.coerceIn(0, ChatOptions.fontSizesSp.lastIndex)]
+        for (l in lines) if (l is ChatMessage) l.prepared(fontSp, s.timestamps)
     }
 
     override fun onCleared() {
@@ -299,7 +310,7 @@ class ChatViewModel(
     }
 
     companion object {
-        const val MAX_LINES = 200
+        const val MAX_LINES = 150
     }
 }
 

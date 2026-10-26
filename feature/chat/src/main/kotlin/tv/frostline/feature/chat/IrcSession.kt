@@ -120,6 +120,8 @@ class IrcSession(
     val canSend: StateFlow<Boolean> = _canSend.asStateFlow()
 
     private val lock = Any()
+    /** Index-based frame parser (no tag maps, splits or regex); frames arrive one at a time. */
+    private val tokenizer = IrcTokenizer()
     private var transport: IrcTransport? = null
     private var channel: String? = null
     private var joined: String? = null
@@ -224,7 +226,7 @@ class IrcSession(
                 override fun onText(text: String) {
                     if (gen != generation) return
                     lastRx = clock()
-                    for (line in IrcParser.parseFrame(text)) handle(gen, line, creds != null)
+                    tokenizer.parseFrame(text, System.currentTimeMillis()) { ev -> handle(gen, ev, creds != null) }
                 }
 
                 override fun onClosed() = lost(gen)
@@ -254,8 +256,7 @@ class IrcSession(
         }
     }
 
-    private fun handle(gen: Int, line: IrcMessage, withToken: Boolean) {
-        val ev = ChatEventParser.parse(line) ?: return
+    private fun handle(gen: Int, ev: ChatEvent, withToken: Boolean) {
         when (ev) {
             is ChatEvent.Ping -> transport?.send("PONG :${ev.payload}")
             is ChatEvent.Reconnect -> lost(gen)

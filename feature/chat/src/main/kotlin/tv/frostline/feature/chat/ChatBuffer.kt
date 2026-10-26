@@ -4,7 +4,7 @@ package tv.frostline.feature.chat
  * The bounded backlog. Applies parsed events to a list of at most [capacity] lines (oldest first inside,
  * newest first in [snapshot], which is what the reversed LazyColumn wants). Thread-safe.
  */
-class ChatBuffer(val capacity: Int = 200) {
+class ChatBuffer(val capacity: Int = 150) {
     private val lines = ArrayDeque<ChatLine>()
     private var sysSeq = 0L
 

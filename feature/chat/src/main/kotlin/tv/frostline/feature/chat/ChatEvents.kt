@@ -61,7 +61,7 @@ sealed interface ChatEvent {
 
 object ChatEventParser {
     private val seq = java.util.concurrent.atomic.AtomicLong()
-    private fun localId(prefix: String) = "$prefix-${seq.getAndIncrement()}"
+    internal fun localId(prefix: String) = "$prefix-${seq.getAndIncrement()}"
 
     fun parse(m: IrcMessage, nowMs: Long = System.currentTimeMillis()): ChatEvent? = when (m.command) {
         "PING" -> ChatEvent.Ping(m.trailing ?: m.params.firstOrNull() ?: "tmi.twitch.tv")

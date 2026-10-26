@@ -332,6 +332,9 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
     LaunchedEffect(following) { pausedAtKey = if (following) null else model.lines.firstOrNull()?.key }
     val newCount = if (following) 0 else pausedAtKey?.let { k -> model.lines.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: 0
 
+    // Measured line layouts, by line id and width, shared by every line of this list.
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer(cacheSize = 8)
+    val lineLayouts = remember(measurer) { LineLayoutCache(measurer) }
     Box(
         modifier
             .padding(horizontal = 4.dp)
@@ -375,15 +378,17 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
             .focusable()
             .testTag("chat_list"),
     ) {
-        LazyColumn(
-            state = state,
-            reverseLayout = true,
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 4.dp),
-            userScrollEnabled = false, // scrolled by the D-pad handler above (and programmatically)
-            modifier = Modifier.fillMaxSize(),
-        ) {
-            items(model.lines, key = { it.key }, contentType = { it is ChatMessage }) { line ->
-                ChatLineItem(line, fontSp, model.settings.timestamps)
+        CompositionLocalProvider(LocalLineLayouts provides lineLayouts) {
+            LazyColumn(
+                state = state,
+                reverseLayout = true,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 4.dp),
+                userScrollEnabled = false, // scrolled by the D-pad handler above (and programmatically)
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(model.lines, key = { it.key }, contentType = { it is ChatMessage }) { line ->
+                    ChatLineItem(line, fontSp, model.settings.timestamps)
+                }
             }
         }
         if (!following) {

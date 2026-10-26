@@ -10,7 +10,7 @@ Live Twitch chat beside the player. Twitch IRC over WebSocket (`wss://irc-ws.cha
 anonymous `justinfan` for guests, the stored OAuth token when signed in (sending needs a sign-in). Tags and
 commands capabilities, PING/PONG, reconnect with 1 s to 30 s backoff, a silence watchdog, JOIN/PART on channel change.
 Emotes: Twitch (from tags), 7TV, BTTV and FFZ, global plus channel, cached per channel. Badges come from Helix.
-The backlog is capped at 200 lines; the message list is the only lazy list in chat (newest-first, `reverseLayout`,
+The backlog is capped at 150 lines; the message list is the only lazy list in chat (newest-first, `reverseLayout`,
 stable keys). Settings: Show chat, panel width (a percentage), font size, timestamps, 7TV/BTTV/FFZ.
 
 ### Focus model (remote only)
@@ -113,3 +113,13 @@ Run on the TV (adb over the network, the device is chosen with `ANDROID_SERIAL`)
 `tv.frostline`, which stay as the fallback) into `assets/dexopt/baseline.prof`; ProfileInstaller applies it on first launch.
 Commit the generated file after regenerating. Verify an install is compiled with `adb shell dumpsys package dexopt` or
 `cmd package compile -m speed-profile -f tv.frostline.app` for a manual comparison.
+
+### Chat pipeline (performance)
+
+Frames are parsed by `IrcTokenizer` (index-based: no tag map, split or regex; PRIVMSG is read in one pass, other commands take
+the general `IrcParser` route; tests assert both give the same events). Emote lookup tables are built once per channel and
+provider selection (`EmoteSets.index`), and words outside the code-length range are never cut out for a lookup. Each line is
+turned into a `PreparedLine` (annotated text with one placeholder character per badge or emote) on the view model's worker
+thread before it is published; the UI measures it once per id and width (`LineLayoutCache`, over `TextMeasurer`) and draws the
+text and the pictures in one draw block, the pictures as src rects of the shared emote atlas. Lines are published in
+batches (200 ms slow, 300 ms busy, 500 ms fast) as a 150-reference list with stable keys.

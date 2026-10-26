@@ -41,7 +41,19 @@ class ChatMessage(
     val mine: Boolean = false,
     /** Arrival order (process-wide, increasing): lets the newest lines be told apart without their list index. */
     val seq: Long = 0L,
-) : ChatLine
+) : ChatLine {
+    @Volatile private var prepared: PreparedLine? = null
+
+    /**
+     * The drawable form of this line (annotated text, inline-image slots) for the given size and timestamp setting.
+     * Built once, normally by the chat view model off the main thread before the line is published, and then shared;
+     * a settings change builds it again.
+     */
+    fun prepared(fontSp: Int, timestamps: Boolean): PreparedLine {
+        prepared?.let { if (it.fontSp == fontSp && it.timestamps == timestamps) return it }
+        return LineBuilder.prepare(this, fontSp, timestamps).also { prepared = it }
+    }
+}
 
 @androidx.compose.runtime.Immutable
 class SystemLine(
@@ -53,7 +65,19 @@ class SystemLine(
 
 object ChatText {
     private val fmt: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    fun time(ms: Long): String = fmt.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+
+    // Messages arrive many per second but the label only changes once a minute: keep the last one.
+    @Volatile private var lastMinute = Long.MIN_VALUE
+    @Volatile private var lastLabel = ""
+
+    fun time(ms: Long): String {
+        val minute = Math.floorDiv(ms, 60_000L)
+        if (minute == lastMinute) return lastLabel
+        val label = fmt.format(Instant.ofEpochMilli(ms).atZone(ZoneId.systemDefault()))
+        lastLabel = label
+        lastMinute = minute
+        return label
+    }
 
     private val palette = intArrayOf(
         0xFFFF6B6B.toInt(), 0xFFFFA45C.toInt(), 0xFFFFD866.toInt(), 0xFF9BE564.toInt(), 0xFF5CE0B8.toInt(),
@@ -92,7 +116,19 @@ class ResolveContext(
     val thirdParty: Map<String, Emote>,
     val badgeUrls: Map<String, String>,
     val maxBadges: Int = 3,
-)
+) {
+    /** Shortest and longest emote code: a word outside this range cannot be an emote, so it is never cut out for a lookup. */
+    val minCodeLen: Int
+    val maxCodeLen: Int
+
+    init {
+        var lo = Int.MAX_VALUE
+        var hi = 0
+        for (k in thirdParty.keys) { if (k.length < lo) lo = k.length; if (k.length > hi) hi = k.length }
+        minCodeLen = lo
+        maxCodeLen = hi
+    }
+}
 
 object MessageBuilder {
     private val seqGen = java.util.concurrent.atomic.AtomicLong()
@@ -114,7 +150,7 @@ object MessageBuilder {
             displayName = raw.displayName,
             colorArgb = ChatText.readable(raw.colorArgb ?: ChatText.defaultColor(raw.login)),
             badges = raw.badges.mapNotNull { b -> ctx.badgeUrls["${b.set}/${b.version}"]?.let { BadgeImage(b.set, it) } }.take(ctx.maxBadges),
-            parts = tokenize(raw.text, raw.emotes, ctx.thirdParty, fallback),
+            parts = tokenize(raw.text, raw.emotes, ctx.thirdParty, fallback, ctx.minCodeLen, ctx.maxCodeLen),
             action = raw.action,
             reply = raw.reply,
             header = raw.systemHeader,
@@ -133,7 +169,11 @@ object MessageBuilder {
         ranges: List<EmoteRange>,
         thirdParty: Map<String, Emote>,
         fallback: Map<String, Emote> = emptyMap(),
+        /** Length bounds of [thirdParty] codes; applied only when [fallback] is empty. */
+        minCode: Int = 0,
+        maxCode: Int = Int.MAX_VALUE,
     ): List<Part> {
+        val lenFilter = fallback.isEmpty()
         if (text.isEmpty()) return emptyList()
         val parts = ArrayList<Part>(4)
         val pending = StringBuilder()
@@ -160,6 +200,7 @@ object MessageBuilder {
                 }
                 var j = i
                 while (j < seg.length && seg[j] != ' ') j++
+                if (lenFilter && (j - i < minCode || j - i > maxCode)) { pending.append(seg, i, j); i = j; continue }
                 val word = seg.substring(i, j)
                 val e = thirdParty[word] ?: fallback[word]
                 if (e != null) {

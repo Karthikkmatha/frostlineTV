@@ -37,12 +37,20 @@ class EmoteSets(
     val bttv: List<Emote> = emptyList(),
     val ffz: List<Emote> = emptyList(),
 ) {
-    /** Lookup by code with precedence FFZ < BTTV < 7TV (later put wins) and channel emotes before globals within a provider. */
+    // The lookup table of one provider selection, built the first time it is asked for and then shared (this object is the
+    // per-channel cache entry), so changing a setting or a late badge load never rebuilds a table of thousands of emotes.
+    private val indexes = arrayOfNulls<Map<String, Emote>>(8)
+
+    /** Lookup by code with precedence FFZ < BTTV < 7TV (later put wins) and channel emotes before globals within a provider. Built once per provider selection. */
+    @Synchronized
     fun index(use7tv: Boolean = true, useBttv: Boolean = true, useFfz: Boolean = true): Map<String, Emote> {
-        val m = HashMap<String, Emote>(sevenTv.size + bttv.size + ffz.size)
+        val bits = (if (use7tv) 1 else 0) or (if (useBttv) 2 else 0) or (if (useFfz) 4 else 0)
+        indexes[bits]?.let { return it }
+        val m = HashMap<String, Emote>(((sevenTv.size + bttv.size + ffz.size) * 4 / 3) + 16)
         if (useFfz) for (e in ffz.asReversed()) m[e.code] = e
         if (useBttv) for (e in bttv.asReversed()) m[e.code] = e
         if (use7tv) for (e in sevenTv.asReversed()) m[e.code] = e
+        indexes[bits] = m
         return m
     }
 
