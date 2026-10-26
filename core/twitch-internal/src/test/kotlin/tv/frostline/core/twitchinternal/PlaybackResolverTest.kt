@@ -83,6 +83,23 @@ class PlaybackResolverTest {
         Unit
     }
 
+    @Test fun restrictionReasonComesFromTheBodyWhenItSays() {
+        assertEquals(StreamRestriction.SubscriberOnly, StreamRestriction.classify("""{"error":"Forbidden","message":"subscriber only"}"""))
+        assertEquals(StreamRestriction.Region, StreamRestriction.classify("not available in your region"))
+        assertEquals(StreamRestriction.AgeOrMature, StreamRestriction.classify("mature content"))
+        assertEquals(StreamRestriction.Unknown, StreamRestriction.classify(""))
+        assertTrue(StreamRestriction.SubscriberOnly.message.contains("subscribers only"))
+    }
+
+    @Test fun aSubscriberOnlyBodyBecomesTheSubscriberMessage() = runBlocking {
+        gql.enqueue(tokenReply())
+        usher.enqueue(MockResponse().setResponseCode(403).setBody("subscriber only")); usher.enqueue(MockResponse().setResponseCode(403).setBody("subscriber only"))
+        val ex = runCatching { resolver().resolve("ch", null, lowLatency = false) }.exceptionOrNull() as StreamRestrictedException
+        assertEquals(StreamRestriction.SubscriberOnly, ex.reason)
+        assertFalse(ex.detail.contains("subscriber only"))
+        Unit
+    }
+
     @Test fun webSessionGoesToGqlOnlyAsOAuth() = runBlocking {
         gql.enqueue(tokenReply())
         usher.enqueue(MockResponse().setBody(master))

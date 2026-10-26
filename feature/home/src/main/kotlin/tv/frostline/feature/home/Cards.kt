@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -86,6 +88,20 @@ fun formatViewers(n: Int): String = when {
     else -> n.toString()
 }
 
+/** Small lock shown on a card whose stream Twitch refused to play here (learned when playback hit it). */
+@Composable
+private fun LockBadge(login: String, modifier: Modifier) {
+    val locked by tv.frostline.core.ui.RestrictedStreams.logins.collectAsStateWithLifecycle()
+    if (login.lowercase() in locked) {
+        Text(
+            "RESTRICTED",
+            fontSize = 10.sp,
+            color = FrostColors.OnSurface,
+            modifier = modifier.testTag("lock_badge").background(FrostColors.Background.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 2.dp),
+        )
+    }
+}
+
 @Composable
 fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     CardSurface(onClick, modifier.testTag("stream_card"), onLongClick = onLongClick) {
@@ -107,6 +123,7 @@ fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit
                         .background(FrostColors.Live.copy(alpha = 0.9f), RoundedCornerShape(4.dp))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                 )
+                LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd).padding(6.dp))
             }
             Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Line(stream.userName, 13, FrostColors.OnSurface, bold = true)
@@ -190,7 +207,10 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
 fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     CardSurface(onClick, modifier.fillMaxWidth().testTag("stream_card"), focusedScale = 1f, onLongClick = onLongClick) {
         Row(Modifier.fillMaxWidth()) {
-            SizedImage(stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.width(340.dp).aspectRatio(16f / 9f))
+            Box(Modifier.width(340.dp).aspectRatio(16f / 9f)) {
+                SizedImage(stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.fillMaxSize())
+                LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd).padding(8.dp))
+            }
             Column(
                 Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),

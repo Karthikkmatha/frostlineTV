@@ -230,6 +230,7 @@ class PlayerViewModel(
                     }
                 }
                 val stream = resolve(login)
+                tv.frostline.core.ui.RestrictedStreams.clear(login)
                 currentVariants = stream.variants
                 currentUrl = stream.masterUrl
                 _ui.update { it.copy(variants = stream.variants, loading = false) }
@@ -247,6 +248,7 @@ class PlayerViewModel(
             } catch (e: ChannelOfflineException) {
                 _ui.update { it.copy(loading = false, offline = true, error = "${it.displayName} is offline") }
             } catch (e: tv.frostline.core.twitchinternal.StreamRestrictedException) {
+                tv.frostline.core.ui.RestrictedStreams.mark(login)
                 _ui.update { it.copy(loading = false, error = e.message, errorDetail = e.detail) }
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = tv.frostline.core.twitch.NetworkRetry.userMessage(e, "Could not start playback"), errorDetail = if (tv.frostline.core.twitch.NetworkRetry.isNetworkError(e)) e.javaClass.simpleName else null) }

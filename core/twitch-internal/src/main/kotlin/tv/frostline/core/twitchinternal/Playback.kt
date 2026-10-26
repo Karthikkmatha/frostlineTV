@@ -27,7 +27,29 @@ class ChannelOfflineException(login: String) : IOException("$login is offline")
 
 /** Twitch refused the linked web session (401). The caller should flag it expired and retry anonymously. */
 /** Usher refused every variant (403): a stream Twitch only lets its own apps play. [detail] is for the debug overlay. */
-class StreamRestrictedException(val detail: String) : IOException("This stream can't be played outside Twitch's own apps")
+class StreamRestrictedException(val detail: String, val reason: StreamRestriction = StreamRestriction.Unknown) : IOException(reason.message)
+
+/** Why usher refused a live stream, from the 403 body when it says. [message] is what the player shows. */
+enum class StreamRestriction(val message: String) {
+    SubscriberOnly("This stream is for subscribers only. Subscribe on Twitch to watch it here."),
+    Region("This stream is not available in your region."),
+    AgeOrMature("This stream is age-restricted. Open it in the Twitch app and confirm your age."),
+    Unknown("This stream can't be played outside Twitch's own apps. Open it in the Twitch app."),
+    ;
+
+    companion object {
+        /** [body] is the 403 response text; only words are matched, nothing from it is shown. */
+        fun classify(body: String): StreamRestriction {
+            val t = body.lowercase()
+            return when {
+                "subscri" in t || "sub only" in t || "sub_only" in t || "subonly" in t -> SubscriberOnly
+                "region" in t || "geo" in t || "country" in t || "your location" in t -> Region
+                "mature" in t || "age" in t && "restrict" in t -> AgeOrMature
+                else -> Unknown
+            }
+        }
+    }
+}
 
 class WebSessionRejectedException : IOException("Web session rejected")
 
@@ -53,6 +75,7 @@ internal class TwitchPlaybackResolver(
         // which is known to play, and let the player's own live offsets keep it steady.
         val attempts = if (lowLatency) listOf(true) else listOf(false, true)
         var lastError: IOException? = null
+        var forbiddenBody = ""
         for (fastBread in attempts) {
             val url = usherBase.toHttpUrl().newBuilder()
                 .addPathSegments("api/channel/hls/${login.lowercase()}.m3u8")
@@ -71,6 +94,10 @@ internal class TwitchPlaybackResolver(
                 val text = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
                     when {
                         r.code == 404 -> throw ChannelOfflineException(login)
+                        r.code == 403 -> {
+                            forbiddenBody = runCatching { r.body.string().take(400) }.getOrDefault("")
+                            throw IOException("Playlist request failed (HTTP 403; params $names)")
+                        }
                         r.code !in 200..299 -> throw IOException("Playlist request failed (HTTP ${r.code}; params $names)")
                         else -> r.body.string()
                     }
@@ -83,7 +110,7 @@ internal class TwitchPlaybackResolver(
             }
         }
         val msg = lastError?.message.orEmpty()
-        if (msg.contains("HTTP 403")) throw StreamRestrictedException(msg)
+        if (msg.contains("HTTP 403")) throw StreamRestrictedException(msg, StreamRestriction.classify(forbiddenBody))
         throw lastError ?: IOException("Playlist request failed")
     }
 
