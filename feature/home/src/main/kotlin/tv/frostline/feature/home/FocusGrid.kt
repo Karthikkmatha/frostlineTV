@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package tv.frostline.feature.home
 
 import androidx.compose.foundation.ExperimentalFoundationApi

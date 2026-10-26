@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package tv.frostline.feature.home
 
 import androidx.activity.compose.BackHandler
@@ -169,8 +171,8 @@ fun TopContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelPage: (
                 add(
                     GridEntry("top:tabs", fullSpan = true) { m ->
                         Row(m.focusGroup(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            FrostChip("Streams", st.tab == TopTab.Streams) { vm.setTopTab(TopTab.Streams) }
-                            FrostChip("Categories", st.tab == TopTab.Categories) { vm.setTopTab(TopTab.Categories) }
+                            FrostChip("Streams", st.tab == TopTab.Streams, onClick = { vm.setTopTab(TopTab.Streams) })
+                            FrostChip("Categories", st.tab == TopTab.Categories, onClick = { vm.setTopTab(TopTab.Categories) })
                         }
                     },
                 )
