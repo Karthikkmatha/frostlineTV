@@ -1,6 +1,7 @@
 package tv.frostline.feature.chat
 
 import tv.frostline.core.data.ChatOptions
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.scrollBy
@@ -187,14 +188,14 @@ internal fun ChatPanel(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Column(Modifier.weight(1f)) {
-                Text(if (model.replay) "Chat replay" else "Chat", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("chat_title"))
+                Text(if (model.replay) "Chat replay" else "Chat", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("chat_title"))
                 val status = when (model.connection) {
                     is ConnState.Connected -> model.room
                     is ConnState.Reconnecting -> "Reconnecting..."
                     ConnState.Connecting -> "Connecting..."
                     ConnState.Idle -> ""
                 }
-                if (status.isNotEmpty()) Text(status, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("chat_status"))
+                if (status.isNotEmpty()) Text(status, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("chat_status"))
             }
             eng.points?.let { PointsBadge(it) }
         }
@@ -230,14 +231,14 @@ internal fun ChatPanel(
         if (model.replay) {
             Text(
                 "Chat replay. Sending is disabled.",
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.Muted,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).testTag("chat_replay_note"),
             )
         } else if (!model.signedIn) {
             Text(
                 "Sign in to chat",
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.Muted,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp).testTag("chat_guest_note"),
             )
@@ -271,7 +272,7 @@ internal fun ChatPanel(
         }
         // A real grid at every panel width (20-45 %): equal-width buttons, one Row per grid row.
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp).onSizeChanged { c.buttonRowHeightPx = it.height }.testTag("chat_button_row"),
+            Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp).onSizeChanged { c.buttonRowHeightPx = it.height }.testTag("chat_button_row"),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             for (row in grid) {
@@ -298,7 +299,7 @@ internal fun ChatPanel(
 private fun ResizeHint(c: ChatController, onSave: () -> Unit, modifier: Modifier) {
     Text(
         "\u25C0 wider \u00B7 \u25B6 narrower \u00B7 OK save \u00B7 Back cancel   ${c.resizePct}%",
-        fontSize = 12.sp,
+        style = MaterialTheme.typography.bodySmall,
         color = FrostColors.OnSurface,
         modifier = modifier
             .background(FrostColors.Primary, FrostTokens.PillShape)
@@ -410,7 +411,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
         if (!following) {
             Text(
                 if (newCount > 0) "Paused - $newCount new. OK: jump to live" else "Paused. OK: jump to live",
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.bodySmall,
                 color = FrostColors.OnSurface,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)

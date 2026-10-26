@@ -1,6 +1,7 @@
 package tv.frostline.feature.chat
 
 import tv.frostline.core.data.ChatOptions
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,9 @@ import tv.frostline.core.ui.FrostButtonStyle
 import tv.frostline.core.ui.FrostChip
 import tv.frostline.core.ui.FrostListItem
 import tv.frostline.core.ui.FrostSurface
+import tv.frostline.core.ui.FrostSheetSurface
+import tv.frostline.core.ui.FrostSheetTitle
+import tv.frostline.core.ui.FrostTokens
 
 /** One row of the chat menu: label on the left, current value on the right. */
 @Composable
@@ -56,8 +60,9 @@ private fun MenuRow(label: String, value: String?, onClick: () -> Unit, modifier
     FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        trailing = value?.let { v -> { Text(v, fontSize = 14.sp, color = FrostColors.Lavender, maxLines = 1) } },
-    ) { Text(label, fontSize = 15.sp, fontWeight = FontWeight.Medium, maxLines = 1) }
+        minHeight = FrostTokens.SheetRowHeight,
+        trailing = value?.let { v -> { Text(v, style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, maxLines = 1) } },
+    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium, maxLines = 1) }
 }
 
 /** Swallows horizontal moves so focus cannot leave an overlay sideways. */
@@ -81,19 +86,16 @@ internal fun ChatMenu(
     val first = f.menuFirst
     LaunchedEffect(Unit) { runCatching { first.requestFocus() } }
     val stop = FocusRequester.Cancel
-    Column(
+    FrostSheetSurface(
         modifier
-            .background(FrostColors.Surface, RoundedCornerShape(12.dp))
-            .padding(12.dp)
             .onFocusChanged { c.overlayFocused = it.hasFocus }
             .focusGroup()
             .trapHorizontal()
             .testTag("chat_menu"),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text("Chat", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
-        // Seven 56 dp rows are taller than the space above the button row on a 540 dp screen: the rows scroll.
-        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        FrostSheetTitle("Chat")
+        // Seven 52 dp rows fit a 540 dp screen without scrolling; the scroll is only a safety net for large font scales.
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         MenuRow(
             "Resize panel", "${settings.widthPct}%",
             { c.menuOpen = false; c.startResize(settings.widthPct) },
@@ -147,15 +149,13 @@ internal fun EmotePicker(
     val emotes = data.tab(tab)
     val tabReqs = remember { List(pickerTabs.size + 1) { FocusRequester() } }
 
-    Column(
+    FrostSheetSurface(
         modifier
-            .background(FrostColors.Surface, RoundedCornerShape(12.dp))
-            .padding(12.dp)
             .onFocusChanged { c.overlayFocused = it.hasFocus }
             .focusGroup()
             .testTag("emote_picker"),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        FrostSheetTitle("Emotes")
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             pickerTabs.forEachIndexed { i, p ->
                 TabChip(
@@ -182,7 +182,7 @@ internal fun EmotePicker(
             if (emotes.isEmpty()) {
                 Text(
                     if (tab == EmoteProvider.Twitch && data.twitchLoading) "Loading your emotes..." else "No emotes here yet",
-                    fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center).testTag("emote_empty"),
+                    style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.align(Alignment.Center).testTag("emote_empty"),
                 )
             } else {
                 val rows = (emotes.size + cols - 1) / cols
@@ -219,10 +219,10 @@ internal fun EmotePicker(
         }
         Text(
             if (focusedCode.isNotEmpty()) focusedCode else "OK adds the emote to your message. Back closes.",
-            fontSize = 12.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("emote_caption"),
+            style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("emote_caption"),
         )
         if (c.draft.isNotEmpty()) {
-            Text("Message: ${c.draft}", fontSize = 12.sp, color = FrostColors.Lavender, maxLines = 1, modifier = Modifier.testTag("emote_draft"))
+            Text("Message: ${c.draft}", style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, maxLines = 1, modifier = Modifier.testTag("emote_draft"))
         }
     }
 }

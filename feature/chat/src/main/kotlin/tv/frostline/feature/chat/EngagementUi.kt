@@ -1,6 +1,7 @@
 package tv.frostline.feature.chat
 
 import androidx.compose.foundation.background
+import androidx.tv.material3.MaterialTheme
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,9 @@ import tv.frostline.core.ui.FrostButton
 import tv.frostline.core.ui.FrostSecondaryButton
 import tv.frostline.core.ui.TvTextField
 import tv.frostline.core.ui.FrostListItem
+import tv.frostline.core.ui.FrostSheetSurface
+import tv.frostline.core.ui.FrostSheetTitle
+import tv.frostline.core.ui.FrostTokens
 import tv.frostline.core.ui.FrostSurface
 import tv.frostline.core.ui.tryFocus
 
@@ -82,15 +86,15 @@ private fun colorOf(name: String?, index: Int): Color = when (name?.uppercase())
 internal fun PointsBadge(points: PointsUi, modifier: Modifier = Modifier) {
     Row(modifier.testTag("points_balance"), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         if (!points.iconUrl.isNullOrEmpty()) EmoteImage(points.iconUrl, points.name ?: "Channel points", Modifier.size(14.dp))
-        Text(EngagementMath.grouped(points.balance), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.Lavender, maxLines = 1, modifier = Modifier.testTag("points_value"))
-        if (!points.name.isNullOrEmpty()) Text(points.name, fontSize = 10.sp, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("points_name"))
+        Text(EngagementMath.grouped(points.balance), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, color = FrostColors.Lavender, maxLines = 1, modifier = Modifier.testTag("points_value"))
+        if (!points.name.isNullOrEmpty()) Text(points.name, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("points_name"))
     }
 }
 
 @Composable
 internal fun PointsToast(text: String, modifier: Modifier = Modifier) {
     Text(
-        text, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface,
+        text, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface,
         modifier = modifier.background(FrostColors.Primary, RoundedCornerShape(16.dp)).padding(horizontal = 14.dp, vertical = 5.dp).testTag("points_toast"),
     )
 }
@@ -111,11 +115,11 @@ private fun OutcomeLine(color: Color, title: String, pct: Int, points: String, m
         Box(Modifier.size(8.dp).background(color, CircleShape))
         Text(
             (if (winner) "Winner: " else "") + title + if (mine) " (you)" else "",
-            fontSize = fontSp.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
             fontWeight = if (winner) FontWeight.Bold else FontWeight.Normal,
         )
-        Text("$pct%", fontSize = fontSp.sp, fontWeight = FontWeight.SemiBold)
-        Text(points, fontSize = fontSp.sp, color = FrostColors.Muted)
+        Text("$pct%", style = MaterialTheme.typography.bodySmall, color = tv.frostline.core.ui.FrostColors.OnSurface, fontWeight = FontWeight.SemiBold)
+        Text(points, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
     }
 }
 
@@ -142,17 +146,17 @@ internal fun PredictionBanner(p: PredictionUi, modifier: Modifier = Modifier, on
     val remaining = p.endsAtMs?.let { it - now }
     BannerSurface(onOpen, modifier.testTag("banner_prediction")) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Prediction", fontSize = 10.sp, color = FrostColors.Ice, fontWeight = FontWeight.SemiBold)
+            Text("Prediction", style = MaterialTheme.typography.bodySmall, color = FrostColors.Ice, fontWeight = FontWeight.SemiBold)
             Box(Modifier.weight(1f))
-            Text(predictionStatusLine(p, remaining), fontSize = 10.sp, color = FrostColors.Muted, modifier = Modifier.testTag("banner_prediction_time"))
+            Text(predictionStatusLine(p, remaining), style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("banner_prediction_time"))
         }
-        Text(p.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("banner_prediction_title"))
+        Text(p.title, style = MaterialTheme.typography.bodySmall, color = tv.frostline.core.ui.FrostColors.OnSurface, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("banner_prediction_title"))
         val total = p.totalPoints
         p.outcomes.take(3).forEachIndexed { i, o ->
             OutcomeLine(colorOf(o.color, i), o.title, EngagementMath.percent(o.totalPoints, total), EngagementMath.compact(o.totalPoints), o.id == p.myOutcomeId, o.id == p.winningOutcomeId && p.status == PredictionStatus.Resolved)
         }
-        if (p.outcomes.size > 3) Text("+${p.outcomes.size - 3} more", fontSize = 10.sp, color = FrostColors.Muted)
-        betResultText(p.result)?.let { Text(it, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag("banner_prediction_result")) }
+        if (p.outcomes.size > 3) Text("+${p.outcomes.size - 3} more", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
+        betResultText(p.result)?.let { Text(it, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag("banner_prediction_result")) }
     }
 }
 
@@ -162,17 +166,17 @@ internal fun PollBanner(p: PollUi, modifier: Modifier = Modifier, onOpen: () -> 
     val remaining = p.endsAtMs?.let { it - now }
     BannerSurface(onOpen, modifier.testTag("banner_poll")) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(if (p.open) "Poll" else "Poll results", fontSize = 10.sp, color = FrostColors.Ice, fontWeight = FontWeight.SemiBold)
+            Text(if (p.open) "Poll" else "Poll results", style = MaterialTheme.typography.bodySmall, color = FrostColors.Ice, fontWeight = FontWeight.SemiBold)
             Box(Modifier.weight(1f))
-            Text(if (p.open) (remaining?.let { EngagementMath.clock(it) + " left" } ?: "Open") else "Ended", fontSize = 10.sp, color = FrostColors.Muted, modifier = Modifier.testTag("banner_poll_time"))
+            Text(if (p.open) (remaining?.let { EngagementMath.clock(it) + " left" } ?: "Open") else "Ended", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("banner_poll_time"))
         }
-        Text(p.title, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("banner_poll_title"))
+        Text(p.title, style = MaterialTheme.typography.bodySmall, color = tv.frostline.core.ui.FrostColors.OnSurface, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.testTag("banner_poll_title"))
         val total = p.totalVotes
         val top = p.choices.maxOfOrNull { it.votes } ?: 0
         p.choices.take(3).forEachIndexed { i, c ->
             OutcomeLine(colorOf(null, i), c.title, EngagementMath.percent(c.votes, total), EngagementMath.compact(c.votes), c.id == p.myChoiceId, p.ended && top > 0 && c.votes == top)
         }
-        if (p.choices.size > 3) Text("+${p.choices.size - 3} more", fontSize = 10.sp, color = FrostColors.Muted)
+        if (p.choices.size > 3) Text("+${p.choices.size - 3} more", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
     }
 }
 
@@ -181,16 +185,13 @@ internal fun PollBanner(p: PollUi, modifier: Modifier = Modifier, onOpen: () -> 
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 private fun SheetFrame(tag: String, c: ChatController, modifier: Modifier, content: @Composable ColumnScope.() -> Unit) {
-    Column(
+    FrostSheetSurface(
         modifier
-            .background(FrostColors.Surface, RoundedCornerShape(12.dp))
-            .padding(12.dp)
             .onFocusChanged { c.overlayFocused = it.hasFocus }
             // Focus can only leave through Back or Close.
             .focusProperties { exit = { Stop } }
             .focusGroup()
             .testTag(tag),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
     )
 }
@@ -199,7 +200,7 @@ private fun SheetFrame(tag: String, c: ChatController, modifier: Modifier, conte
 private fun SheetHeader(title: String, closeTag: String, onClose: () -> Unit, points: PointsUi?, closeModifier: Modifier = Modifier) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+            FrostSheetTitle(title)
             if (points != null) PointsBadge(points, Modifier.testTag("sheet_balance"))
         }
         FrostSecondaryButton("Close", onClose, closeModifier.focusProperties { up = Stop; left = Stop; right = Stop }.testTag(closeTag))
@@ -216,6 +217,7 @@ private fun SheetRow(
 ) {
     FrostListItem(
         onClick = { if (!inert) onClick() },
+        minHeight = FrostTokens.SheetRowHeight,
         modifier = modifier.fillMaxWidth().focusProperties { left = Stop; right = Stop }.then(if (inert) Modifier.semantics { disabled() } else Modifier),
         selected = selected,
         headline = {
@@ -227,9 +229,9 @@ private fun SheetRow(
 @Composable
 private fun Result(state: ActionState, tag: String) {
     when (state) {
-        is ActionState.Done -> Text(state.message, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.Lavender, modifier = Modifier.testTag("${tag}_success"))
-        is ActionState.Failed -> Text(state.message, fontSize = 15.sp, color = FrostColors.Live, modifier = Modifier.testTag("${tag}_error"))
-        ActionState.Working -> Text("Working...", fontSize = 14.sp, color = FrostColors.Muted, modifier = Modifier.testTag("${tag}_working"))
+        is ActionState.Done -> Text(state.message, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.Lavender, modifier = Modifier.testTag("${tag}_success"))
+        is ActionState.Failed -> Text(state.message, style = MaterialTheme.typography.bodyLarge, color = FrostColors.Live, modifier = Modifier.testTag("${tag}_error"))
+        ActionState.Working -> Text("Working...", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("${tag}_working"))
         ActionState.Idle -> Unit
     }
 }
@@ -268,11 +270,11 @@ internal fun RewardsSheet(
             }
             pick != null -> RedeemConfirm(pick, balance, result, act, c, initial)
             ui.rewardsLoad == RewardsLoad.Loading || ui.rewardsLoad == RewardsLoad.Idle ->
-                Text("Loading rewards...", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_loading"))
+                Text("Loading rewards...", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_loading"))
             ui.rewardsLoad == RewardsLoad.Failed ->
-                Text("Rewards are not available right now.", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_failed"))
+                Text("Rewards are not available right now.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_failed"))
             ui.rewards.isEmpty() ->
-                Text("This channel has no rewards you can redeem.", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_empty"))
+                Text("This channel has no rewards you can redeem.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("rewards_empty"))
             else -> LazyColumn(Modifier.weight(1f, fill = false).fillMaxWidth().testTag("rewards_list"), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 itemsIndexed(ui.rewards, key = { _, r -> r.id }) { i, r ->
                     val block = EngagementMath.rewardBlock(r, balance, now)
@@ -299,13 +301,13 @@ private fun RewardRow(r: CustomReward, block: String?, points: PointsUi?, modifi
                 r.iconUrl?.takeIf { it.isNotEmpty() }?.let { EmoteImage(it, r.title, Modifier.fillMaxSize().padding(2.dp)) }
             }
             Column(Modifier.weight(1f)) {
-                Text(r.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (block != null) Text(block, fontSize = 11.sp, color = FrostColors.Live, maxLines = 1, modifier = Modifier.testTag("reward_reason"))
-                else EngagementMath.rewardNote(r)?.let { Text(it, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("reward_note")) }
+                Text(r.title, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (block != null) Text(block, style = MaterialTheme.typography.bodySmall, color = FrostColors.Live, maxLines = 1, modifier = Modifier.testTag("reward_reason"))
+                else EngagementMath.rewardNote(r)?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("reward_note")) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 points?.iconUrl?.takeIf { it.isNotEmpty() }?.let { EmoteImage(it, "points", Modifier.size(14.dp)) }
-                Text(EngagementMath.grouped(r.cost), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("reward_cost"))
+                Text(EngagementMath.grouped(r.cost), style = MaterialTheme.typography.bodySmall, color = tv.frostline.core.ui.FrostColors.OnSurface, fontWeight = FontWeight.SemiBold, modifier = Modifier.testTag("reward_cost"))
             }
         }
     }
@@ -317,9 +319,9 @@ private fun RedeemConfirm(r: CustomReward, balance: Long, state: ActionState, ac
     val needsText = r.requiresInput
     val canRedeem = !working && (!needsText || c.rewardText.isNotBlank())
     Column(Modifier.testTag("redeem_confirm"), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(r.title, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
-        if (r.prompt.isNotBlank()) Text(r.prompt, fontSize = 12.sp, color = FrostColors.Muted, maxLines = 4, overflow = TextOverflow.Ellipsis)
-        Text("Cost ${EngagementMath.grouped(r.cost)}. You have ${EngagementMath.grouped(balance)}.", fontSize = 13.sp, color = FrostColors.Lavender)
+        Text(r.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface)
+        if (r.prompt.isNotBlank()) Text(r.prompt, style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, maxLines = 4, overflow = TextOverflow.Ellipsis)
+        Text("Cost ${EngagementMath.grouped(r.cost)}. You have ${EngagementMath.grouped(balance)}.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender)
         if (needsText) {
             TvTextField(
                 value = c.rewardText,
@@ -367,11 +369,11 @@ internal fun PredictionSheet(
     SheetFrame("prediction_sheet", c, modifier) {
         SheetHeader("Prediction", "prediction_close", { c.closePrediction(act) }, ui.points, if (step == 0 && (p == null || !p.open)) Modifier.focusRequester(initial) else Modifier)
         if (p == null) {
-            Text("This prediction is over.", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_gone"))
+            Text("This prediction is over.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_gone"))
             return@SheetFrame
         }
-        Text(p.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("prediction_title"))
-        Text(predictionStatusLine(p, p.endsAtMs?.let { it - now }), fontSize = 12.sp, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_status"))
+        Text(p.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("prediction_title"))
+        Text(predictionStatusLine(p, p.endsAtMs?.let { it - now }), style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_status"))
         val total = p.totalPoints
         val outcome = p.outcomes.firstOrNull { it.id == c.predOutcome }
         when {
@@ -383,7 +385,7 @@ internal fun PredictionSheet(
             }
             c.predConfirm && outcome != null -> {
                 val working = action == ActionState.Working
-                Text("Predict \"${outcome.title}\" with ${EngagementMath.grouped(c.predAmount)} points?", fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("prediction_confirm_text"))
+                Text("Predict \"${outcome.title}\" with ${EngagementMath.grouped(c.predAmount)} points?", style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag("prediction_confirm_text"))
                 Result(action, "prediction")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FrostButton(if (working) "Placing..." else "Confirm", { act.predict(outcome.id, c.predAmount) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("prediction_confirm"), enabled = !working && p.open)
@@ -401,17 +403,17 @@ internal fun PredictionSheet(
                     ) {
                         Column {
                             OutcomeLine(colorOf(o.color, i), o.title, EngagementMath.percent(o.totalPoints, total), EngagementMath.compact(o.totalPoints) + " pts", o.id == p.myOutcomeId, o.id == p.winningOutcomeId && p.status == PredictionStatus.Resolved, fontSp = 13)
-                            Text("${EngagementMath.compact(o.totalUsers)} predictors", fontSize = 10.sp, color = FrostColors.Muted)
+                            Text("${EngagementMath.compact(o.totalUsers)} predictors", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
                         }
                     }
                 }
-                betResultText(p.result)?.let { Text(it, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag("prediction_result")) }
+                betResultText(p.result)?.let { Text(it, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag("prediction_result")) }
                 if (p.myOutcomeId != null && p.result == null) {
-                    Text("Your prediction: ${EngagementMath.grouped(p.myPoints)} points on ${p.outcomes.firstOrNull { it.id == p.myOutcomeId }?.title.orEmpty()}", fontSize = 12.sp, color = FrostColors.Lavender, modifier = Modifier.testTag("prediction_mine"))
+                    Text("Your prediction: ${EngagementMath.grouped(p.myPoints)} points on ${p.outcomes.firstOrNull { it.id == p.myOutcomeId }?.title.orEmpty()}", style = MaterialTheme.typography.bodySmall, color = FrostColors.Lavender, modifier = Modifier.testTag("prediction_mine"))
                 }
                 if (p.open) {
                     if (EngagementMath.maxAmount(balance) < EngagementMath.MIN_PREDICTION) {
-                        Text("You need at least 10 points to predict.", fontSize = 12.sp, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_poor"))
+                        Text("You need at least 10 points to predict.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("prediction_poor"))
                     } else {
                         AmountPicker(balance, c)
                         val ready = outcome != null && c.predAmount in EngagementMath.MIN_PREDICTION..EngagementMath.maxAmount(balance)
@@ -434,7 +436,7 @@ private fun AmountPicker(balance: Long, c: ChatController) {
     LaunchedEffect(balance) { c.predAmount = EngagementMath.clampAmount(if (c.predAmount == 0L) 100 else c.predAmount, balance) }
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         FrostSecondaryButton("-", { c.predAmount = EngagementMath.decrease(c.predAmount, balance) }, Modifier.focusProperties { left = Stop }.testTag("prediction_dec"))
-        Text(EngagementMath.grouped(c.predAmount), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, modifier = Modifier.width(96.dp).testTag("prediction_amount"))
+        Text(EngagementMath.grouped(c.predAmount), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, modifier = Modifier.width(96.dp).testTag("prediction_amount"))
         FrostSecondaryButton("+", { c.predAmount = EngagementMath.increase(c.predAmount, balance) }, Modifier.focusProperties { right = Stop }.testTag("prediction_inc"))
     }
     val presets = EngagementMath.presets(balance)
@@ -469,13 +471,13 @@ internal fun PollSheet(
     SheetFrame("poll_sheet", c, modifier) {
         SheetHeader("Poll", "poll_close", { c.closePoll(act) }, ui.points, if (step == 0 && (p == null || !p.open)) Modifier.focusRequester(initial) else Modifier)
         if (p == null) {
-            Text("This poll is over.", fontSize = 13.sp, color = FrostColors.Muted, modifier = Modifier.testTag("poll_gone"))
+            Text("This poll is over.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("poll_gone"))
             return@SheetFrame
         }
-        Text(p.title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("poll_title"))
+        Text(p.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, color = FrostColors.OnSurface, modifier = Modifier.testTag("poll_title"))
         Text(
             if (p.open) (p.endsAtMs?.let { EngagementMath.clock(it - now) + " left" } ?: "Open") else "Poll ended. Results:",
-            fontSize = 12.sp, color = FrostColors.Muted, modifier = Modifier.testTag("poll_status"),
+            style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("poll_status"),
         )
         val choice = p.choices.firstOrNull { it.id == c.pollChoice }
         val total = p.totalVotes
@@ -487,7 +489,7 @@ internal fun PollSheet(
             }
             choice != null && p.open -> {
                 val working = action == ActionState.Working
-                Text("Vote for \"${choice.title}\"?", fontSize = 14.sp, color = FrostColors.OnSurface, modifier = Modifier.testTag("poll_confirm_text"))
+                Text("Vote for \"${choice.title}\"?", style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag("poll_confirm_text"))
                 Result(action, "poll")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FrostButton(if (working) "Voting..." else "Vote", { act.vote(choice.id, false) }, Modifier.focusRequester(initial).focusProperties { left = Stop; up = Stop }.testTag("poll_vote"), enabled = !working)
@@ -497,7 +499,7 @@ internal fun PollSheet(
                     }
                     FrostSecondaryButton("Back", { c.pollChoice = null }, Modifier.focusProperties { right = Stop; up = Stop }.testTag("poll_confirm_back"), enabled = !working)
                 }
-                if (cost(p) != null && cost(p)!! > balance) Text("Not enough points for an extra vote.", fontSize = 11.sp, color = FrostColors.Muted)
+                if (cost(p) != null && cost(p)!! > balance) Text("Not enough points for an extra vote.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
             }
             else -> {
                 p.choices.forEachIndexed { i, ch ->
@@ -511,7 +513,7 @@ internal fun PollSheet(
                     }
                 }
                 if (p.open && p.pointsVoteCost != null) {
-                    Text("Extra votes cost ${EngagementMath.grouped(p.pointsVoteCost.toLong())} channel points each.", fontSize = 11.sp, color = FrostColors.Muted, modifier = Modifier.testTag("poll_extra_note"))
+                    Text("Extra votes cost ${EngagementMath.grouped(p.pointsVoteCost.toLong())} channel points each.", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted, modifier = Modifier.testTag("poll_extra_note"))
                 }
             }
         }

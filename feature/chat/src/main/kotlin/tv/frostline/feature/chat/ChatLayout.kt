@@ -76,8 +76,7 @@ fun ChatLayout(
             ChatMenu(
                 model.settings, controller, actions,
                 onJumpToLive = { scope.launch { controller.resumeLive() } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(end = panelWidth + 8.dp, bottom = anchorBottom).width(300.dp)
-                    .heightIn(max = (maxHeight - anchorBottom - 8.dp).coerceAtLeast(120.dp)),
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(if (panelWidth > 360.dp) panelWidth else 360.dp),
             )
         }
         if (chatVisible && controller.pickerOpen) {
@@ -92,13 +91,13 @@ fun ChatLayout(
             ) {
             EmotePicker(
                 model.picker, controller,
-                Modifier.align(Alignment.BottomEnd).padding(bottom = anchorBottom).fillMaxHeight().width(if (panelWidth > 380.dp) panelWidth else 380.dp),
+                Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(if (panelWidth > 400.dp) panelWidth else 400.dp),
             )
             }
         }
 
         val eng = model.engagement
-        val sheetModifier = Modifier.align(Alignment.BottomEnd).padding(bottom = anchorBottom).fillMaxHeight().width(if (panelWidth > 420.dp) panelWidth else 420.dp)
+        val sheetModifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().width(if (panelWidth > 420.dp) panelWidth else 420.dp)
         if (chatVisible && controller.rewardsOpen) RewardsSheet(eng, actions.engagement, controller, sheetModifier)
         if (chatVisible && controller.predictionOpen) PredictionSheet(eng, actions.engagement, controller, sheetModifier)
         if (chatVisible && controller.pollOpen) PollSheet(eng, actions.engagement, controller, sheetModifier)
