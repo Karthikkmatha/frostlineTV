@@ -18,6 +18,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import tv.frostline.core.data.ResumeDao
@@ -339,13 +340,23 @@ class VodPlayerViewModel(
         _ui.update { it.copy(positionMs = p.currentPosition.coerceAtLeast(0), durationMs = knownDuration()) }
     }
 
+    /** True while the seek bar (controls) or the debug overlay is on screen. */
+    private val positionObserved = MutableStateFlow(false)
+
+    /** The shown position refreshes at 1 Hz only while [on]; the resume save keeps its own slow poll either way. */
+    fun setPositionObserved(on: Boolean) {
+        positionObserved.value = on
+    }
+
     private fun startTicker() {
         tickJob?.cancel()
         tickJob = viewModelScope.launch {
-            while (true) {
-                refreshPosition()
-                maybeSaveResume()
-                delay(1_000)
+            positionObserved.collectLatest { on ->
+                while (true) {
+                    if (on) refreshPosition()
+                    maybeSaveResume()
+                    delay(if (on) 1_000 else 5_000)
+                }
             }
         }
     }

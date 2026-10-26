@@ -102,6 +102,8 @@ fun PlayerScreen(
 
     var controlsVisible by remember { mutableStateOf(false) }
     var qualityOpen by remember { mutableStateOf(false) }
+    // The live offset is only read by the controls' LIVE badge and the debug overlay: tick (1 Hz) only while one is shown.
+    LaunchedEffect(controlsVisible, debug) { viewModel.setOffsetObserved(controlsVisible || debug) }
 
     // ---- chat ----
     val chatSettings by chat.settings.collectAsStateWithLifecycle()

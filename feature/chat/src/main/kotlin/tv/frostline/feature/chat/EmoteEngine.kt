@@ -145,7 +145,6 @@ class EmoteEngine(
 
     init {
         ticker = scope.launch {
-            var n = 0
             while (isActive) {
                 val t = clockMs()
                 val prev = mode
@@ -153,14 +152,22 @@ class EmoteEngine(
                 // Fast chat shows stills only: nothing animated is held, and its memory is freed until the rate drops.
                 if (mode == EmoteMode.Fast && prev != EmoteMode.Fast) strips.clear()
                 ratePerSec = tracker.rate(t)
-                if (n++ % 5 == 0) diskBytes = dirBytes(dir)
-                delay(1_000)
+                // Hidden chat has no rate to follow: wake less often. (The cache directory is no longer walked here: the debug line reads it.)
+                delay(if (active) 1_000 else 5_000)
             }
         }
     }
 
     /** One line for the debug overlay: mode, rate, hot animations, memory and disk. */
-    fun debugLine(): String =
+    fun debugLine(): String {
+        val now = clockMs()
+        if (now - diskCheckedAt > 5_000) { diskBytes = dirBytes(dir); diskCheckedAt = now } // only while the overlay asks, at most every 5 s
+        return debugText()
+    }
+
+    @Volatile private var diskCheckedAt = -10_000L
+
+    private fun debugText(): String =
         "emotes   ${mode.label} ${"%.1f".format(ratePerSec)}/s, ${strips.size} animated, mem ${memoryBytes / 1_048_576} MB, disk ${diskBytes / 1_048_576} MB" + if (lastFailure.isNotEmpty()) ", last: $lastFailure" else ""
 
     /**

@@ -73,6 +73,8 @@ fun VodPlayerScreen(
     val channelId by viewModel.channelId.collectAsStateWithLifecycle()
 
     var controlsVisible by remember { mutableStateOf(false) }
+    // The shown position is only read by the seek bar (controls): refresh it at 1 Hz only while they or the debug overlay are shown.
+    LaunchedEffect(controlsVisible, debug) { viewModel.setPositionObserved(controlsVisible || debug) }
     var qualityOpen by remember { mutableStateOf(false) }
 
     // ---- chat replay ----

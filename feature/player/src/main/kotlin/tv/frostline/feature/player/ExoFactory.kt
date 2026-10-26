@@ -4,7 +4,12 @@ import android.content.Context
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
+import android.os.Looper
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.metadata.MetadataOutput
+import androidx.media3.exoplayer.text.TextOutput
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.AdaptiveTrackSelection
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
@@ -30,10 +35,13 @@ object PlayerProfile {
 private const val STABLE_BUFFER_BYTES = 24 * 1024 * 1024
 
 @OptIn(UnstableApi::class)
-internal fun buildLoadControl(lowLatency: Boolean): DefaultLoadControl =
+internal fun buildLoadControl(lowLatency: Boolean, live: Boolean = true): DefaultLoadControl =
     DefaultLoadControl.Builder().apply {
+        // Nothing seeks back into played media on a live stream, so keep none of it; a VOD keeps 10 s for the -10 s button.
+        setBackBuffer(if (live) 0 else 10_000, false)
         if (lowLatency) {
-            // Small buffer: stay close to the live edge, start quickly.
+            // Small buffer: stay close to the live edge (offset target 5 s, range 4-8 s), start quickly. 3 s is the floor the
+            // player tops up from, 9 s the ceiling; playback resumes after a stall at 2.5 s.
             setBufferDurationsMs(3_000, 9_000, 1_500, 2_500)
         } else {
             // Keep 8-15 s downloaded ahead; resume after a stall only once 4 s are back.
@@ -64,6 +72,30 @@ internal fun steadyAdaptation(context: Context): Pair<DefaultTrackSelector, Defa
     return DefaultTrackSelector(context, factory) to meter
 }
 
+/**
+ * Renderers for what Twitch streams carry: video and audio only. Text, metadata (ID3 timed metadata), camera-motion and image
+ * renderers are never built, so no thread-handler or renderer is created for tracks the app never shows.
+ * Speed changes (the live catch-up) are done by the platform AudioTrack, not by a Java Sonic processor on the playback
+ * thread, and a codec failure falls back to the next decoder.
+ */
+@OptIn(UnstableApi::class)
+private class LeanRenderersFactory(context: Context) : DefaultRenderersFactory(context) {
+    init {
+        setEnableDecoderFallback(true)
+        setEnableAudioTrackPlaybackParams(true)
+    }
+
+    override fun buildTextRenderers(
+        context: Context, output: TextOutput, outputLooper: Looper, extensionRendererMode: Int, out: ArrayList<Renderer>,
+    ) = Unit
+
+    override fun buildMetadataRenderers(
+        context: Context, output: MetadataOutput, outputLooper: Looper, extensionRendererMode: Int, out: ArrayList<Renderer>,
+    ) = Unit
+
+    override fun buildCameraMotionRenderers(context: Context, extensionRendererMode: Int, out: ArrayList<Renderer>) = Unit
+}
+
 /** The app-wide single-player slot. Shared by every [PlayerViewModel], so two players can never coexist. */
 @OptIn(UnstableApi::class)
 fun createPlayerSlot(context: Context): ExclusiveSlot<ExoPlayer> {
@@ -72,8 +104,8 @@ fun createPlayerSlot(context: Context): ExclusiveSlot<ExoPlayer> {
         create = {
             val lowLatency = PlayerProfile.forLive && PlayerProfile.liveMode == LiveMode.LowLatency
             val (selector, meter) = steadyAdaptation(app)
-            ExoPlayer.Builder(app)
-                .setLoadControl(buildLoadControl(lowLatency))
+            ExoPlayer.Builder(app, LeanRenderersFactory(app))
+                .setLoadControl(buildLoadControl(lowLatency, PlayerProfile.forLive))
                 .setTrackSelector(selector)
                 .setBandwidthMeter(meter)
                 .setAudioAttributes(

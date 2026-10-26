@@ -253,13 +253,24 @@ class PlayerViewModel(
         playback.resolve(login, null, lowLatency = modeAtStart == LiveMode.LowLatency)
     }
 
+    /** True while something on screen shows the live offset (the controls or the debug overlay). */
+    private val offsetObserved = MutableStateFlow(false)
+
+    /** The live-offset ticker runs at 1 Hz only while [on]; otherwise nothing polls the player and nothing recomposes. */
+    fun setOffsetObserved(on: Boolean) {
+        offsetObserved.value = on
+    }
+
     private fun startTicker() {
         tickJob?.cancel()
         tickJob = viewModelScope.launch {
-            while (true) {
-                val off = player.value?.currentLiveOffset
-                _ui.update { it.copy(liveOffsetMs = off?.takeIf { v -> v != C.TIME_UNSET }) }
-                delay(1_000)
+            offsetObserved.collectLatest { on ->
+                if (!on) return@collectLatest
+                while (true) {
+                    val off = player.value?.currentLiveOffset
+                    _ui.update { it.copy(liveOffsetMs = off?.takeIf { v -> v != C.TIME_UNSET }) }
+                    delay(1_000)
+                }
             }
         }
     }
