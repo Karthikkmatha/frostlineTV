@@ -99,6 +99,21 @@ class ChannelUiTest {
         assertEquals(listOf("v2"), vods)
     }
 
+    @Test fun theInProgressBroadcastCardIsMarkedLiveAndTriesTheLivePreview() {
+        val onAir = live.copy(thumbnailUrl = "https://static-cdn.jtvnw.net/previews-ttv/live_user_chan-{width}x{height}.jpg", startedAt = "2026-10-26T10:00:00Z")
+        val inProgress = video(9, thumb = "").copy(streamId = onAir.id, createdAt = onAir.startedAt)
+        show(base(listOf(inProgress, video(1)), live = onAir).let { it.copy(user = it.user!!.copy(offlineImageUrl = "")) })
+        rule.onNodeWithTag("live_badge_v9", useUnmergedTree = true).assertExists()
+        rule.onNodeWithTag("live_badge_v1", useUnmergedTree = true).assertDoesNotExist()
+    }
+
+    @Test fun anInProgressBroadcastWithNoPreviewAndNoBannerFallsBackToThePlaceholder() {
+        val onAir = live.copy(thumbnailUrl = "", startedAt = "2026-10-26T10:00:00Z")
+        val inProgress = video(9, thumb = "").copy(streamId = onAir.id)
+        show(base(listOf(inProgress), live = onAir).let { it.copy(user = it.user!!.copy(offlineImageUrl = "")) })
+        rule.onNodeWithTag(ChannelTags.Placeholder + "v9", useUnmergedTree = true).assertExists()
+    }
+
     @Test fun missingThumbnailsGetAPlaceholderAndGoodOnesDoNot() {
         show(
             base(

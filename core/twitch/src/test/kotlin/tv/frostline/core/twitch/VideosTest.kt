@@ -8,6 +8,8 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import tv.frostline.core.data.TokenSet
@@ -46,6 +48,42 @@ class VideosTest {
         assertEquals("https://off/o.png", Thumbnails.videoOrOffline("", "https://off/o.png", 320, 180))
         assertNull(Thumbnails.videoOrOffline("https://x/_404/a.jpg", "", 320, 180))
         assertNull(Thumbnails.videoOrOffline("https://x/404_processing.jpg", "https://x/_404/o.png", 320, 180))
+    }
+
+    private val previewUrl = "https://static-cdn.jtvnw.net/previews-ttv/live_user_caedrel-{width}x{height}.jpg"
+
+    @Test fun livePreviewIsSizedAndCarriesTheFiveMinuteKey() {
+        assertEquals(
+            "https://static-cdn.jtvnw.net/previews-ttv/live_user_caedrel-440x248.jpg?t=5917234",
+            Thumbnails.livePreview(previewUrl, 440, 248, 5917234),
+        )
+        // A new bucket is a new URL (so the image is fetched again); the same bucket is the same URL (cached).
+        assertNotEquals(Thumbnails.livePreview(previewUrl, 440, 248, 1), Thumbnails.livePreview(previewUrl, 440, 248, 2))
+        assertEquals(Thumbnails.livePreview(previewUrl, 440, 248, 7), Thumbnails.livePreview(previewUrl, 440, 248, 7))
+        assertTrue(Thumbnails.livePreview("https://x/p.jpg?a=1", 1, 1, 3)!!.endsWith("?a=1&t=3"))
+        assertNull(Thumbnails.livePreview("", 440, 248, 1))
+        assertNull(Thumbnails.livePreview(null, 440, 248, 1))
+    }
+
+    @Test fun liveBroadcastFallsBackFromPreviewToOfflineBannerToPlaceholder() {
+        assertEquals(
+            listOf("https://static-cdn.jtvnw.net/previews-ttv/live_user_caedrel-440x248.jpg?t=9", "https://off/o-440x248.png"),
+            Thumbnails.liveOrOffline(previewUrl, "https://off/o-{width}x{height}.png", 440, 248, 9),
+        )
+        assertEquals(listOf("https://off/o.png"), Thumbnails.liveOrOffline("", "https://off/o.png", 440, 248, 9))
+        assertEquals(emptyList<String>(), Thumbnails.liveOrOffline(null, "", 440, 248, 9)) // the UI draws the placeholder
+    }
+
+    @Test fun theInProgressArchiveIsTheOneWhoseStreamIdMatchesTheLiveStream() {
+        val live = HelixStream("S1", "1", "caedrel", "Caedrel", startedAt = "2026-10-26T10:00:00Z")
+        val now = HelixVideo("v1", streamId = "S1", type = "archive", createdAt = "2026-10-26T10:00:05Z")
+        val old = HelixVideo("v0", streamId = "S0", type = "archive", createdAt = "2026-10-25T10:00:00Z")
+        assertTrue(Thumbnails.isInProgress(now, live))
+        assertFalse(Thumbnails.isInProgress(old, live))
+        assertFalse(Thumbnails.isInProgress(now, null))
+        assertFalse(Thumbnails.isInProgress(HelixVideo("h1", streamId = "S1", type = "highlight"), live))
+        // No stream id on the video: matched by the start time.
+        assertTrue(Thumbnails.isInProgress(HelixVideo("v2", type = "archive", createdAt = "2026-10-26T10:00:00Z"), live))
     }
 
     @Test fun parsesHelixDurations() {

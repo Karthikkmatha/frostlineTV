@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -27,9 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
-import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import tv.frostline.core.data.ResumeEntity
@@ -40,33 +38,20 @@ import tv.frostline.core.twitch.SearchChannel
 import tv.frostline.core.twitch.sized
 import tv.frostline.core.ui.FrostColors
 import tv.frostline.core.ui.SizedImage
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostCard
+import tv.frostline.core.ui.FrostTokens
+import tv.frostline.core.ui.rememberPreviewBucket
+import tv.frostline.core.twitch.Thumbnails
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun CardSurface(
     onClick: () -> Unit,
     modifier: Modifier,
-    focusedScale: Float = 1.04f,
+    focusedScale: Float = FrostTokens.CardFocusScale,
     onLongClick: (() -> Unit)? = null,
-    content: @Composable () -> Unit,
+    content: @Composable ColumnScope.() -> Unit,
 ) {
-    Surface(
-        onClick = onClick,
-        onLongClick = onLongClick,
-        modifier = modifier,
-        shape = cardShape(),
-        border = focusRingBorder(),
-        scale = cardScale(focusedScale),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) { content() }
+    FrostCard(onClick, modifier, onLongClick = onLongClick, focusedScale = focusedScale, content = content)
 }
 
 @Composable
@@ -104,11 +89,12 @@ private fun LockBadge(login: String, modifier: Modifier) {
 
 @Composable
 fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val bucket by rememberPreviewBucket()
     CardSurface(onClick, modifier.testTag("stream_card"), onLongClick = onLongClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 AsyncImage(
-                    model = stream.thumbnailUrl.sized(440, 248),
+                    model = Thumbnails.livePreview(stream.thumbnailUrl, 440, 248, bucket) ?: stream.thumbnailUrl.sized(440, 248),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
@@ -205,10 +191,11 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
 /** Following page card: 16:9 thumbnail (~340 dp) on the left, channel details on the right. */
 @Composable
 fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val bucket by rememberPreviewBucket()
     CardSurface(onClick, modifier.fillMaxWidth().testTag("stream_card"), focusedScale = 1f, onLongClick = onLongClick) {
         Row(Modifier.fillMaxWidth()) {
             Box(Modifier.width(340.dp).aspectRatio(16f / 9f)) {
-                SizedImage(stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.fillMaxSize())
+                SizedImage(Thumbnails.livePreview(stream.thumbnailUrl, 680, 383, bucket) ?: stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.fillMaxSize())
                 LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd).padding(8.dp))
             }
             Column(

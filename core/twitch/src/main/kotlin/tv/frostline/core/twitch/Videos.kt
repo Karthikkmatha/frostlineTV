@@ -100,6 +100,29 @@ object Thumbnails {
     fun videoOrOffline(url: String?, offlineImage: String?, width: Int, height: Int): String? =
         video(url, width, height) ?: offlineImage?.takeIf { !isMissing(it) }?.sized(width, height)
 
+    /**
+     * The live preview of a stream (Helix `streams.thumbnail_url`, `{width}x{height}`), sized, with a cache-busting
+     * query parameter that changes with [bucket] (five-minute buckets, see PreviewClock). Null when there is no URL.
+     */
+    fun livePreview(url: String?, width: Int, height: Int, bucket: Long): String? {
+        if (url.isNullOrBlank() || isMissing(url)) return null
+        val sized = url.sized(width, height)
+        return sized + (if ('?' in sized) "&" else "?") + "t=" + bucket
+    }
+
+    /** Fallback order for an in-progress broadcast: stream preview, then the channel's offline banner, then null (placeholder). */
+    fun liveOrOffline(previewUrl: String?, offlineImage: String?, width: Int, height: Int, bucket: Long): List<String> =
+        listOfNotNull(
+            livePreview(previewUrl, width, height, bucket),
+            offlineImage?.takeIf { !isMissing(it) }?.sized(width, height),
+        )
+
+    /** True when [video] is the archive of the broadcast that is live right now (Helix gives it the stream's id). */
+    fun isInProgress(video: HelixVideo, live: HelixStream?): Boolean =
+        live != null && video.type.let { it == "archive" || it.isEmpty() } &&
+            ((video.streamId.isNotEmpty() && video.streamId == live.id) ||
+                (video.createdAt.isNotEmpty() && video.createdAt == live.startedAt))
+
     /** Clip thumbnails are fixed-size URLs; same missing rule. */
     fun clip(url: String?): String? = if (isMissing(url)) null else url
 }

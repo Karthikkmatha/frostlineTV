@@ -5,6 +5,7 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -23,6 +24,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.withFrameNanos
@@ -40,24 +43,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
-import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import tv.frostline.core.twitch.ClipPeriod
 import tv.frostline.core.twitch.Counts
 import tv.frostline.core.twitch.Durations
 import tv.frostline.core.twitch.HelixClip
+import tv.frostline.core.twitch.HelixStream
 import tv.frostline.core.twitch.HelixVideo
 import tv.frostline.core.twitch.Thumbnails
 import tv.frostline.core.twitch.VideoKind
 import tv.frostline.core.ui.FocusMemory
 import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.TvButton
-import tv.frostline.core.ui.cardScale
-import tv.frostline.core.ui.cardShape
-import tv.frostline.core.ui.focusRingBorder
+import tv.frostline.core.ui.FrostButton
+import tv.frostline.core.ui.FrostCard
+import tv.frostline.core.ui.FrostChip
+import tv.frostline.core.ui.rememberPreviewBucket
 import tv.frostline.core.ui.rememberFocusIn
 import tv.frostline.core.ui.tryFocus
 
@@ -173,7 +175,7 @@ fun ChannelContent(state: ChannelState, actions: ChannelActions, memory: FocusMe
             item(key = "error", span = { GridItemSpan(maxLineSpan) }) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(state.error, fontSize = 16.sp, color = FrostColors.OnSurface)
-                    TvButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry).focusRequester(if (state.live == null) firstFocus else FocusRequester()))
+                    FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry).focusRequester(if (state.live == null) firstFocus else FocusRequester()))
                 }
             }
             return@LazyVerticalGrid
@@ -244,7 +246,7 @@ private fun Header(state: ChannelState, actions: ChannelActions, watchLiveFocus:
             }
         }
         if (state.live != null) {
-            TvButton("Watch live", actions.onWatchLive, Modifier.testTag(ChannelTags.WatchLive).then(if (watchLiveFocus != null) Modifier.focusRequester(watchLiveFocus) else Modifier))
+            FrostButton("Watch live", actions.onWatchLive, Modifier.testTag(ChannelTags.WatchLive).then(if (watchLiveFocus != null) Modifier.focusRequester(watchLiveFocus) else Modifier))
         }
     }
 }
@@ -259,6 +261,7 @@ private fun LazyGridScope.videoItems(state: ChannelState, actions: ChannelAction
         VideoCard(
             v, state.user?.offlineImageUrl, state.user?.displayName.orEmpty(),
             Modifier.rememberFocusIn(key, memory).then(if (memory.key == key) Modifier.focusRequester(restore) else Modifier),
+            live = state.live,
         ) { actions.onOpenVod(v.id) }
     }
     footer(list.loading, list.error, list.loaded && list.items.isEmpty(), "Nothing here yet.", actions)
@@ -283,7 +286,7 @@ private fun LazyGridScope.footer(loading: Boolean, error: String?, empty: Boolea
         error != null -> item(key = "footer-error", span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(error, fontSize = 14.sp, color = FrostColors.Muted)
-                TvButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry))
+                FrostButton("Retry", actions.onRetry, Modifier.testTag(ChannelTags.Retry))
             }
         }
         loading -> item(key = "footer-loading", span = { GridItemSpan(maxLineSpan) }) { Text("Loading...", fontSize = 14.sp, color = FrostColors.Muted) }
@@ -316,55 +319,35 @@ private fun About(state: ChannelState) {
     }
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun Chip(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = cardShape(RoundedCornerShape(20.dp)),
-        border = focusRingBorder(RoundedCornerShape(20.dp)),
-        scale = cardScale(1f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = if (selected) FrostColors.Primary else FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = if (selected) FrostColors.Primary else FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) {
-        Text(label, fontSize = 14.sp, modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp))
-    }
+    FrostChip(label, selected, onClick, modifier)
 }
 
-@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
-private fun CardSurface(modifier: Modifier, onClick: () -> Unit, content: @Composable () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier,
-        shape = cardShape(),
-        border = focusRingBorder(),
-        scale = cardScale(1.04f),
-        colors = ClickableSurfaceDefaults.colors(
-            containerColor = FrostColors.Surface,
-            contentColor = FrostColors.OnSurface,
-            focusedContainerColor = FrostColors.SurfaceFocused,
-            focusedContentColor = FrostColors.OnSurface,
-        ),
-    ) { content() }
+private fun CardSurface(modifier: Modifier, onClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    FrostCard(onClick, modifier, content = content)
 }
 
-/** A thumbnail, or a placeholder when the URL is missing or one of Twitch's 404/processing images. */
+/**
+ * A thumbnail, or a placeholder when no URL is usable or Twitch's 404/processing image came back. [urls] is a
+ * fallback chain: if the first image fails to load, the next one is tried, and the placeholder is the last resort.
+ */
 @Composable
-private fun Thumb(url: String?, id: String, modifier: Modifier = Modifier, label: String = "") {
+private fun Thumb(urls: List<String>, id: String, modifier: Modifier = Modifier, label: String = "") {
+    var failed by remember(urls) { mutableIntStateOf(0) }
+    val url = urls.getOrNull(failed)
     if (url == null) {
         Box(modifier.background(FrostColors.SurfaceAlt).testTag(ChannelTags.Placeholder + id), contentAlignment = Alignment.Center) {
             Text(label.ifBlank { "No preview" }, fontSize = 12.sp, color = FrostColors.Muted, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(8.dp))
         }
     } else {
-        AsyncImage(url, null, contentScale = ContentScale.Crop, modifier = modifier)
+        // A chain (live preview, then offline banner) moves on when an image fails to load; a single image stays as it is.
+        AsyncImage(url, null, contentScale = ContentScale.Crop, modifier = modifier, onError = { if (urls.size > 1) failed++ })
     }
 }
+
+private fun one(url: String?) = listOfNotNull(url)
 
 @Composable
 private fun Badge(text: String, modifier: Modifier) {
@@ -400,12 +383,26 @@ private fun CardText(title: String, sub: String) {
 }
 
 @Composable
-fun VideoCard(video: HelixVideo, offlineImage: String?, channelName: String, modifier: Modifier, onClick: () -> Unit) {
+fun VideoCard(
+    video: HelixVideo,
+    offlineImage: String?,
+    channelName: String,
+    modifier: Modifier,
+    /** The channel's live stream, when it is on air: its archive card shows the live preview instead of a blank thumbnail. */
+    live: HelixStream? = null,
+    onClick: () -> Unit,
+) {
+    val bucket by rememberPreviewBucket()
+    val inProgress = Thumbnails.isInProgress(video, live)
     CardSurface(modifier.testTag(ChannelTags.VideoPrefix + video.id), onClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 // A live archive has a blank thumbnail: the channel's offline image stands in, else a placeholder.
-                Thumb(Thumbnails.videoOrOffline(video.thumbnailUrl, offlineImage, 440, 248), video.id, Modifier.fillMaxSize(), channelName)
+                // The live broadcast: stream preview, then the offline banner, then the placeholder. Past videos: their thumbnail.
+                val urls = if (inProgress) Thumbnails.liveOrOffline(live?.thumbnailUrl, offlineImage, 440, 248, bucket)
+                else one(Thumbnails.videoOrOffline(video.thumbnailUrl, offlineImage, 440, 248))
+                Thumb(urls, video.id, Modifier.fillMaxSize(), channelName)
+                if (inProgress) Badge("LIVE", Modifier.align(Alignment.TopEnd).testTag("live_badge_${video.id}"))
                 if (video.durationMs > 0) Badge(Durations.clock(video.durationMs), Modifier.align(Alignment.BottomEnd))
                 if (video.restricted) LockBadge(Modifier.align(Alignment.TopStart).testTag("lock_${video.id}"))
             }
@@ -419,7 +416,7 @@ fun ClipCard(clip: HelixClip, modifier: Modifier, onClick: () -> Unit) {
     CardSurface(modifier.testTag(ChannelTags.ClipPrefix + clip.id), onClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                Thumb(Thumbnails.clip(clip.thumbnailUrl), clip.id, Modifier.fillMaxSize())
+                Thumb(one(Thumbnails.clip(clip.thumbnailUrl)), clip.id, Modifier.fillMaxSize())
                 if (clip.duration > 0) Badge(Durations.clock((clip.duration * 1000).toLong()), Modifier.align(Alignment.BottomEnd))
             }
             CardText(clip.title, listOf("${Counts.compact(clip.viewCount)} views", Counts.date(clip.createdAt)).joinToString("  ·  "))
