@@ -88,6 +88,7 @@ class ChatViewModel(
     private var wanted = false
     private var eventsJob: Job? = null
     private var settingsJob: Job? = null
+    private var wakeJob: Job? = null
     private var channelJob: Job? = null
     private var pickerJob: Job? = null
     private val flushScheduled = AtomicBoolean(false)
@@ -97,6 +98,7 @@ class ChatViewModel(
     fun start() {
         if (started) return
         started = true
+        wakeJob = viewModelScope.launch { tv.frostline.core.ui.WakeSignal.events.collect { session.checkNow() } }
         tv.frostline.core.ui.DebugHooks.register("reconnect-irc") { session.stop(); connect() }
         tv.frostline.core.ui.DebugHooks.register("chat-toggle") { setEnabled(!settings.value.enabled) }
         settingsJob = viewModelScope.launch(worker) {
@@ -126,6 +128,7 @@ class ChatViewModel(
         tv.frostline.core.ui.DebugHooks.unregister("reconnect-irc")
         tv.frostline.core.ui.DebugHooks.unregister("chat-toggle")
         settingsJob?.cancel()
+        wakeJob?.cancel()
         EmoteEngine.current?.trimMemory()
         eventsJob?.cancel()
         channelJob?.cancel()

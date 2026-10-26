@@ -23,6 +23,8 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
         container = AppContainer(this)
         tv.frostline.core.twitch.NetworkRetry.start(this)
         container.twitch.tokenManager.startBackgroundRefresh(appScope)
+        // After the TV wakes (or the app comes back) a long sleep may have let the token run out: look at once.
+        appScope.launch { tv.frostline.core.ui.WakeSignal.events.collect { runCatching { container.twitch.tokenManager.checkNow() } } }
         appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
         // Baseline profile state for the debug overlay (after the first frame plus 2 s).
         appScope.launch {

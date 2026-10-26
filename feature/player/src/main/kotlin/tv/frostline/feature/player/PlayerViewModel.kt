@@ -86,13 +86,26 @@ class PlayerViewModel(
     private var currentVariants: List<StreamVariant> = emptyList()
     private var currentUrl: String? = null
     private var modeAtStart: LiveMode = LiveMode.Stable
+    private val recovery = PlaybackRecovery()
+    private var recoverJob: Job? = null
+    private var watchJob: Job? = null
+    private var bufferingSinceMs = 0L
+    private var playingSinceMs = 0L
 
     val raid = RaidCountdown(viewModelScope) { target -> switchChannel(target) }
+
+    private var lastErrorName = ""
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             if (isPlaying) tv.frostline.core.twitchinternal.IntegrityGate.streamStarted()
-            _ui.update { it.copy(playing = isPlaying) }
+            playingSinceMs = if (isPlaying) System.currentTimeMillis() else 0L
+            _ui.update { it.copy(playing = isPlaying, notice = if (isPlaying && it.notice == RECONNECTING) null else it.notice) }
+        }
+        override fun onPlaybackStateChanged(state: Int) {
+            bufferingSinceMs = if (state == Player.STATE_BUFFERING) System.currentTimeMillis() else 0L
+            // A live stream that ends (the streamer restarted, or it really ended): look for it again.
+            if (state == Player.STATE_ENDED) recoverFrom(PlaybackRecovery.Action.Reload)
         }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width > 0 && videoSize.height > 0) {
@@ -103,7 +116,8 @@ class PlayerViewModel(
             pendingQuality?.let { id -> applyQuality(id) }
         }
         override fun onPlayerError(error: PlaybackException) {
-            _ui.update { it.copy(loading = false, error = "Playback error (${error.errorCodeName})") }
+            lastErrorName = error.errorCodeName
+            recoverFrom(recovery.classify(error.errorCode))
         }
     }
 
@@ -130,6 +144,7 @@ class PlayerViewModel(
     }
 
     init {
+        viewModelScope.launch { tv.frostline.core.ui.WakeSignal.events.collect { onWake() } }
         // Playback failed (or never started) and the network is back: rebuild the source.
         viewModelScope.launch {
             tv.frostline.core.twitch.NetworkRetry.available.collect {
@@ -159,6 +174,8 @@ class PlayerViewModel(
         _ui.update { it.copy(liveMode = modeAtStart) }
         lifecycle.start()
         startTicker()
+        startWatchdog()
+        recovery.reset()
         load(_ui.value.login)
     }
 
@@ -166,13 +183,17 @@ class PlayerViewModel(
     fun stop() {
         loadJob?.cancel()
         tickJob?.cancel()
+        watchJob?.cancel()
+        recoverJob?.cancel()
         lifecycle.stop()
     }
 
-    fun refresh() = load(_ui.value.login)
+    fun refresh() { recovery.reset(); load(_ui.value.login) }
 
     fun switchChannel(login: String) {
         raid.reset()
+        recovery.reset()
+        recoverJob?.cancel()
         channelId.value = null
         _ui.update { PlayerUi(login = login, displayName = login, quality = it.quality, liveMode = modeAtStart) }
         pendingQuality = _ui.value.quality
@@ -193,6 +214,68 @@ class PlayerViewModel(
         viewModelScope.launch {
             delay(2_500)
             _ui.update { if (it.notice == text) it.copy(notice = null) else it }
+        }
+    }
+
+    // ---- auto-recovery ----
+
+    /** Plays again after a failure or stall: instant seek, a fresh playlist (new token), or a new player, with backoff. */
+    private fun recoverFrom(first: PlaybackRecovery.Action) {
+        if (!lifecycle.isActive) return
+        val action = recovery.onFailure(first)
+        if (action == PlaybackRecovery.Action.GiveUp) {
+            recovery.reset()
+            _ui.update { it.copy(loading = false, notice = null, error = "Playback error (${lastErrorName.ifEmpty { "stream ended" }})") }
+            return
+        }
+        scheduleRecovery(action)
+    }
+
+    private fun scheduleRecovery(action: PlaybackRecovery.Action) {
+        val wait = recovery.delayMs(action)
+        _ui.update { it.copy(loading = false, error = null, offline = false, notice = RECONNECTING) }
+        recoverJob?.cancel()
+        recoverJob = viewModelScope.launch {
+            delay(wait)
+            when (action) {
+                PlaybackRecovery.Action.SeekToLive -> player.value?.let { it.seekToDefaultPosition(); it.prepare() }
+                PlaybackRecovery.Action.RebuildPlayer -> {
+                    lifecycle.stop()
+                    lifecycle.start()
+                    load(_ui.value.login)
+                }
+                else -> load(_ui.value.login)
+            }
+        }
+    }
+
+    /** Checks, while the screen is up, that playback has not silently stalled (a stuck buffer, a stale playlist). */
+    private fun startWatchdog() {
+        watchJob?.cancel()
+        watchJob = viewModelScope.launch {
+            while (true) {
+                delay(5_000)
+                val now = System.currentTimeMillis()
+                val p = player.value ?: continue
+                if (bufferingSinceMs != 0L && now - bufferingSinceMs > PlaybackRecovery.STALL_MS && p.playWhenReady) {
+                    bufferingSinceMs = now
+                    lastErrorName = "stalled"
+                    recoverFrom(PlaybackRecovery.Action.Reload)
+                }
+                if (playingSinceMs != 0L && now - playingSinceMs > PlaybackRecovery.STEADY_MS && recovery.recovering) recovery.onSteady()
+            }
+        }
+    }
+
+    /** The TV woke up (screen on / user present): playback that died or fell far behind while it slept is brought back. */
+    fun onWake() {
+        val p = player.value ?: return
+        if (!lifecycle.isActive || _ui.value.loading) return
+        val u = _ui.value
+        when {
+            u.error != null && !u.offline -> refresh()
+            p.playbackState == Player.STATE_ENDED || p.playerError != null -> { lastErrorName = "woke"; recoverFrom(PlaybackRecovery.Action.Reload) }
+            p.playWhenReady && p.currentLiveOffset.let { it != C.TIME_UNSET && it > WAKE_MAX_BEHIND_MS } -> p.seekToDefaultPosition()
         }
     }
 
@@ -246,12 +329,16 @@ class PlayerViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: ChannelOfflineException) {
-                _ui.update { it.copy(loading = false, offline = true, error = "${it.displayName} is offline") }
+                // Mid-recovery an offline answer is often a streamer restart: keep looking for a while before saying so.
+                if (recovery.recovering && recovery.onFailure(PlaybackRecovery.Action.Reload) != PlaybackRecovery.Action.GiveUp) scheduleRecovery(PlaybackRecovery.Action.Reload)
+                else { recovery.reset(); _ui.update { it.copy(loading = false, notice = null, offline = true, error = "${it.displayName} is offline") } }
             } catch (e: tv.frostline.core.twitchinternal.StreamRestrictedException) {
                 tv.frostline.core.ui.RestrictedStreams.mark(login)
                 _ui.update { it.copy(loading = false, error = e.message, errorDetail = e.detail) }
             } catch (e: Exception) {
-                _ui.update { it.copy(loading = false, error = tv.frostline.core.twitch.NetworkRetry.userMessage(e, "Could not start playback"), errorDetail = if (tv.frostline.core.twitch.NetworkRetry.isNetworkError(e)) e.javaClass.simpleName else null) }
+                if (recovery.recovering && recovery.onFailure(PlaybackRecovery.Action.Reload) != PlaybackRecovery.Action.GiveUp) { scheduleRecovery(PlaybackRecovery.Action.Reload); return@launch }
+                recovery.reset()
+                _ui.update { it.copy(loading = false, notice = null, error = tv.frostline.core.twitch.NetworkRetry.userMessage(e, "Could not start playback"), errorDetail = if (tv.frostline.core.twitch.NetworkRetry.isNetworkError(e)) e.javaClass.simpleName else null) }
             }
         }
     }
@@ -292,6 +379,8 @@ class PlayerViewModel(
 
     private companion object {
         const val AUTO = "\u0000auto"
+        const val RECONNECTING = "Reconnecting..."
+        const val WAKE_MAX_BEHIND_MS = 40_000L
     }
 }
 

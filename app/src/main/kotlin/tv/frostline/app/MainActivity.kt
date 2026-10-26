@@ -15,6 +15,35 @@ import kotlinx.coroutines.flow.first
 import tv.frostline.core.ui.FrostlineTheme
 
 class MainActivity : ComponentActivity() {
+    // Screen on / user present after the screensaver or sleep: sockets and timers may have gone stale meanwhile.
+    private val wakeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            tv.frostline.core.ui.WakeSignal.fire(intent?.action.orEmpty())
+        }
+    }
+    private var wakeRegistered = false
+
+    override fun onStart() {
+        super.onStart()
+        if (!wakeRegistered) {
+            val f = android.content.IntentFilter().apply {
+                addAction(android.content.Intent.ACTION_SCREEN_ON)
+                addAction(android.content.Intent.ACTION_USER_PRESENT)
+            }
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= 33) registerReceiver(wakeReceiver, f, android.content.Context.RECEIVER_NOT_EXPORTED)
+                else registerReceiver(wakeReceiver, f)
+                wakeRegistered = true
+            }
+        }
+        tv.frostline.core.ui.WakeSignal.fire("start")
+    }
+
+    override fun onStop() {
+        if (wakeRegistered) { runCatching { unregisterReceiver(wakeReceiver) }; wakeRegistered = false }
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         DeepLinks.handle(intent, lifecycleScope) { (application as FrostlineApp).container.settings.debugOverlay.first() }

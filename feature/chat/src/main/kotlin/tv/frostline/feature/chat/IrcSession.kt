@@ -187,6 +187,21 @@ class IrcSession(
         _state.value = ConnState.Idle
     }
 
+    /**
+     * The TV just woke up: whatever socket was open may be dead. A connected session pings on the next watchdog tick
+     * (and reconnects if nothing answers); one that is waiting to reconnect stops waiting and connects now.
+     */
+    fun checkNow() {
+        if (!running) return
+        val st = _state.value
+        if (st is ConnState.Reconnecting) {
+            retry?.cancel()
+            connect()
+        } else {
+            lastRx = clock() - pingAfterMs - 1
+        }
+    }
+
     /** Sends a chat line to the current channel. False if not connected with a user token. */
     fun send(text: String): Boolean {
         val t: IrcTransport
