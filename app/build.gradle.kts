@@ -3,6 +3,7 @@ import java.io.File
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.baselineprofile)
 }
 
 // ---- Secrets: read from a KEY=VALUE file, never printed. Only key NAMES appear in errors. ----
@@ -84,7 +85,16 @@ android {
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
 }
 
+// Baseline profile: generated on a device by :baselineprofile and stored in app/src/release/generated/baselineProfiles/,
+// so assembleRelease packs it (assets/dexopt/baseline.prof) next to the broad fallback rules in src/main/baseline-prof.txt.
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
+    dexLayoutOptimization = true
+}
+
 dependencies {
+    baselineProfile(project(":baselineprofile"))
     // Installs the baseline profile (assets/dexopt/baseline.prof) on first launch so the app starts AOT-compiled, not interpreted.
     implementation(libs.androidx.profileinstaller)
     implementation(project(":core:ui"))

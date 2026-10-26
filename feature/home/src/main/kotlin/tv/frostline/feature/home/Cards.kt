@@ -19,6 +19,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -86,7 +87,7 @@ fun formatViewers(n: Int): String = when {
 
 @Composable
 fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    CardSurface(onClick, modifier, onLongClick = onLongClick) {
+    CardSurface(onClick, modifier.testTag("stream_card"), onLongClick = onLongClick) {
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
                 AsyncImage(
@@ -191,7 +192,7 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
 /** Following page card: 16:9 thumbnail (~340 dp) on the left, channel details on the right. */
 @Composable
 fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    CardSurface(onClick, modifier.fillMaxWidth(), focusedScale = 1f, onLongClick = onLongClick) {
+    CardSurface(onClick, modifier.fillMaxWidth().testTag("stream_card"), focusedScale = 1f, onLongClick = onLongClick) {
         Row(Modifier.fillMaxWidth()) {
             AsyncImage(
                 model = stream.thumbnailUrl.sized(680, 383),

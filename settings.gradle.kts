@@ -24,4 +24,5 @@ include(
     ":feature:player",
     ":feature:chat",
     ":feature:channel",
+    ":baselineprofile",
 )
