@@ -97,6 +97,8 @@ class ChatViewModel(
     fun start() {
         if (started) return
         started = true
+        tv.frostline.core.ui.DebugHooks.register("reconnect-irc") { session.stop(); connect() }
+        tv.frostline.core.ui.DebugHooks.register("chat-toggle") { setEnabled(!settings.value.enabled) }
         settingsJob = viewModelScope.launch(worker) {
             settingsStore.chat.collect {
                 rebuildContext(it)
@@ -121,6 +123,8 @@ class ChatViewModel(
     fun stop() {
         if (!started) return
         started = false
+        tv.frostline.core.ui.DebugHooks.unregister("reconnect-irc")
+        tv.frostline.core.ui.DebugHooks.unregister("chat-toggle")
         settingsJob?.cancel()
         EmoteEngine.current?.trimMemory()
         eventsJob?.cancel()

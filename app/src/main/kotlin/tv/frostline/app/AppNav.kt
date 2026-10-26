@@ -104,6 +104,39 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
         nav.navigate("player/$login") { popUpTo(HOME) }
     }
 
+    // Debug links (only reach here with Settings > Debug overlay on). Logged as: action, ok or err.
+    LaunchedEffect(Unit) {
+        DeepLinks.debugActions.collect { action ->
+            val ok = try {
+                when (action) {
+                    "gc" -> { Runtime.getRuntime().gc(); System.runFinalization(); Runtime.getRuntime().gc(); true }
+                    "reconnect" -> { val a = tv.frostline.core.ui.DebugHooks.run("reconnect-irc"); val b = tv.frostline.core.ui.DebugHooks.run("reconnect-hermes"); a || b }
+                    "chat-toggle" -> tv.frostline.core.ui.DebugHooks.run("chat-toggle")
+                    "refresh-token" -> {
+                        val t = container.vault.currentTokens()
+                        if (t != null) container.twitch.tokenManager.refreshAfter401(t.accessToken)
+                        container.vault.currentWebSession()?.let { container.webSessionValidator.validate(it) }
+                        true
+                    }
+                    "refresh-integrity" -> container.integrity.current(forceRefresh = true) != null
+                    "open-vod" -> {
+                        val login = nav.currentBackStackEntry?.arguments?.getString("login")
+                        val id = login?.let { container.twitch.helix.userByLogin(it)?.id }
+                        val vod = id?.let { container.twitch.helix.videos(it, tv.frostline.core.twitch.VideoKind.Broadcasts).items.firstOrNull() }
+                        if (vod != null) { nav.navigate("vod/${vod.id}"); true } else false
+                    }
+                    "back" -> if (nav.currentDestination?.route == VOD) nav.popBackStack() else false
+                    else -> false
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                false
+            }
+            android.util.Log.i("FrostlineDebug", "$action ${if (ok) "ok" else "err"}")
+        }
+    }
+
     NavHost(
         navController = nav,
         startDestination = startRoute,

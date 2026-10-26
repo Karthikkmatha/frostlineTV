@@ -1,0 +1,129 @@
+<#
+.SYNOPSIS
+  About 25 minute fast stability test for tv.frostline.app. After every action it forces a GC (frostline://debug/gc), waits
+  5 s and records post-GC PSS (total/java/native/graphics), threads, fds, CPU and whether the process is alive, to stress.csv.
+  Only the final summary (about 25 lines) goes to the console; it is also written to summary.txt.
+
+.DESCRIPTION
+  Needs Settings > Debug overlay ON in the app (debug deep links are ignored otherwise) and a live stream open.
+  Phases: 1 baseline (2 min), 2 ten channel switches 90 s apart, 3 six chat-toggle cycles 15 s apart, 4 four open-vod and back
+  round trips of 30 s, 5 three reconnects (IRC + Hermes), 6 three refresh-token + refresh-integrity 60 s apart.
+  PASS when each phase ends within +-10 MB post-GC PSS of the baseline and within +-5 threads and fds.
+  An offline channel is not detected: pick -Channels that are live.
+  Reads from the TV, plus `am start` deep links. Does not install anything.
+#>
+param(
+    [string]$TvHost = '192.168.68.54',
+    [int]$Port = 5555,
+    [string]$Package = 'tv.frostline.app',
+    [string[]]$Channels = @('xqc', 'shroud', 'summit1g', 'caedrel', 'tarik', 'lirik'),
+    [string]$TvPy = 'C:\Users\karth\Documents\repos\cleanyourtv\tools\tv.py',
+    [string]$Python = 'C:\Users\karth\Documents\repos\cleanyourtv\tools\venv\Scripts\python.exe',
+    [string]$OutDir = (Join-Path $PSScriptRoot ("..\build\stress\" + (Get-Date -Format 'yyyyMMdd-HHmmss')))
+)
+
+$ErrorActionPreference = 'Continue'
+if (-not (Test-Path $TvPy)) { throw "tv.py not found at $TvPy" }
+if (-not (Test-Path $Python)) { throw "python not found at $Python" }
+New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+$env:TV_HOST = $TvHost
+$env:TV_PORT = "$Port"
+. (Join-Path $PSScriptRoot 'tvlib.ps1')
+
+$csv = Join-Path $OutDir 'stress.csv'
+$log = Join-Path $OutDir 'stress.log'
+'step,phase,action,time,pss_mb,java_mb,native_mb,graphics_mb,threads,fds,cpu_pct,alive' | Set-Content $csv
+
+$appPid = Get-AppPid
+if (-not $appPid) { throw "$Package is not running on $TvHost. Start the app and a stream first." }
+$startPid = $appPid
+$rows = New-Object System.Collections.Generic.List[object]
+$crashes = 0
+$step = 0
+
+function Send-Link([string]$Uri) { Invoke-Tv @("am start -a android.intent.action.VIEW -d $Uri $Package") | Out-Null }
+
+# GC, wait, measure, record.
+function Measure-Step([int]$Phase, [string]$Action) {
+    $script:step++
+    Send-Link 'frostline://debug/gc'
+    Start-Sleep -Seconds 5
+    $s = Get-Sample $script:appPid
+    if ($s.Alive -and $s.Pid -ne $script:appPid) { $script:crashes++; $script:appPid = $s.Pid; "$(Get-Date -Format o) pid changed at step $($script:step) ($Action)" | Add-Content $log }
+    if (-not $s.Alive) { $script:crashes++; "$(Get-Date -Format o) process gone at step $($script:step) ($Action)" | Add-Content $log; $np = Get-AppPid; if ($np) { $script:appPid = $np } }
+    "$($script:step),$Phase,$Action,$(Get-Date -Format o),$($s.Pss),$($s.Java),$($s.Native),$($s.Gfx),$($s.Threads),$($s.Fds),$($s.Cpu),$($s.Alive)" | Add-Content $csv
+    $script:rows.Add([pscustomobject]@{ Step = $script:step; Phase = $Phase; Pss = $s.Pss; Threads = $s.Threads; Fds = $s.Fds; Cpu = $s.Cpu })
+}
+
+Send-Link 'frostline://debug/gc'
+# Phase 1: baseline, 2 minutes (post-GC samples at 0, 60 and 120 s).
+Measure-Step 1 'baseline-0'
+Start-Sleep -Seconds 55; Measure-Step 1 'baseline-60'
+Start-Sleep -Seconds 55; Measure-Step 1 'baseline-120'
+
+# Phase 2: ten channel switches, 90 s apart.
+for ($i = 0; $i -lt 10; $i++) {
+    $ch = $Channels[$i % $Channels.Count]
+    Send-Link "frostline://channel/$ch"
+    Start-Sleep -Seconds 80
+    Measure-Step 2 "switch-$ch"
+}
+# Phase 3: six chat hide/show cycles, 15 s apart.
+for ($i = 0; $i -lt 6; $i++) {
+    Send-Link 'frostline://debug/chat-toggle'; Start-Sleep -Seconds 4
+    Send-Link 'frostline://debug/chat-toggle'; Start-Sleep -Seconds 4
+    Measure-Step 3 "chat-toggle-$($i + 1)"
+}
+# Phase 4: four VOD round trips, 30 s each.
+for ($i = 0; $i -lt 4; $i++) {
+    Send-Link 'frostline://debug/open-vod'; Start-Sleep -Seconds 20
+    Send-Link 'frostline://debug/back'; Start-Sleep -Seconds 4
+    Measure-Step 4 "vod-$($i + 1)"
+}
+# Phase 5: three reconnects.
+for ($i = 0; $i -lt 3; $i++) {
+    Send-Link 'frostline://debug/reconnect'; Start-Sleep -Seconds 15
+    Measure-Step 5 "reconnect-$($i + 1)"
+}
+# Phase 6: three token + integrity refreshes, 60 s apart.
+for ($i = 0; $i -lt 3; $i++) {
+    Send-Link 'frostline://debug/refresh-token'; Start-Sleep -Seconds 5
+    Send-Link 'frostline://debug/refresh-integrity'; Start-Sleep -Seconds 45
+    Measure-Step 6 "refresh-$($i + 1)"
+}
+
+# ---- summary ----
+$crashRaw = Invoke-Tv @("logcat -d -b crash | grep -c $Package")
+$crashBuf = [regex]::Match((Get-Section $crashRaw "logcat -d -b crash | grep -c $Package"), '\d+').Value
+if (-not $crashBuf) { $crashBuf = '?' }
+$dbgRaw = Invoke-Tv @("logcat -d -s FrostlineDebug:I | grep -c ' err'")
+$dbgErr = [regex]::Match((Get-Section $dbgRaw "logcat -d -s FrostlineDebug:I | grep -c ' err'"), '\d+').Value
+if (-not $dbgErr) { $dbgErr = '?' }
+
+$base = $rows | Where-Object { $_.Phase -eq 1 } | Select-Object -Last 1
+$names = @{ 1 = 'baseline'; 2 = 'channel switch'; 3 = 'chat toggle'; 4 = 'vod round trip'; 5 = 'reconnect'; 6 = 'token/integrity' }
+$pass = $true
+$lines = @()
+$lines += "Stress $Package on $TvHost, $($rows.Count) steps (post-GC values; PSS in MB)"
+$lines += ('{0,-16} {1,7} {2,7} {3,7} {4,9} {5,9}  {6}' -f 'phase', 'start', 'end', 'max', 'd threads', 'd fds', 'verdict')
+foreach ($p in 1..6) {
+    $r = @($rows | Where-Object { $_.Phase -eq $p })
+    if ($r.Count -eq 0) { continue }
+    $first = $r[0]; $last = $r[$r.Count - 1]
+    $max = ($r | Measure-Object Pss -Maximum).Maximum
+    $dt = $last.Threads - $first.Threads
+    $df = if ($first.Fds -lt 0 -or $last.Fds -lt 0) { 'n/a' } else { $last.Fds - $first.Fds }
+    $ok = ([math]::Abs($last.Pss - $base.Pss) -le 10) -and ([math]::Abs($last.Threads - $base.Threads) -le 5)
+    if ($base.Fds -ge 0 -and $last.Fds -ge 0) { $ok = $ok -and ([math]::Abs($last.Fds - $base.Fds) -le 5) }
+    if (-not $ok) { $pass = $false }
+    $lines += ('{0,-16} {1,7} {2,7} {3,7} {4,9} {5,9}  {6}' -f $names[$p], $first.Pss, $last.Pss, $max, $dt, $df, $(if ($ok) { 'ok' } else { 'FAIL' }))
+}
+$slope = Get-Slope ([double[]]($rows | ForEach-Object { $_.Step })) ([double[]]($rows | ForEach-Object { $_.Pss }))
+$lines += ('Post-GC PSS slope: {0:N2} MB per step; baseline end {1} MB, final {2} MB' -f $slope, $base.Pss, $rows[$rows.Count - 1].Pss)
+$lines += "CPU mean $([math]::Round(($rows | Measure-Object Cpu -Average).Average, 1))%, max $(($rows | Measure-Object Cpu -Maximum).Maximum)%"
+if ($crashes -gt 0 -or $appPid -ne $startPid) { $pass = $false }
+$lines += "Crashes / pid changes: $crashes (pid $startPid -> $appPid); crash buffer lines for the app: $crashBuf; debug actions that logged err: $dbgErr"
+$lines += "VERDICT: $(if ($pass) { 'PASS' } else { 'FAIL' })  (within +-10 MB PSS and +-5 threads/fds of baseline, no crash)"
+$lines += "Files: $OutDir (stress.csv, stress.log)"
+$lines | Set-Content (Join-Path $OutDir 'summary.txt')
+$lines

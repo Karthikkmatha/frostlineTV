@@ -117,6 +117,9 @@ class EngagementEngine(
         job = scope.launch { run(l) }
     }
 
+    /** Debug: cancel and restart the current channel's run. */
+    fun reconnect() = setChannel(login)
+
     fun stop() {
         job?.cancel()
         toastJob?.cancel(); rewardsJob?.cancel(); predEndJob?.cancel(); pollEndJob?.cancel()
@@ -535,5 +538,13 @@ class EngagementViewModel(
 
     fun setChannel(newLogin: String) = engine.setChannel(newLogin)
 
-    override fun onCleared() = engine.stop()
+    init {
+        // Debug deep link "reconnect": restart the engagement run (drops and re-opens the Hermes socket).
+        tv.frostline.core.ui.DebugHooks.register("reconnect-hermes") { engine.reconnect() }
+    }
+
+    override fun onCleared() {
+        tv.frostline.core.ui.DebugHooks.unregister("reconnect-hermes")
+        engine.stop()
+    }
 }
