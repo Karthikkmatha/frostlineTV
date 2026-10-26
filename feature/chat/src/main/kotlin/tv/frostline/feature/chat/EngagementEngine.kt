@@ -287,7 +287,9 @@ class EngagementEngine(
         rewardsJob = scope.launch {
             try {
                 val list = api.rewards(login, t)
-                setDebug("rewards", "ok (${list.size})")
+                val now = clock()
+                val blocked = list.count { EngagementMath.rewardBlock(it, Long.MAX_VALUE, now) != null }
+                setDebug("rewards", "ok (${list.size}, off ${list.count { !it.isEnabled }}, paused ${list.count { it.isPaused }}, stock ${list.count { !it.isInStock }}, blocked $blocked)")
                 _ui.update { it.copy(rewards = list, rewardsLoad = RewardsLoad.Ready) }
             } catch (e: Throwable) {
                 fail("rewards", e)
