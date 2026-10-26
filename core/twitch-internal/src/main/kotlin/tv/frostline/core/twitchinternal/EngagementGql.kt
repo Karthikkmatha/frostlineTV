@@ -103,6 +103,8 @@ internal object EngagementParser {
                 maxPerStream = perStream,
                 maxPerUserPerStream = perUser,
                 redeemedThisStream = r["redemptionsRedeemedCurrentStream"].int() ?: 0,
+                isSubOnly = r["isSubOnly"].bool() ?: false,
+                globalCooldownSeconds = r["globalCooldownSetting"].obj()?.takeIf { it["isEnabled"].bool() == true }?.get("globalCooldownSeconds").int(),
             )
         }
     }
@@ -296,13 +298,14 @@ internal class GqlEngagementApi(
         private const val PE_FULL = "id title status createdAt lockedAt predictionWindowSeconds outcomes { id title color totalPoints totalUsers }"
         private const val PE_CORE = "id title status createdAt predictionWindowSeconds outcomes { id title totalPoints }"
         private const val REWARD_CORE = "id title prompt cost isEnabled isInStock isPaused isUserInputRequired backgroundColor cooldownExpiresAt image { url url2x } defaultImage { url url2x }"
-        private const val REWARD_FULL = "$REWARD_CORE maxPerStreamSetting { isEnabled maxPerStream } maxPerUserPerStreamSetting { isEnabled maxPerUserPerStream } redemptionsRedeemedCurrentStream"
+        private const val REWARD_MID = "$REWARD_CORE maxPerStreamSetting { isEnabled maxPerStream } maxPerUserPerStreamSetting { isEnabled maxPerUserPerStream } redemptionsRedeemedCurrentStream"
+        private const val REWARD_FULL = "$REWARD_MID isSubOnly globalCooldownSetting { isEnabled globalCooldownSeconds }"
 
         val POINTS_QUERIES = listOf(
             "query ChannelPointsContext(\$channelLogin: String!) { community: user(login: \$channelLogin) { id channel { id communityPointsSettings { name image { url url2x } } self { communityPoints { balance availableClaim { id } } } } } }",
             "query ChannelPointsContext(\$channelLogin: String!) { community: user(login: \$channelLogin) { id channel { id self { communityPoints { balance availableClaim { id } } } } } }",
         )
-        val REWARDS_QUERIES = listOf(REWARD_FULL, REWARD_CORE).map {
+        val REWARDS_QUERIES = listOf(REWARD_FULL, REWARD_MID, REWARD_CORE).map {
             "query ChannelPointsRewards(\$channelLogin: String!) { community: user(login: \$channelLogin) { id channel { id communityPointsSettings { customRewards { $it } } } } }"
         }
         val CLAIM_QUERIES = listOf(

@@ -75,10 +75,18 @@ class EngagementMathTest {
         assertEquals("Need 50 more", EngagementMath.rewardBlock(reward(cost = 150), 100, 0))
         assertEquals("Paused by the streamer", EngagementMath.rewardBlock(reward(paused = true), 500, 0))
         assertEquals("Out of stock", EngagementMath.rewardBlock(reward(stock = false), 500, 0))
-        assertEquals("Unavailable", EngagementMath.rewardBlock(reward(enabled = false), 500, 0))
+        assertEquals("Unavailable: turned off by the streamer", EngagementMath.rewardBlock(reward(enabled = false), 500, 0))
         assertEquals("On cooldown, 1:00", EngagementMath.rewardBlock(reward(cooldown = 60_000), 500, 0))
         assertNull(EngagementMath.rewardBlock(reward(cooldown = 1_000), 500, 2_000))
-        assertEquals("Limit reached this stream", EngagementMath.rewardBlock(reward(perUser = 1, used = 1), 500, 0))
+        // The stream counter is channel-wide: a per-viewer limit alone never blocks locally.
+        assertNull(EngagementMath.rewardBlock(reward(perUser = 1, used = 1), 500, 0))
+        assertEquals("Limit 1 per viewer this stream", EngagementMath.rewardNote(reward(perUser = 1, used = 1)))
+        val capped = reward().copy(maxPerStream = 3, redeemedThisStream = 3)
+        assertEquals("Limit reached this stream", EngagementMath.rewardBlock(capped, 500, 0))
+        assertEquals("On global cooldown, 1:00", EngagementMath.rewardBlock(reward(cooldown = 60_000).copy(globalCooldownSeconds = 300), 500, 0))
+        assertEquals("Subscribers only", EngagementMath.rewardNote(reward().copy(isSubOnly = true)))
+        // A reward that is on, in stock, not paused, not capped and affordable is redeemable (the caedrel247 case).
+        assertNull(EngagementMath.rewardBlock(reward().copy(isSubOnly = true, globalCooldownSeconds = 300), 500, 0))
     }
 }
 

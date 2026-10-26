@@ -323,7 +323,7 @@ private fun RewardRow(r: CustomReward, block: String?, points: PointsUi?, modifi
             Column(Modifier.weight(1f)) {
                 Text(r.title, fontSize = 14.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 if (block != null) Text(block, fontSize = 11.sp, color = FrostColors.Live, maxLines = 1, modifier = Modifier.testTag("reward_reason"))
-                else if (r.requiresInput) Text("Needs a message", fontSize = 11.sp, color = FrostColors.Muted)
+                else EngagementMath.rewardNote(r)?.let { Text(it, fontSize = 11.sp, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag("reward_note")) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 points?.iconUrl?.takeIf { it.isNotEmpty() }?.let { EmoteImage(it, "points", Modifier.size(14.dp)) }

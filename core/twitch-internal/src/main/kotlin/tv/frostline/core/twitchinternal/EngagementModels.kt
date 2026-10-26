@@ -45,7 +45,12 @@ data class CustomReward(
     val cooldownExpiresAtMs: Long?,
     val maxPerStream: Int?,
     val maxPerUserPerStream: Int?,
+    /** Redemptions so far this stream across the channel (what Twitch counts against [maxPerStream]); NOT this viewer's own count. */
     val redeemedThisStream: Int,
+    /** Only subscribers may redeem it. Whether this viewer is one is not known here, so it is a hint, not a block. */
+    val isSubOnly: Boolean = false,
+    /** Length of the channel-wide cooldown after each redemption, when the reward has one. */
+    val globalCooldownSeconds: Int? = null,
 )
 
 /** Result of a mutation. [errorCode] is Twitch's own code (for example NOT_ENOUGH_POINTS); null means success. */

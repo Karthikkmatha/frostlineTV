@@ -143,6 +143,23 @@ class GqlEngagementApiTest {
         assertTrue(r[1].requiresInput && r[1].isPaused && !r[1].isInStock)
     }
 
+    @Test fun rewardsReadEveryAvailabilityFieldAndTolerateNulls() = withServer(
+        """{"data":{"community":{"id":"9","channel":{"id":"9","communityPointsSettings":{"customRewards":[
+        {"id":"a","title":"Always on","prompt":"p","cost":200,"isEnabled":true,"isInStock":true,"isPaused":false,"isSubOnly":false,"isUserInputRequired":false,"cooldownExpiresAt":null,
+         "maxPerStreamSetting":{"isEnabled":false,"maxPerStream":0},"maxPerUserPerStreamSetting":{"isEnabled":false,"maxPerUserPerStream":0},
+         "globalCooldownSetting":{"isEnabled":false,"globalCooldownSeconds":0},"redemptionsRedeemedCurrentStream":null},
+        {"id":"b","title":"Limited","prompt":"p","cost":300,"isEnabled":false,"isInStock":true,"isPaused":false,"isSubOnly":true,
+         "maxPerStreamSetting":{"isEnabled":true,"maxPerStream":5},"maxPerUserPerStreamSetting":{"isEnabled":true,"maxPerUserPerStream":2},
+         "globalCooldownSetting":{"isEnabled":true,"globalCooldownSeconds":600},"redemptionsRedeemedCurrentStream":4}]}}}}}""",
+    ) { api, _ ->
+        val (a, b) = api.rewards("c", "t")
+        assertTrue(a.isEnabled && a.isInStock && !a.isPaused && !a.isSubOnly)
+        assertNull(a.cooldownExpiresAtMs); assertNull(a.maxPerStream); assertNull(a.maxPerUserPerStream); assertNull(a.globalCooldownSeconds)
+        assertEquals(0, a.redeemedThisStream)
+        assertTrue(!b.isEnabled && b.isSubOnly)
+        assertEquals(5, b.maxPerStream); assertEquals(2, b.maxPerUserPerStream); assertEquals(600, b.globalCooldownSeconds); assertEquals(4, b.redeemedThisStream)
+    }
+
     @Test fun redeemSendsPointsPricingAndTextAndMapsErrors() = withServer("""{"data":{"redeemCommunityPointsCustomReward":{"error":{"code":"NOT_ENOUGH_POINTS"}}}}""") { api, server ->
         val reward = CustomReward("r", "Say", "p", 50, null, true, true, false, true, null, null, null, 0)
         val res = api.redeem("9", reward, "hello", "tx1", "t")

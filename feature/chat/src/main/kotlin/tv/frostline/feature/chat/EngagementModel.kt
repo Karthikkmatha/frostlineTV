@@ -142,21 +142,31 @@ object EngagementMath {
         return listOf("10" to 10L, "100" to 100L, "1k" to 1_000L).filter { it.second < max } + ("Max" to max)
     }
 
-    /** Why [r] cannot be redeemed right now, or null when it can. */
+    /**
+     * Why [r] cannot be redeemed right now, or null when it can. Only reasons that are certain block: a per-viewer limit is
+     * not blocked here because Twitch's stream counter is channel-wide, and the sub-only flag cannot be checked against the
+     * viewer's own subscription; Twitch's answer to the redeem covers those ([redeemError]).
+     */
     fun rewardBlock(r: CustomReward, balance: Long, nowMs: Long): String? {
         val cooldown = r.cooldownExpiresAtMs
-        val perUser = r.maxPerUserPerStream
         val perStream = r.maxPerStream
         return when {
-            !r.isEnabled -> "Unavailable"
+            !r.isEnabled -> "Unavailable: turned off by the streamer"
             r.isPaused -> "Paused by the streamer"
             !r.isInStock -> "Out of stock"
-            cooldown != null && cooldown > nowMs -> "On cooldown, " + clock(cooldown - nowMs)
-            perUser != null && r.redeemedThisStream >= perUser -> "Limit reached this stream"
+            cooldown != null && cooldown > nowMs -> (if (r.globalCooldownSeconds != null) "On global cooldown, " else "On cooldown, ") + clock(cooldown - nowMs)
             perStream != null && r.redeemedThisStream >= perStream -> "Limit reached this stream"
             r.cost > balance -> "Need ${grouped(r.cost - balance)} more"
             else -> null
         }
+    }
+
+    /** A hint under a reward that can be redeemed, or null. */
+    fun rewardNote(r: CustomReward): String? = when {
+        r.isSubOnly -> "Subscribers only"
+        r.requiresInput -> "Needs a message"
+        r.maxPerUserPerStream != null -> "Limit ${r.maxPerUserPerStream} per viewer this stream"
+        else -> null
     }
 
     fun redeemError(code: String): String = when (code) {
