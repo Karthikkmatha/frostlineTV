@@ -61,6 +61,12 @@ class EmoteEntry(val url: String) {
     @Volatile internal var stillQueuedAt: Long = 0L
     /** How many chat lines / drawers showing this emote are on screen right now. Visible entries are never evicted. */
     val visible = AtomicInteger(0)
+    /** How many queued (not yet shown) chat lines use this emote. Queued entries are never evicted either. */
+    val queued = AtomicInteger(0)
+    /** Engine clock of the last time a message or a drawn line asked for it: what "seen in the last 60 s" means for eviction. */
+    @Volatile internal var lastSeenMs: Long = 0L
+    /** One of the most used emotes of the channel: kept resident as long as anything else can go. */
+    @Volatile internal var pinned: Boolean = false
     /**
      * Last resort when the atlas has no slot for a visible emote: its decoded picture, drawn directly. Held only while
      * the emote is on screen (and capped), so it never grows.
@@ -97,7 +103,7 @@ class EmoteEngine(
     private val clockMs: () -> Long = SystemClock::uptimeMillis,
     /** Test seam: replaces the platform ImageDecoder. */
     private val decodeOverride: ((File) -> Drawable?)? = null,
-) {
+) : AheadEmotes {
     private val appContext = context.applicationContext
     private val dir = File(appContext.cacheDir, DIR_NAME).also { it.mkdirs() }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -109,12 +115,19 @@ class EmoteEngine(
     /**
      * Two atlases of 1024 x 1024 pages (4 MB): at most two pages of stills (the second only when the first is full of emotes on screen) and two of animation frames, all at 48 px. Evicted least recently used first. [setAtlasEnabled] false gives every emote a bitmap of its own instead.
      */
-    val stillAtlas = EmoteAtlas(cell = STILL_CELL, maxPages = STILL_PAGES)
+    val stillAtlas = EmoteAtlas(cell = STILL_CELL, maxPages = STILL_PAGES, clockMs = clockMs)
     val stripAtlas = EmoteAtlas(cell = STRIP_CELL, maxPages = STRIP_PAGES)
     /** At most [STILL_CAP_ENTRIES] stills, least recently used out first (weight 1 each). */
-    private val stills = WeightedLru<String, EmoteEntry>(STILL_CAP_ENTRIES.toLong(), { 1L }, { it.visible.get() > 0 }) { _, e ->
-        evictions.incrementAndGet(); e.still?.let(stillAtlas::free); e.still = null; e.bump()
+    private val stills = WeightedLru<String, EmoteEntry>(
+        STILL_CAP_ENTRIES.toLong(), { 1L },
+        // Never evict what a queued or a visible line uses. Of the rest: first what was not seen for a minute, then the recent, the common last.
+        protect = { it.visible.get() > 0 || it.queued.get() > 0 },
+        tier = { if (it.pinned) 2 else if (clockMs() - it.lastSeenMs < RECENT_MS) 1 else 0 },
+    ) { _, e ->
+        if (!trimming) evictions.incrementAndGet()
+        e.still?.let(stillAtlas::free); e.still = null; e.bump()
     }
+    @Volatile private var trimming = false
     /** Debug counters: stills pushed out of the atlas, allocations that found no slot, direct-bitmap holders. */
     private val evictions = AtomicInteger()
     private val misses = AtomicInteger()
@@ -181,6 +194,7 @@ class EmoteEngine(
         }
     }
 
+    private var tickCount = 0
     private var ticker: Job? = null
     private var globalsJob: Job? = null
     private var channelJob: Job? = null
@@ -195,6 +209,8 @@ class EmoteEngine(
                 // Fast chat shows stills only: nothing animated is held, and its memory is freed until the rate drops.
                 if (mode == EmoteMode.Fast && prev != EmoteMode.Fast) strips.clear()
                 ratePerSec = tracker.rate(t)
+                sweepQueuedReleases()
+                if (++tickCount % 5 == 0) { refreshHotSet(); trimExtraStillPage() }
                 // Hidden chat has no rate to follow: wake less often. (The cache directory is no longer walked here: the debug line reads it.)
                 delay(if (active) 1_000 else 5_000)
             }
@@ -241,7 +257,7 @@ class EmoteEngine(
         val it = entries.entries.iterator()
         while (it.hasNext()) {
             val e = it.next().value
-            if (e.still == null && e.strip == null && !e.stillPending.get() && !e.animPending.get()) it.remove()
+            if (e.still == null && e.strip == null && !e.stillPending.get() && !e.animPending.get() && e.queued.get() == 0 && e.visible.get() == 0) it.remove()
         }
         if (usage.size > MAX_ENTRIES) usage.keys.retainAll(entries.keys)
     }
@@ -252,28 +268,30 @@ class EmoteEngine(
     // ------------------------------------------------------------------ requests
 
     /** Makes sure [e] has a still frame (download + decode). Priority: lower runs first. */
-    fun ensureStill(e: EmoteEntry, priority: Int = PRIO_VISIBLE) {
+    fun ensureStill(e: EmoteEntry, priority: Int = PRIO_VISIBLE, deadlineMs: Long = 0L) {
+        e.lastSeenMs = clockMs()
         if (e.still != null) { stills.get(e.url); return }
         if (e.direct != null) return
         if (e.failedAt != 0L && clockMs() - e.failedAt < retryWait(e)) return
         if (e.stillPending.compareAndSet(false, true)) {
-            enqueueStill(e, priority)
+            enqueueStill(e, priority, deadlineMs)
         } else if (priority < e.stillPrio) {
-            enqueueStill(e, priority) // queued at a lower priority and now on screen: a second task jumps the queue, the first finds the work done
+            enqueueStill(e, priority, deadlineMs) // queued at a lower priority and now on screen: a second task jumps the queue, the first finds the work done
         }
     }
 
     private fun retryWait(e: EmoteEntry): Long = (1_000L shl e.failCount.coerceIn(0, 6)).coerceAtMost(RETRY_MS)
 
-    private fun enqueueStill(e: EmoteEntry, priority: Int) {
+    private fun enqueueStill(e: EmoteEntry, priority: Int, deadlineMs: Long = 0L) {
         e.stillPrio = priority
         e.stillQueuedAt = clockMs()
-        stillPool.execute(Task(priority, order.incrementAndGet()) { runStill(e) })
+        stillPool.execute(Task(priority, order.incrementAndGet(), deadlineMs) { runStill(e) })
     }
 
     /** An emote of a composed chat line / drawer is on screen: protect it from eviction and decode it first. */
     fun markVisible(e: EmoteEntry) {
         e.visible.incrementAndGet()
+        e.lastSeenMs = clockMs()
         ensureStill(e, PRIO_SCREEN)
     }
 
@@ -290,20 +308,94 @@ class EmoteEngine(
         if (e.strip != null) { strips.get(e.url); return }
         if (e.animated == false) return
         if (clockMs() - e.failedAt < RETRY_MS && e.failedAt != 0L) return
-        if (e.animPending.compareAndSet(false, true)) animPool.execute(Task(priority, order.incrementAndGet()) { runAnimation(e) })
+        if (e.animPending.compareAndSet(false, true)) animPool.execute(Task(priority, order.incrementAndGet(), 0L) { runAnimation(e) })
     }
 
     /** Called for every chat message as it is built: message rate, emote usage, and the hot set. */
-    fun noteMessage(m: ChatMessage) {
+    fun noteMessage(m: ChatMessage, stillsRequested: Boolean = false) {
         tracker.record(clockMs())
         if (m.seq > newestSeq) newestSeq = m.seq
         for (p in m.parts) if (p is Part.EmoteRef) {
             val url = p.emote.url
             usage.getOrPut(url) { AtomicInteger() }.incrementAndGet()
             val e = entry(url)
-            ensureStill(e, PRIO_VISIBLE)
+            if (!stillsRequested) ensureStill(e, PRIO_VISIBLE)
             if (active && mode != EmoteMode.Fast) ensureAnimation(e, PRIO_HOT) else if (e.strip != null) strips.get(url)
         }
+    }
+
+    // ------------------------------------------------------------------ look-ahead (chat held back to match the video)
+
+    /** Lines that left the queue: their entries stay protected until the line has been composed, then [sweepQueuedReleases] lets go. */
+    private val releasing = java.util.concurrent.ConcurrentLinkedQueue<Pair<Long, ChatMessage>>()
+
+    override fun request(m: ChatMessage, releaseAtMs: Long) {
+        val now = clockMs()
+        for (url in m.imageUrls) {
+            val e = entry(url)
+            e.queued.incrementAndGet()
+            e.lastSeenMs = now
+            ensureStill(e, PRIO_AHEAD, releaseAtMs)
+        }
+    }
+
+    override fun isReady(m: ChatMessage): Boolean {
+        for (url in m.imageUrls) {
+            val e = entries[url] ?: return false
+            if (!e.drawable && e.failCount == 0) return false // still on its way; a picture that failed does not hold the line back
+        }
+        return true
+    }
+
+    override fun release(m: ChatMessage, graceMs: Long) {
+        if (graceMs <= 0L) unqueue(m) else releasing.add((clockMs() + graceMs) to m)
+    }
+
+    private fun unqueue(m: ChatMessage) {
+        for (url in m.imageUrls) entries[url]?.let { e -> if (e.queued.decrementAndGet() < 0) e.queued.set(0) }
+    }
+
+    /** Lets go of the entries of released lines whose grace has run out. Called every tick; tests call it directly. */
+    internal fun sweepQueuedReleases() {
+        val now = clockMs()
+        while (true) {
+            val head = releasing.peek() ?: return
+            if (head.first > now) return
+            releasing.poll()
+            unqueue(head.second)
+        }
+    }
+
+    /** Every 5 s: the [PINNED_TOP] most used emotes (decayed counts) are marked so eviction leaves them for last. */
+    internal fun refreshHotSet() {
+        if (++hotRounds % 12 == 0) for (c in usage.values) c.set(c.get() * 3 / 4) // decay once a minute: the hot set follows the channel
+        val top = java.util.PriorityQueue<Map.Entry<String, AtomicInteger>>(PINNED_TOP + 1, compareBy<Map.Entry<String, AtomicInteger>> { it.value.get() })
+        for (kv in usage.entries) {
+            if (kv.value.get() < PINNED_MIN_USES) continue
+            top.add(kv)
+            if (top.size > PINNED_TOP) top.poll()
+        }
+        val keep = HashSet<String>(top.size * 2)
+        for (kv in top) keep += kv.key
+        for ((url, e) in entries) e.pinned = url in keep
+    }
+    private var hotRounds = 0
+
+    /**
+     * The second still page exists only while the first is full of protected entries. After [EXTRA_PAGE_IDLE_MS] without an
+     * allocation on it, whatever it holds that is not on screen or queued is dropped (decoded again from disk if needed) and the
+     * page itself is given back.
+     */
+    internal fun trimExtraStillPage() {
+        if (!stillAtlas.enabled || stillAtlas.pageCount <= 1) return
+        if (stillAtlas.extraPageIdleMs() < EXTRA_PAGE_IDLE_MS) return
+        trimming = true
+        try {
+            stills.removeIf { (it.still?.page?.index ?: 0) > 0 }
+        } finally {
+            trimming = false
+        }
+        stillAtlas.dropEmptyExtraPages()
     }
 
     // ------------------------------------------------------------------ preloading
@@ -362,7 +454,7 @@ class EmoteEngine(
             val file = download(e.url) ?: run { stillFailed(e); return }
             val d = decode(file) ?: run { stillFailed(e); return }
             e.failCount = 0
-            if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file.readBytes())
+            if (e.animated == null) e.animated = d is AnimatedImageDrawable || ImageSniff.isAnimated(file)
             val raw = stillOf(d)
             val bmp = fitToAtlas(raw, stillAtlas)
             val region = allocate(stillAtlas, bmp.width, bmp.height, 1)
@@ -417,7 +509,7 @@ class EmoteEngine(
             val d = decode(file) ?: run { e.failedAt = clockMs().coerceAtLeast(1); return }
             if (d !is AnimatedImageDrawable) {
                 // The file is animated but the platform decoder gave one frame (e.g. animated AVIF): nothing to play.
-                lastFailure = if (ImageSniff.isAnimated(file.readBytes())) "decoder gave a still" else "plain image"
+                lastFailure = if (ImageSniff.isAnimated(file)) "decoder gave a still" else "plain image"
                 e.animated = false; return
             }
             e.animated = true
@@ -608,12 +700,13 @@ class EmoteEngine(
         diskBytes = 0
     }
 
-    private class Task(val prio: Int, val order: Long, val body: () -> Unit) : Runnable, Comparable<Task> {
+    private class Task(val prio: Int, val order: Long, val deadline: Long, val body: () -> Unit) : Runnable, Comparable<Task> {
         override fun run() = body()
         // Lower prio first. Among on-screen / newly arrived work the NEWEST request goes first (the line just shown, not one that scrolled away);
         // background preloads stay first-in first-out.
         override fun compareTo(other: Task): Int = when {
             prio != other.prio -> prio.compareTo(other.prio)
+            prio == PRIO_AHEAD -> if (deadline != other.deadline) deadline.compareTo(other.deadline) else order.compareTo(other.order) // earliest release first
             prio <= PRIO_VISIBLE -> other.order.compareTo(order)
             else -> order.compareTo(other.order)
         }
@@ -646,7 +739,15 @@ class EmoteEngine(
         const val USER_ANIM_CELLS = 150L
         const val DISK_CAP_BYTES = 64L * 1024 * 1024
         const val RETRY_MS = 60_000L
-        const val PRIO_SCREEN = -1
+        const val PRIO_SCREEN = -2
+        /** A queued line (look-ahead): decoded before it is due, earliest release first, never shed. */
+        const val PRIO_AHEAD = -1
+        /** Seen within this long counts as recent for eviction. */
+        const val RECENT_MS = 60_000L
+        const val PINNED_TOP = 50
+        const val PINNED_MIN_USES = 3
+        /** The second still page is given back after this long without an allocation on it. */
+        const val EXTRA_PAGE_IDLE_MS = 60_000L
         const val PRIO_VISIBLE = 0
         const val PRIO_HOT = 1
         const val PRIO_PRELOAD = 2

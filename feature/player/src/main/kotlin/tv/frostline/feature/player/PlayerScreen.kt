@@ -93,6 +93,21 @@ fun PlayerScreen(
         value = ""
     }
 
+    val lookAheadLine by produceState("", debug) {
+        while (debug) {
+            value = chat.lookAheadLine()
+            kotlinx.coroutines.delay(1_000)
+        }
+        value = ""
+    }
+    // The dexopt state of the app (profile line) is read again while the overlay is up: `cmd package compile` can happen after start.
+    LaunchedEffect(debug) {
+        while (debug) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { tv.frostline.core.ui.ProfileStatus.refresh() }
+            kotlinx.coroutines.delay(5_000)
+        }
+    }
+
     val bitmapLine by produceState("", debug) {
         while (debug) {
             value = tv.frostline.feature.chat.EmoteEngine.current?.bitmapLine().orEmpty()
@@ -128,7 +143,8 @@ fun PlayerScreen(
 
     // ---- chat ----
     val chatSettings by chat.settings.collectAsStateWithLifecycle()
-    val chatLines by chat.lines.collectAsStateWithLifecycle()
+    // The lines are only read inside the message list (via the State), so a new batch of lines does not recompose this whole screen.
+    val chatLinesState = chat.lines.collectAsStateWithLifecycle()
     val chatConn by chat.connection.collectAsStateWithLifecycle()
     val chatRoom by chat.room.collectAsStateWithLifecycle()
     val chatCanSend by chat.canSend.collectAsStateWithLifecycle()
@@ -159,12 +175,14 @@ fun PlayerScreen(
         onDispose { chat.stop() }
     }
     LaunchedEffect(ui.login) { chat.setChannel(ui.login) }
+    // Chat is held back by the video's delay behind live: tell it that delay (and whether the picture is playing) as it changes.
+    LaunchedEffect(viewModel, chat) { viewModel.sync.collect { chat.setPlaybackSync(it.latencyMs, it.playing) } }
     LaunchedEffect(ui.login, engagement) { engagement?.setChannel(ui.login) }
     LifecycleEventEffect(Lifecycle.Event.ON_START) { engagement?.setChannel(ui.login) }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { engagement?.engine?.stop() }
     val chatPlaying = ui.playing
-    val chatModel = remember(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying, engUi) {
-        ChatUiModel(chatLines, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying, engagement = engUi)
+    val chatModel = remember(chatLinesState, chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, chatPlaying, engUi) {
+        ChatUiModel(emptyList(), chatConn, chatRoom, chatCanSend, chatSignedIn, chatSettings, chatPicker, playerPlaying = chatPlaying, engagement = engUi, linesState = chatLinesState)
     }
     val signIn by rememberUpdatedState(onSignIn)
     val chatActions = remember(chat, engagement) {
@@ -176,6 +194,7 @@ fun PlayerScreen(
             leave = { returnToPlayer() },
             engagement = engagement?.engine?.actions() ?: EngagementActions(),
             signIn = { signIn() },
+            setLineWarmer = chat::setLineWarmer,
         )
     }
     val chatHasFocus = chatVisible && chatController.hasFocus
@@ -244,7 +263,7 @@ fun PlayerScreen(
                 ErrorPanel(msg, onRetry = viewModel::refresh, modifier = Modifier.align(Alignment.Center))
             }
             ui.notice?.let { Toast(it, Modifier.align(Alignment.BottomCenter).padding(bottom = 96.dp)) }
-            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "hm-raid   $raidLine" + "integrity $integrityLine" + "webview  $webViewLine" + "profile  $profileLine" + listOfNotNull(healthLine.takeIf { it.isNotEmpty() }) + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, atlasLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
+            if (debug) DebugOverlay(metrics, ui.liveOffsetMs, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOf("live     ${ui.liveMode.label}, target ${LiveOffsets.targetSeconds(ui.liveMode)} s") + engDebug.map { "engage   $it" } + "hm-raid   $raidLine" + "integrity $integrityLine" + "webview  $webViewLine" + "profile  $profileLine" + listOfNotNull(healthLine.takeIf { it.isNotEmpty() }) + listOfNotNull(emoteLine.takeIf { it.isNotEmpty() }, atlasLine.takeIf { it.isNotEmpty() }, lookAheadLine.takeIf { it.isNotEmpty() }, bitmapLine.takeIf { it.isNotEmpty() }, memLine.takeIf { it.isNotEmpty() }, ui.errorDetail?.let { "error    $it" }))
 
             raid?.let { n ->
                 RaidBanner(n, onCancel = viewModel.raid::cancel, modifier = Modifier.align(Alignment.TopCenter).padding(top = 27.dp))

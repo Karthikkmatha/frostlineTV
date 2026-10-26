@@ -10,9 +10,9 @@ class ChatBuffer(val capacity: Int = 150) {
 
     val size: Int @Synchronized get() = lines.size
 
-    /** Returns true if the visible list changed. */
+    /** Returns true if the visible list changed. [queuedRemoved]: the look-ahead queue dropped lines for the same moderation event. */
     @Synchronized
-    fun apply(ev: ChatEvent, ctx: ResolveContext, fallback: Map<String, Emote> = emptyMap()): Boolean = when (ev) {
+    fun apply(ev: ChatEvent, ctx: ResolveContext, fallback: Map<String, Emote> = emptyMap(), queuedRemoved: Boolean = false): Boolean = when (ev) {
         is ChatEvent.Message -> {
             val m = MessageBuilder.build(ev.message, ctx, fallback = fallback)
             add(m)
@@ -23,7 +23,7 @@ class ChatBuffer(val capacity: Int = 150) {
             add(SystemLine(ev.id, ChatText.time(ev.tsMs), ev.text, ev.kind))
             true
         }
-        is ChatEvent.ClearMsg -> lines.removeAll { it is ChatMessage && it.key == ev.targetMessageId }
+        is ChatEvent.ClearMsg -> lines.removeAll { it is ChatMessage && it.key == ev.targetMessageId } || queuedRemoved
         is ChatEvent.ClearChat -> {
             if (ev.login == null) {
                 lines.clear()
@@ -31,11 +31,11 @@ class ChatBuffer(val capacity: Int = 150) {
                 true
             } else {
                 val removed = lines.removeAll { it is ChatMessage && it.login.equals(ev.login, ignoreCase = true) }
-                if (removed) {
+                if (removed || queuedRemoved) {
                     val what = if (ev.durationSec != null) "timed out for ${ev.durationSec} s" else "banned"
                     add(SystemLine("sys-${sysSeq++}", ChatText.time(ev.tsMs), "${ev.login} was $what", ChatEvent.System.Kind.Moderation))
                 }
-                removed
+                removed || queuedRemoved
             }
         }
         else -> false

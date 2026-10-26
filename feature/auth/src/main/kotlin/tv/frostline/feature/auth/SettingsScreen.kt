@@ -203,6 +203,15 @@ fun SettingsContent(
         }
         item {
             TvChoiceRow(
+                label = "Sync chat with video",
+                value = if (ui.chat.syncChat) "On" else "Off (immediate)",
+                description = "Live chat is held back by about the video's delay behind live (up to 12 s), so a line shows when the picture it is about happens, and its emotes are ready before it appears. Off shows every line at once.",
+                onClick = { onChatChange { it.copy(syncChat = !it.syncChat) } },
+                modifier = Modifier.widthIn(max = 560.dp).testTag("choice_chat_sync"),
+            )
+        }
+        item {
+            TvChoiceRow(
                 label = "Emote atlas",
                 value = if (ui.chat.emoteAtlas) "On" else "Off (bitmap per emote)",
                 description = "Debug. Packs emotes into a few shared 512 px texture pages. Off gives every emote its own bitmap.",

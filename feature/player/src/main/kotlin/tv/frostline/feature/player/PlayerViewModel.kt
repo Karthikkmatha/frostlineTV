@@ -51,6 +51,9 @@ data class PlayerUi(
     val notice: String? = null,
 )
 
+/** The player's live offset (null when unknown) and whether it is playing right now (not paused, not buffering). */
+data class LiveSync(val latencyMs: Long? = null, val playing: Boolean = false)
+
 /**
  * Owns playback for one channel at a time. The ExoPlayer lives in the app-wide [ExclusiveSlot] and only
  * between [start] and [stop], so it is released on leaving the screen and in onStop.
@@ -354,21 +357,32 @@ class PlayerViewModel(
     /** True while something on screen shows the live offset (the controls or the debug overlay). */
     private val offsetObserved = MutableStateFlow(false)
 
-    /** The live-offset ticker runs at 1 Hz only while [on]; otherwise nothing polls the player and nothing recomposes. */
+    /**
+     * What chat needs to line up with the picture: how far behind live it is, and whether it is playing. Updated once a second
+     * while the screen is up, separately from [ui], so reading it never recomposes the screen.
+     */
+    private val _sync = MutableStateFlow(LiveSync())
+    val sync: StateFlow<LiveSync> = _sync.asStateFlow()
+
+    /** The live offset shown in [ui] is refreshed once a second only while [on]; the [sync] value for chat always is. */
     fun setOffsetObserved(on: Boolean) {
         offsetObserved.value = on
+        if (on) refreshOffset()
+    }
+
+    private fun refreshOffset() {
+        val p = player.value
+        val off = p?.currentLiveOffset?.takeIf { v -> v != C.TIME_UNSET }
+        _sync.value = LiveSync(off, p?.isPlaying == true)
+        if (offsetObserved.value) _ui.update { it.copy(liveOffsetMs = off) }
     }
 
     private fun startTicker() {
         tickJob?.cancel()
         tickJob = viewModelScope.launch {
-            offsetObserved.collectLatest { on ->
-                if (!on) return@collectLatest
-                while (true) {
-                    val off = player.value?.currentLiveOffset
-                    _ui.update { it.copy(liveOffsetMs = off?.takeIf { v -> v != C.TIME_UNSET }) }
-                    delay(1_000)
-                }
+            while (true) {
+                refreshOffset()
+                delay(1_000)
             }
         }
     }

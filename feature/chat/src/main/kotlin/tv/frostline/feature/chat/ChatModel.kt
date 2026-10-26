@@ -46,6 +46,14 @@ class ChatMessage(
 ) : ChatLine {
     @Volatile private var prepared: PreparedLine? = null
 
+    /** Every picture this line draws (its emotes, then its badges), each url once: what the look-ahead queue asks the emote engine for. */
+    val imageUrls: List<String> by lazy(LazyThreadSafetyMode.PUBLICATION) {
+        val out = LinkedHashSet<String>()
+        for (p in parts) if (p is Part.EmoteRef) out += p.emote.url
+        for (b in badges) out += b.url
+        out.toList()
+    }
+
     /**
      * The drawable form of this line (annotated text, inline-image slots) for the given size and timestamp setting.
      * Built once, normally by the chat view model off the main thread before the line is published, and then shared;

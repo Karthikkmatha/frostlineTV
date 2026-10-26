@@ -17,4 +17,20 @@ class ImageSniffTest {
     @Test fun animatedWebpHasThreeFrames() { assertEquals(3, ImageSniff.frameCount(animatedWebp)); assertTrue(ImageSniff.isAnimated(animatedWebp)) }
     @Test fun stillWebpIsOneFrame() { assertEquals(1, ImageSniff.frameCount(stillWebp)); assertFalse(ImageSniff.isAnimated(stillWebp)) }
     @Test fun garbageIsOneFrame() { assertEquals(1, ImageSniff.frameCount(ByteArray(40) { 7 })) }
+
+    private fun tmp(b: ByteArray) = java.io.File.createTempFile("sniff", ".bin").also { it.deleteOnExit(); it.writeBytes(b) }
+
+    @Test fun fileSniffAgreesWithTheByteArraySniff() {
+        assertTrue(ImageSniff.isAnimated(tmp(gif)))
+        assertTrue(ImageSniff.isAnimated(tmp(animatedWebp)))
+        assertFalse(ImageSniff.isAnimated(tmp(stillWebp)))
+        assertFalse(ImageSniff.isAnimated(tmp(ByteArray(40) { 7 })))
+        assertFalse(ImageSniff.isAnimated(tmp(ByteArray(0))))
+    }
+
+    @Test fun aBigStillWebpIsAStillWithoutReadingItAll() {
+        // 200 KB: a VP8L still with padding chunk; no VP8X animation flag.
+        val big = stillWebp.copyOf(stillWebp.size + 200_000)
+        assertFalse(ImageSniff.isAnimated(tmp(big)))
+    }
 }

@@ -35,7 +35,7 @@ import tv.frostline.core.ui.FrostColors
  * lay a line out twice. One slot per id (its last width, size and timestamp setting); least recently used ids go first.
  */
 @Stable
-class LineLayoutCache(private val measurer: TextMeasurer, private val capacity: Int = 400) {
+class LineLayoutCache(private val measurer: TextMeasurer, private val capacity: Int = 500) {
     private class Slot(val width: Int, val fontSp: Int, val timestamps: Boolean, val prepared: PreparedLine, val layout: TextLayoutResult)
 
     private val slots = object : LinkedHashMap<String, Slot>(512, 0.75f, true) {
@@ -44,21 +44,57 @@ class LineLayoutCache(private val measurer: TextMeasurer, private val capacity: 
 
     val size: Int get() = synchronized(slots) { slots.size }
 
+    /** The width of the last line laid out: where [warm] measures lines that have not been shown yet. 0 before the first. */
+    @Volatile var lastWidth: Int = 0
+        private set
+
     fun layout(id: String, prep: PreparedLine, width: Int, style: TextStyle): TextLayoutResult {
+        lastWidth = width
         synchronized(slots) {
             val s = slots[id]
             if (s != null && s.width == width && s.prepared === prep) return s.layout
         }
-        val result = measurer.measure(
-            text = prep.text,
-            style = style,
-            overflow = TextOverflow.Clip,
-            softWrap = true,
-            placeholders = prep.placeholders,
-            constraints = androidx.compose.ui.unit.Constraints(maxWidth = width),
-        )
+        val result = measure(measurer, prep, width, style)
         synchronized(slots) { slots[id] = Slot(width, prep.fontSp, prep.timestamps, prep, result) }
         return result
+    }
+
+    /** Measures a line on the calling (background) thread with its own [m], so the main thread finds the layout ready when the line is shown. */
+    fun warm(id: String, prep: PreparedLine, width: Int, style: TextStyle, m: TextMeasurer) {
+        synchronized(slots) {
+            val s = slots[id]
+            if (s != null && s.width == width && s.prepared === prep) return
+        }
+        val result = measure(m, prep, width, style)
+        synchronized(slots) { slots[id] = Slot(width, prep.fontSp, prep.timestamps, prep, result) }
+    }
+
+    private fun measure(m: TextMeasurer, prep: PreparedLine, width: Int, style: TextStyle): TextLayoutResult = m.measure(
+        text = prep.text,
+        style = style,
+        overflow = TextOverflow.Clip,
+        softWrap = true,
+        placeholders = prep.placeholders,
+        constraints = androidx.compose.ui.unit.Constraints(maxWidth = width),
+    )
+}
+
+/** The text style of a chat line body; the measuring in the UI and the one done ahead of time must use the very same one. */
+internal fun chatLineStyle(fontSp: Int) = TextStyle(color = FrostColors.OnSurface, fontSize = fontSp.sp, lineHeight = (fontSp * 1.6f).sp)
+
+/**
+ * Lays out chat lines off the main thread. The panel registers one (with the layout cache it draws from and a text measurer of its
+ * own); the chat view model calls [warm] for each new line right after it is prepared, so showing it costs a cache lookup.
+ * Anything that goes wrong here is ignored: the main thread then measures the line itself, as before.
+ */
+class LineWarmer(private val cache: LineLayoutCache, private val measurer: TextMeasurer) {
+    fun warm(m: ChatMessage, fontSp: Int, timestamps: Boolean) {
+        val w = cache.lastWidth
+        if (w <= 0) return
+        try {
+            cache.warm(m.key, m.prepared(fontSp, timestamps), w, chatLineStyle(fontSp), measurer)
+        } catch (_: Throwable) {
+        }
     }
 }
 
@@ -130,7 +166,7 @@ internal fun ChatTextLine(id: String, seq: Long, prep: PreparedLine, fontSp: Int
     val local = LocalLineLayouts.current
     val ownMeasurer = if (local == null) rememberTextMeasurer(cacheSize = 8) else null
     val cache = local ?: remember(ownMeasurer) { LineLayoutCache(ownMeasurer!!) }
-    val style = remember(fontSp) { TextStyle(color = FrostColors.OnSurface, fontSize = fontSp.sp, lineHeight = (fontSp * 1.6f).sp) }
+    val style = remember(fontSp) { chatLineStyle(fontSp) }
     val engine = EmoteEngine.current
     val clock = LocalEmoteClock.current
     val gate = LocalEmoteGate.current

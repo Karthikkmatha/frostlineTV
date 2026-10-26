@@ -47,7 +47,7 @@ class AtlasRegion internal constructor(
  * With [enabled] false every region gets a bitmap of its own instead (the pre-atlas behaviour, a Settings switch).
  * Thread-safe.
  */
-class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024) {
+class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024, private val clockMs: () -> Long = System::currentTimeMillis) {
     companion object { const val PAD = 1 }
 
     val cols: Int = pageSize / cell
@@ -57,6 +57,9 @@ class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024)
     private val cellsPerPage = cols * rows
 
     @Volatile var enabled: Boolean = true
+
+    /** Clock reading of the last allocation on a page after the first (or of that page being added). */
+    private var lastExtraAllocMs = 0L
 
     private val pages = ArrayList<AtlasPage>(maxPages)
     private var privateBytes = 0L
@@ -124,6 +127,7 @@ class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024)
             return null
         }
         p.usedCells += count * span
+        if (p.index > 0) lastExtraAllocMs = clockMs()
         val xs = IntArray(count) { (first[it] % cols) * cell + PAD }
         val ys = IntArray(count) { (first[it] / cols) * cell + PAD }
         return AtlasRegion(p, w, h, xs, ys, first, span, false)
@@ -155,6 +159,18 @@ class EmoteAtlas(val cell: Int, val maxPages: Int = 2, val pageSize: Int = 1024)
         }
         for (start in r.firstCells) for (j in 0 until r.cellsPerFrame) r.page.used[start + j] = false
         r.page.usedCells -= r.cells
+    }
+
+    /** How long no allocation landed on a page after the first; 0 when there is only one page. */
+    @Synchronized
+    fun extraPageIdleMs(): Long = if (pages.size <= 1) 0L else clockMs() - lastExtraAllocMs
+
+    /** Gives back trailing pages (after the first) that hold nothing. Returns how many went. Their bitmaps are left to the GC: a draw may still hold one. */
+    @Synchronized
+    fun dropEmptyExtraPages(): Int {
+        var n = 0
+        while (pages.size > 1 && pages.last().usedCells == 0) { pages.removeAt(pages.size - 1); n++ }
+        return n
     }
 
     /** Frees every allocation and drops the page bitmaps (regions already handed out become unusable: callers clear them first). */

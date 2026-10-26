@@ -95,3 +95,40 @@ class FrameIndexTest {
         assertEquals(0, frameIndex(99, 1))
     }
 }
+
+class WeightedLruTierTest {
+    private class V(val name: String, var tier: Int = 0, var protect: Boolean = false)
+
+    @Test fun lowerTiersGoFirstThenLeastRecentlyUsed() {
+        val gone = mutableListOf<String>()
+        val lru = WeightedLru<String, V>(3, { 1L }, protect = { it.protect }, tier = { it.tier }) { k, _ -> gone += k }
+        lru.put("oldCommon", V("oldCommon", tier = 2))
+        lru.put("oldRecent", V("oldRecent", tier = 1))
+        lru.put("stale", V("stale", tier = 0))
+        lru.put("new", V("new", tier = 1)) // over the cap: the stale one goes although it is not the oldest
+        assertEquals(listOf("stale"), gone)
+        lru.put("new2", V("new2", tier = 1)) // then the oldest of tier 1, never the common one while others remain
+        assertEquals(listOf("stale", "oldRecent"), gone)
+    }
+
+    @Test fun protectedEntriesAreNeverChosen() {
+        val gone = mutableListOf<String>()
+        val lru = WeightedLru<String, V>(2, { 1L }, protect = { it.protect }, tier = { it.tier }) { k, _ -> gone += k }
+        lru.put("a", V("a", protect = true))
+        lru.put("b", V("b", protect = true))
+        lru.put("c", V("c"))
+        assertEquals(emptyList<String>(), gone) // over the cap, but c is the newest and the others are protected
+        assertTrue(lru.evictOldest())
+        assertEquals(listOf("c"), gone)
+        assertTrue(!lru.evictOldest()) // only protected entries are left
+    }
+
+    @Test fun removeIfSkipsProtectedAndCallsOnEvict() {
+        val gone = mutableListOf<String>()
+        val lru = WeightedLru<String, V>(100, { 1L }, protect = { it.protect }) { k, _ -> gone += k }
+        lru.put("a", V("a")); lru.put("b", V("b", protect = true)); lru.put("c", V("c"))
+        assertEquals(2, lru.removeIf { true })
+        assertEquals(listOf("a", "c"), gone)
+        assertEquals(1, lru.size)
+    }
+}

@@ -14,6 +14,31 @@ object ImageSniff {
 
     fun isAnimated(b: ByteArray) = frameCount(b) > 1
 
+    private val headBuf = ThreadLocal.withInitial { ByteArray(HEAD) }
+
+    /**
+     * Same answer as [isAnimated] on the file's bytes, but reads at most [HEAD] bytes into a per-thread buffer instead of the
+     * whole file into a new array on every decode (a transient allocation of the size of the emote file, thousands of times in fast chat).
+     * Only a GIF that is longer than the buffer and shows one frame so far is read whole.
+     */
+    fun isAnimated(file: java.io.File): Boolean {
+        val buf = headBuf.get()!!
+        val n = file.inputStream().use { ins ->
+            var got = 0
+            while (got < buf.size) { val k = ins.read(buf, got, buf.size - got); if (k < 0) break; got += k }
+            got
+        }
+        val head = if (n == buf.size) buf else buf.copyOf(n)
+        // A WebP that is not flagged animated in its VP8X header is a still, whatever its size.
+        if (isWebp(head) && !(head.size >= 21 && String(head, 12, 4, Charsets.ISO_8859_1) == "VP8X" && (u8(head, 20) and 0x02) != 0)) return false
+        val frames = frameCount(head)
+        if (frames > 1 || n < HEAD) return frames > 1
+        // The head is full: a plain still has no more to say; a GIF or WebP with one frame so far might.
+        return if (isGif(head) || isWebp(head)) isAnimated(file.readBytes()) else false
+    }
+
+    private const val HEAD = 32 * 1024
+
     private fun isGif(b: ByteArray) = b.size > 13 && b[0] == 'G'.code.toByte() && b[1] == 'I'.code.toByte() && b[2] == 'F'.code.toByte()
     private fun isWebp(b: ByteArray) = b.size > 16 && String(b, 0, 4, Charsets.ISO_8859_1) == "RIFF" && String(b, 8, 4, Charsets.ISO_8859_1) == "WEBP"
 

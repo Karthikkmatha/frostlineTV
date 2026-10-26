@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
@@ -73,7 +74,15 @@ class ChatUiModel(
     val playerPlaying: Boolean = true,
     /** Channel points, rewards, predictions and polls. Empty for guests, so none of it is drawn. */
     val engagement: EngagementUi = EngagementUi(),
-)
+    /**
+     * The lines as a State the message list reads itself, so a new line recomposes the list and not the whole screen around it
+     * (the player screen used to recompose, with its controls and overlay, on every batch of lines). Null = use [lines].
+     */
+    val linesState: androidx.compose.runtime.State<List<ChatLine>>? = null,
+) {
+    /** Newest first. Reading this inside composition subscribes that scope to new lines. */
+    val currentLines: List<ChatLine> get() = linesState?.value ?: lines
+}
 
 @Immutable
 class ChatActions(
@@ -87,6 +96,8 @@ class ChatActions(
     val engagement: EngagementActions = EngagementActions(),
     /** Guests: opens the sign-in screen (the Sign in button). */
     val signIn: () -> Unit = {},
+    /** The panel's off-main-thread line measurer, while it is composed (null when it goes away). */
+    val setLineWarmer: (LineWarmer?) -> Unit = {},
 )
 
 internal fun isOkKey(k: Key) = k == Key.DirectionCenter || k == Key.Enter || k == Key.NumPadEnter
@@ -346,12 +357,22 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
 
     // While scrolled back, remember the newest line at the moment we paused so we can count what arrived since.
     var pausedAtKey by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(following) { pausedAtKey = if (following) null else model.lines.firstOrNull()?.key }
-    val newCount = if (following) 0 else pausedAtKey?.let { k -> model.lines.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: 0
+    LaunchedEffect(following) { pausedAtKey = if (following) null else model.currentLines.firstOrNull()?.key }
+    val lines = model.currentLines
+    val newCount = if (following) 0 else pausedAtKey?.let { k -> lines.indexOfFirst { it.key == k }.takeIf { it >= 0 } } ?: 0
 
     // Measured line layouts, by line id and width, shared by every line of this list.
     val measurer = androidx.compose.ui.text.rememberTextMeasurer(cacheSize = 8)
     val lineLayouts = remember(measurer) { LineLayoutCache(measurer) }
+    // A second measurer for the chat view model's worker thread: it lays new lines out ahead of time, into the same cache.
+    val density = LocalDensity.current
+    val fontResolver = androidx.compose.ui.platform.LocalFontFamilyResolver.current
+    val layoutDirection = androidx.compose.ui.platform.LocalLayoutDirection.current
+    DisposableEffect(lineLayouts, density, fontResolver, layoutDirection) {
+        val warmer = runCatching { LineWarmer(lineLayouts, androidx.compose.ui.text.TextMeasurer(fontResolver, density, layoutDirection, 0)) }.getOrNull()
+        actions.setLineWarmer(warmer)
+        onDispose { actions.setLineWarmer(null) }
+    }
     Box(
         modifier
             .padding(horizontal = 4.dp)
@@ -404,7 +425,7 @@ private fun MessageList(model: ChatUiModel, c: ChatController, fontSp: Int, acti
                 userScrollEnabled = false, // scrolled by the D-pad handler above (and programmatically)
                 modifier = Modifier.fillMaxSize(),
             ) {
-                items(model.lines, key = { it.key }, contentType = { it is ChatMessage }) { line ->
+                items(lines, key = { it.key }, contentType = { it is ChatMessage }) { line ->
                     ChatLineItem(line, fontSp, model.settings.timestamps)
                 }
             }

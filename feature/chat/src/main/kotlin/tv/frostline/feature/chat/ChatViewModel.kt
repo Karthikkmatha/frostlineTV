@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,9 +50,30 @@ class ChatViewModel(
     private val settingsStore: SettingsStore,
     private val worker: CoroutineDispatcher = Dispatchers.Default,
     private val flushMs: Long = 200L,
+    private val clockMs: () -> Long = android.os.SystemClock::uptimeMillis,
 ) : ViewModel() {
     private val session: IrcSession = sessionFactory(viewModelScope)
     private val buffer = ChatBuffer(MAX_LINES)
+
+    // ---- look-ahead: live chat is held back by about the player's live offset so it lines up with the picture ----
+    private val intake = ChatIntake(buffer, LookAheadQueue(ahead = { EmoteEngine.current }), clockMs = clockMs, note = { m, requested -> EmoteEngine.current?.noteMessage(m, stillsRequested = requested) })
+    private val queue get() = intake.queue
+    @Volatile private var warmer: LineWarmer? = null
+    private val wake = Channel<Unit>(Channel.CONFLATED)
+    private var releaseJob: Job? = null
+
+    /** From the player, about once a second: how far behind live the picture is, and whether it is playing. */
+    fun setPlaybackSync(latencyMs: Long?, playing: Boolean) {
+        intake.sync = PlaybackSync(latencyMs, playing)
+    }
+
+    /** The panel's off-main-thread measurer (null when the panel is not composed). */
+    fun setLineWarmer(w: LineWarmer?) {
+        warmer = w
+    }
+
+    /** Debug overlay: `chat: hold 12.4 s queue 143 ready 98% late 2`. */
+    fun lookAheadLine(): String = intake.line()
 
     private val _lines = MutableStateFlow<List<ChatLine>>(emptyList())
     /** Newest first. */
@@ -104,6 +126,8 @@ class ChatViewModel(
         settingsJob = viewModelScope.launch(worker) {
             settingsStore.chat.collect {
                 rebuildContext(it)
+                intake.enabled = it.syncChat
+                if (!it.syncChat && intake.flush()) scheduleFlush() // sync switched off: show what is waiting now, and from here on at once
                 prepare(buffer.snapshot()) // a changed text size or timestamp setting: rebuild the line texts here, not on the main thread
                 // Hidden panel: keep buffering (so showing it again is instant) but stop publishing new lists.
                 val wasVisible = visible
@@ -112,6 +136,13 @@ class ChatViewModel(
                 EmoteEngine.current?.setChatActive(visible)
                 if (!visible && wasVisible) EmoteEngine.current?.trimMemory()
                 if (visible && !wasVisible) publish()
+            }
+        }
+        releaseJob = viewModelScope.launch(worker) {
+            while (true) {
+                val next = queue.nextDueMs()
+                if (next == null) wake.receive() else delay((next - clockMs()).coerceIn(10L, 100L))
+                releaseDue()
             }
         }
         viewModelScope.launch {
@@ -129,6 +160,8 @@ class ChatViewModel(
         tv.frostline.core.ui.DebugHooks.unregister("chat-toggle")
         settingsJob?.cancel()
         wakeJob?.cancel()
+        releaseJob?.cancel()
+        queue.clear()
         EmoteEngine.current?.trimMemory()
         eventsJob?.cancel()
         channelJob?.cancel()
@@ -160,6 +193,7 @@ class ChatViewModel(
         badgeUrls = emptyMap()
         _room.value = ""
         buffer.clear()
+        queue.clear()
         buffer.addInfo("Joined #$l")
         publish()
         rebuildContext(settings.value)
@@ -187,7 +221,7 @@ class ChatViewModel(
             emotes = emptyList(),
             reply = null,
         )
-        buffer.addLocal(MessageBuilder.build(raw, ctx, mine = true, fallback = twitchByCode))
+        intake.own(MessageBuilder.build(raw, ctx, mine = true, fallback = twitchByCode)) // the user's own line is never held back
         publish()
         return true
     }
@@ -275,8 +309,32 @@ class ChatViewModel(
                 buffer.addInfo("Chat sign-in failed; reading as guest. Sign in again from Settings.")
                 publish()
             }
-            else -> if (buffer.apply(ev, ctx)) scheduleFlush()
+            is ChatEvent.Message -> onMessage(ev)
+            is ChatEvent.ClearMsg, is ChatEvent.ClearChat -> if (intake.moderate(ev, ctx)) scheduleFlush() // reaches queued and shown lines
+            else -> if (buffer.apply(ev, ctx)) scheduleFlush() // notices and sub/raid lines are not held back
         }
+    }
+
+    /** A chat line from the socket: shown at once, or queued until the picture catches up (its emotes are decoded in the meantime). */
+    private fun onMessage(ev: ChatEvent.Message) {
+        val raw = ev.message
+        val m = MessageBuilder.build(raw, ctx)
+        prepareAhead(m)
+        val bypass = raw.systemHeader != null || raw.announcement // sub / resub / announcement text: USERNOTICE, instant
+        if (intake.message(m, bypass)) scheduleFlush() else wake.trySend(Unit)
+    }
+
+    /** Builds the drawable text and, when the panel is up, its layout now, on this worker thread, not when the line first appears. */
+    private fun prepareAhead(m: ChatMessage) {
+        if (!visible) return // hidden panel: lines are only buffered, nothing to draw yet
+        val s = settings.value
+        val fontSp = ChatOptions.fontSizesSp[s.fontIndex.coerceIn(0, ChatOptions.fontSizesSp.lastIndex)]
+        m.prepared(fontSp, s.timestamps)
+        warmer?.warm(m, fontSp, s.timestamps)
+    }
+
+    private fun releaseDue() {
+        if (intake.release()) scheduleFlush()
     }
 
     private var _roomState = RoomState()
