@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
@@ -89,13 +88,13 @@ class FollowingUiTest {
     @Test fun restrictedStreamsShowABadgeOnceKnown() {
         tv.frostline.core.ui.RestrictedStreams.clear("someone")
         rule.setContent { FrostlineTheme { WideStreamCard(stream, null, androidx.compose.ui.Modifier) {} } }
-        rule.onNodeWithTag("lock_badge").assertDoesNotExist()
+        rule.onNodeWithText("RESTRICTED", substring = true).assertDoesNotExist()
         rule.runOnUiThread { tv.frostline.core.ui.RestrictedStreams.mark("Someone") }
         rule.waitForIdle()
-        rule.onNodeWithTag("lock_badge").assertExists()
+        rule.onNodeWithText("RESTRICTED", substring = true).assertExists()
         rule.runOnUiThread { tv.frostline.core.ui.RestrictedStreams.clear("someone") }
         rule.waitForIdle()
-        rule.onNodeWithTag("lock_badge").assertDoesNotExist()
+        rule.onNodeWithText("RESTRICTED", substring = true).assertDoesNotExist()
     }
 
     @Test fun guestSeesSignInPromptInsteadOfFollows() {

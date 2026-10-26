@@ -152,4 +152,10 @@ class ChannelUiTest {
         show(base(listOf(video(1), video(2), video(3))))
         rule.onNodeWithTag(ChannelTags.VideoPrefix + "v2").assertIsFocused()
     }
+
+    @Test fun backRestoresACardFarDownTheListEvenWithoutASavedScroll() {
+        memory.key = "v:v27" // scroll position lost (index 0): the card is brought into view first, then focused
+        show(base((1..40).map { video(it) }))
+        rule.onNodeWithTag(ChannelTags.VideoPrefix + "v27").assertIsFocused()
+    }
 }
