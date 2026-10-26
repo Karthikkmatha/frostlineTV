@@ -92,3 +92,24 @@ then animations most-used first, at low priority). Chat rate (messages per secon
 mode: slow (under 3/s) all visible emotes animate, busy (3-8/s) the newest 12 lines, fast (over 8/s) still frames only. The emote
 drawer has its own clock and ignores the mode and chat focus. "Animated emotes: Off" overrides everything. The debug overlay shows
 the mode, rate, number of hot animations and the memory and disk cache sizes.
+
+## Performance: baseline profile and benchmarks (`:baselineprofile`)
+
+`:baselineprofile` is an `androidx.baselineprofile` + Macrobenchmark + UiAutomator module that targets `:app`. It drives the
+real app with D-pad key presses and test tags (the app sets `testTagsAsResourceId`). The device must be signed in (or have
+continued as guest) so the app starts on Home; the build used is the profileable `benchmarkRelease`/`nonMinifiedRelease`.
+
+Journeys (`Journeys.kt`): cold start to Following; D-pad through Following and Top; open the first Top stream and watch it for
+40 s with chat on; open a VOD from a channel page (long-press a card, first video).
+
+Run on the TV (adb over the network, the device is chosen with `ANDROID_SERIAL`):
+
+    set ANDROID_SERIAL=192.168.68.62:5555
+    gradlew :app:generateReleaseBaselineProfile                    (writes app/src/release/generated/baselineProfiles/baseline-prof.txt)
+    gradlew :baselineprofile:connectedBenchmarkReleaseAndroidTest  (StartupBenchmark: cold start, StartupTimingMetric;
+                                                                    ScrollBenchmark: D-pad scrolling, FrameTimingMetric)
+
+`assembleRelease` packs the generated `baseline-prof.txt` (and `src/main/baseline-prof.txt`, the broad wildcard rules over
+`tv.frostline`, which stay as the fallback) into `assets/dexopt/baseline.prof`; ProfileInstaller applies it on first launch.
+Commit the generated file after regenerating. Verify an install is compiled with `adb shell dumpsys package dexopt` or
+`cmd package compile -m speed-profile -f tv.frostline.app` for a manual comparison.
