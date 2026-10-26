@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import tv.frostline.core.ui.FrostColors
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.os.Bundle
@@ -100,14 +102,14 @@ class WebSignInActivity : ComponentActivity() {
     private fun styled(text: String, onClick: () -> Unit) = Button(this).apply {
         this.text = text
         isAllCaps = false
-        setTextColor(0xFFEEEBF5.toInt())
+        setTextColor(FrostColors.OnSurface.toArgb())
         textSize = 15f
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
         isFocusable = true
         minHeight = dp(40); minimumHeight = dp(40)
-        val normal = GradientDrawable().apply { setColor(0xFF4E2E99.toInt()); cornerRadius = dp(20).toFloat() }
+        val normal = GradientDrawable().apply { setColor(FrostColors.Primary.toArgb()); cornerRadius = dp(20).toFloat() }
         val focused = GradientDrawable().apply {
-            setColor(0xFF6A47C7.toInt()); cornerRadius = dp(20).toFloat(); setStroke(dp(2), 0xFF8F74E8.toInt())
+            setColor(FrostColors.PrimaryFocused.toArgb()); cornerRadius = dp(20).toFloat(); setStroke(dp(2), FrostColors.Violet.toArgb())
         }
         background = StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), focused)
@@ -129,7 +131,7 @@ class WebSignInActivity : ComponentActivity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF050507.toInt())
+            setBackgroundColor(FrostColors.Background.toArgb())
             setPadding(dp(32), dp(10), dp(32), dp(10))
         }
         val bar = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
@@ -144,12 +146,12 @@ class WebSignInActivity : ComponentActivity() {
             }
         }
         status = TextView(this).apply {
-            setTextColor(0xFFA49FB8.toInt()); textSize = 13f
+            setTextColor(FrostColors.Muted.toArgb()); textSize = 13f
             setPadding(dp(12), 0, 0, 0)
         }
         bar.addView(cancel); bar.addView(skipButton, spaced()); bar.addView(uaButton, spaced())
         bar.addView(status, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        debugLine = TextView(this).apply { setTextColor(0xFF8FD3FF.toInt()); textSize = 11f; text = "debug: $lastDebug" }
+        debugLine = TextView(this).apply { setTextColor(FrostColors.Ice.toArgb()); textSize = 11f; text = "debug: $lastDebug" }
 
         web = WebView(this).apply {
             isFocusable = true

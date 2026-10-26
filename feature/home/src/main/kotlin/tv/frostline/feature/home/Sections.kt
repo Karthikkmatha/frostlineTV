@@ -88,7 +88,7 @@ fun FollowingContent(vm: HomeViewModel, onOpen: (String) -> Unit, onOpenChannelP
         buildList<GridEntry> {
             if (st.needsSignIn) {
                 add(header("h:live", "Following"))
-                add(state("f:signin", StateIcons.Person, "Sign in to see who you follow", "Open Settings") { vm.select(HomeSection.Settings) })
+                add(state("f:signin", StateIcons.Person, "Sign in to see your follows", "Open Settings") { vm.select(HomeSection.Settings) })
             } else {
                 add(header("h:live", "Live now"))
                 when {

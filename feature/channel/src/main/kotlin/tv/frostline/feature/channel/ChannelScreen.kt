@@ -360,7 +360,7 @@ private fun Badge(text: String, modifier: Modifier) = ThumbBadge(text, modifier.
 @Composable
 private fun LockBadge(modifier: Modifier) {
     androidx.compose.foundation.Canvas(
-        modifier.padding(6.dp).background(androidx.compose.ui.graphics.Color(0xCC050507), RoundedCornerShape(4.dp)).padding(4.dp).size(12.dp)
+        modifier.padding(6.dp).background(FrostColors.Plate, RoundedCornerShape(4.dp)).padding(4.dp).size(12.dp)
             .semantics { contentDescription = "Restricted video" },
     ) {
         val c = FrostColors.OnSurface

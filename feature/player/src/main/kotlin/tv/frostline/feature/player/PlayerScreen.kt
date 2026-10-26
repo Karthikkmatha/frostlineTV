@@ -204,7 +204,7 @@ fun PlayerScreen(
         model = chatModel,
         actions = chatActions,
         controller = chatController,
-        modifier = Modifier.background(Color.Black),
+        modifier = Modifier.background(FrostColors.VideoBackdrop),
     ) {
         Box(Modifier.fillMaxSize()) {
             // Video is a SurfaceView layer; nothing is ever rendered through Compose.
@@ -308,7 +308,7 @@ fun RaidBanner(notice: RaidNotice, onCancel: () -> Unit, modifier: Modifier = Mo
 @Composable
 internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx.compose.runtime.State<Int>?, modifier: Modifier, extra: List<String> = emptyList(), jank: androidx.compose.runtime.State<String>? = null) {
     Column(
-        modifier.background(Color(0xB3050507), RoundedCornerShape(8.dp)).padding(10.dp).testTag("debug_overlay"),
+        modifier.background(FrostColors.Background.copy(alpha = 0.7f), RoundedCornerShape(8.dp)).padding(10.dp).testTag("debug_overlay"),
     ) {
         val lines = listOf(
             "startup  ${m.startupMs?.let { "$it ms" } ?: "-"}",
@@ -318,7 +318,7 @@ internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx
             "net      ${m.bandwidthBps / 1000} kbps",
             "latency  ${liveOffsetMs?.let { "$it ms" } ?: "-"}",
         ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }, jank?.value) + extra
-        lines.forEach { Text(it, fontSize = 12.sp, color = FrostColors.Lavender, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace) }
+        lines.forEach { Text(it, style = MaterialTheme.typography.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = FrostColors.Lavender)) }
     }
 }
 

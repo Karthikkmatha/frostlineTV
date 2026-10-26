@@ -61,7 +61,7 @@ fun SideRail(
         modifier
             .fillMaxHeight()
             .width(RailCollapsedWidth)
-            .background(Brush.horizontalGradient(listOf(Color(0xF2050507), Color(0xE6050507), Color(0x00050507))))
+            .background(Brush.horizontalGradient(listOf(FrostColors.Background.copy(alpha = 0.95f), FrostColors.Background.copy(alpha = 0.9f), Color.Transparent)))
             .onFocusChanged { onFocusChange(it.hasFocus) }
             .focusRequester(groupRequester)
             .focusProperties { enter = { requesters[selectedId] ?: FocusRequester.Default } }

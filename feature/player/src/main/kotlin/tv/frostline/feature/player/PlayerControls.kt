@@ -292,7 +292,7 @@ private fun SeekBar(positionMs: Long, durationMs: Long) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(Durations.clock(positionMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Elapsed))
-        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(Color(0x66FFFFFF))) {
+        Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(FrostColors.Track)) {
             Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FrostColors.Violet))
         }
         Text(Durations.clock(durationMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
@@ -319,10 +319,10 @@ private fun SkipButton(label: String, description: String, onPress: (repeat: Boo
 }
 
 /** Black at 70 % at the screen edge, fading to nothing: the top and bottom scrims. */
-private val Scrim = Color.Black.copy(alpha = 0.7f)
+private val Scrim = FrostColors.Scrim
 
 /** Container of round controls over the video: the Container colour, a little see-through so the picture shows. */
-private val OverlayContainer = Color(0xCC262033)
+private val OverlayContainer = FrostColors.OverlayContainer
 
 @Composable
 fun LiveBadgeView(badge: LiveBadge, modifier: Modifier = Modifier) {

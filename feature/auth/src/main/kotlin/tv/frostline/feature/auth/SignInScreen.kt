@@ -149,12 +149,12 @@ private fun remainingSeconds(expiresAtMs: Long): Long = ((expiresAtMs - System.c
 @Composable
 fun QrCode(text: String, modifier: Modifier = Modifier) {
     val modules = remember(text) { qrModules(text) }
-    Canvas(modifier.background(Color(0xFFEEEBF5), RoundedCornerShape(8.dp)).padding(10.dp)) {
+    Canvas(modifier.background(FrostColors.OnSurface, RoundedCornerShape(8.dp)).padding(10.dp)) {
         val n = modules.size
         val cell = size.minDimension / n
         for (y in 0 until n) for (x in 0 until n) {
             if (modules[y][x]) {
-                drawRect(Color(0xFF050507), Offset(x * cell, y * cell), Size(cell + 0.5f, cell + 0.5f))
+                drawRect(FrostColors.Background, Offset(x * cell, y * cell), Size(cell + 0.5f, cell + 0.5f))
             }
         }
     }

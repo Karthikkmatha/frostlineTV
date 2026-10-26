@@ -159,7 +159,7 @@ fun VodPlayerScreen(
         model = chatModel,
         actions = chatActions,
         controller = chatController,
-        modifier = Modifier.background(Color.Black),
+        modifier = Modifier.background(FrostColors.VideoBackdrop),
     ) {
         Box(Modifier.fillMaxSize()) {
             player?.let { p ->

@@ -82,7 +82,7 @@ fun FrostMediaCard(
 
 /** A small label over a thumbnail corner (LIVE, viewers, duration, RESTRICTED). */
 @Composable
-fun ThumbBadge(text: String, modifier: Modifier = Modifier, background: Color = Color(0xCC050507), color: Color = FrostColors.OnSurface, bold: Boolean = false) {
+fun ThumbBadge(text: String, modifier: Modifier = Modifier, background: Color = FrostColors.Plate, color: Color = FrostColors.OnSurface, bold: Boolean = false) {
     Text(
         text, style = MaterialTheme.typography.bodySmall, color = color,
         fontWeight = if (bold) FontWeight.Bold else FontWeight.Medium, maxLines = 1,
@@ -94,7 +94,7 @@ fun ThumbBadge(text: String, modifier: Modifier = Modifier, background: Color = 
 @Composable
 fun LiveOverlay(viewers: String, modifier: Modifier = Modifier) {
     Row(modifier.padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        ThumbBadge("LIVE", background = FrostColors.Live, color = Color.White, bold = true)
+        ThumbBadge("LIVE", background = FrostColors.Live, color = FrostColors.OnLive, bold = true)
         ThumbBadge(viewers)
     }
 }
@@ -128,7 +128,7 @@ fun FrostSheetSurface(modifier: Modifier = Modifier, content: @Composable Column
     Column(
         modifier
             .graphicsLayer { translationX = (1f - progress.value) * size.width }
-            .background(Color(0xF51B1726), RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
+            .background(FrostColors.Sheet, RoundedCornerShape(topStart = 16.dp, bottomStart = 16.dp))
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,

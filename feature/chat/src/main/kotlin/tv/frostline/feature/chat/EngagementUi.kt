@@ -74,9 +74,9 @@ internal fun rememberNowMs(active: Boolean): State<Long> {
 private val Stop = FocusRequester.Cancel
 
 private fun colorOf(name: String?, index: Int): Color = when (name?.uppercase()) {
-    "BLUE" -> Color(0xFF4DA3FF)
-    "PINK" -> Color(0xFFFF6FB5)
-    else -> listOf(Color(0xFF4DA3FF), Color(0xFFFF6FB5), Color(0xFF8FD3A0), Color(0xFFE8C468))[index % 4]
+    "BLUE" -> FrostColors.OutcomeBlue
+    "PINK" -> FrostColors.OutcomePink
+    else -> listOf(FrostColors.OutcomeBlue, FrostColors.OutcomePink, FrostColors.OutcomeGreen, FrostColors.OutcomeGold)[index % 4]
 }
 
 // ---------------------------------------------------------------- header badge and toast

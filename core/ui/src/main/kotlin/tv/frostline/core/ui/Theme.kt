@@ -44,6 +44,25 @@ object FrostColors {
     val OnSurface = Color(0xFFEEEBF5)
     val Muted = Color(0xFFA49FB8)
     val Live = Color(0xFFFF4D5E)
+    /** Text on the [Live] red (the LIVE pill). */
+    val OnLive = Color.White
+    /** Behind the video surface. */
+    val VideoBackdrop = Color.Black
+    /** Top and bottom scrims over the video (black at 70 %). */
+    val Scrim = Color.Black.copy(alpha = 0.7f)
+    /** Dark see-through plate behind badges and debug text: the Background colour at 80 %. */
+    val Plate = Background.copy(alpha = 0.8f)
+    /** Round controls over the video: [Container] a little see-through. */
+    val OverlayContainer = Container.copy(alpha = 0.8f)
+    /** Unfilled part of a progress track over the video. */
+    val Track = OnSurface.copy(alpha = 0.4f)
+    /** Side-panel sheet surface: [SurfaceAlt] at 96 %. */
+    val Sheet = SurfaceAlt.copy(alpha = 0.96f)
+    /** Prediction outcome colours (Twitch's blue and pink, then two more). */
+    val OutcomeBlue = Color(0xFF4DA3FF)
+    val OutcomePink = Color(0xFFFF6FB5)
+    val OutcomeGreen = Color(0xFF8FD3A0)
+    val OutcomeGold = Color(0xFFE8C468)
 }
 
 /** "frostline" in a regular weight followed by a bold "TV". */

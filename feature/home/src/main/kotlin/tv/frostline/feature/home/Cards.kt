@@ -98,7 +98,7 @@ fun ChannelCard(channel: SearchChannel, avatarUrl: String?, modifier: Modifier, 
         subtitle = if (channel.isLive) channel.gameName else "Offline",
     ) {
         AvatarCircle(avatarUrl?.takeIf { it.isNotEmpty() } ?: channel.thumbnailUrl, 88.dp, Modifier.align(Alignment.Center))
-        if (channel.isLive) ThumbBadge("LIVE", Modifier.align(Alignment.TopStart).padding(8.dp), background = FrostColors.Live, color = androidx.compose.ui.graphics.Color.White, bold = true)
+        if (channel.isLive) ThumbBadge("LIVE", Modifier.align(Alignment.TopStart).padding(8.dp), background = FrostColors.Live, color = FrostColors.OnLive, bold = true)
     }
 }
 
