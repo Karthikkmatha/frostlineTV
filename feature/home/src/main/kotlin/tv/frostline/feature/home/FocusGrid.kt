@@ -1,5 +1,8 @@
 package tv.frostline.feature.home
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.BringIntoViewSpec
+import androidx.compose.foundation.gestures.LocalBringIntoViewSpec
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -31,6 +34,19 @@ internal const val GIVE_UP_FRAMES = 150
 
 val OverscanX: Dp = 48.dp
 val OverscanY: Dp = 27.dp
+
+/** Focus pivot like Google TV: the focused item sits [fraction] of the container from its start edge. */
+@OptIn(ExperimentalFoundationApi::class)
+internal class PivotSpec(private val fraction: Float) : BringIntoViewSpec {
+    override fun calculateScrollDistance(offset: Float, size: Float, containerSize: Float): Float =
+        offset - containerSize * fraction
+}
+
+/** Vertical lists and grids keep the focused card at 15% from the top. */
+internal val ColumnPivot = PivotSpec(0.15f)
+
+/** Horizontal rows (Continue watching) keep the focused card at 4% from the start edge. */
+internal val RowPivot = PivotSpec(0.04f)
 
 /** Brings an entry of the enclosing [FocusGrid] into composition (it is a lazy grid), so it can be given focus. */
 fun interface GridScroller { suspend fun scrollTo(key: String) }
@@ -116,7 +132,7 @@ fun FocusGrid(
         val i = entries.indexOfFirst { it.key == key }
         if (i >= 0) state.scrollToItem(i)
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalGridScroller provides scroller) {
+    androidx.compose.runtime.CompositionLocalProvider(LocalGridScroller provides scroller, LocalBringIntoViewSpec provides ColumnPivot) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minCellWidth),
         state = state,

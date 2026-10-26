@@ -2,6 +2,11 @@ package tv.frostline.feature.home
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -119,5 +124,47 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
         val fraction = if (item.duration > 0) (item.position.toFloat() / item.duration).coerceIn(0f, 1f) else 0f
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.SurfaceAlt))
         Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Primary))
+    }
+}
+
+/** Thumbnail of a large list card: 680x380 px on a 1080p screen (340x191 dp), 16:9. */
+internal val WideThumbWidth = 340.dp
+internal val WideThumbHeight = 191.dp
+
+/** Focus scale of a large list card: the default 1.05 would push its wide edges into the list margin. */
+internal const val WideCardFocusScale = 1.025f
+
+/**
+ * Large list card (Live now, Top and category streams, search): a 16:9 thumbnail on the left; on the right the avatar,
+ * streamer, title, category and a red-dot viewer count.
+ */
+@Composable
+fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+    val bucket by rememberPreviewBucket()
+    FrostCard(onClick, modifier.fillMaxWidth().testTag("stream_card"), onLongClick = onLongClick, focusedScale = WideCardFocusScale) {
+        Row(Modifier.fillMaxWidth()) {
+            Box(Modifier.width(WideThumbWidth).height(WideThumbHeight)) {
+                SizedImage(
+                    Thumbnails.livePreview(stream.thumbnailUrl, 680, 383, bucket) ?: stream.thumbnailUrl.sized(680, 383),
+                    WideThumbWidth, WideThumbHeight, Modifier.fillMaxSize(),
+                )
+                LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd))
+            }
+            Column(
+                Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AvatarCircle(avatarUrl, 36.dp)
+                    Text(stream.userName, style = MaterialTheme.typography.titleMedium, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Text(stream.title.ifBlank { " " }, style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(stream.gameName.ifBlank { " " }, style = MaterialTheme.typography.bodyMedium, color = FrostColors.Lavender, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Box(Modifier.size(8.dp).background(FrostColors.Live, CircleShape))
+                    Text("${formatViewers(stream.viewerCount)} viewers", style = MaterialTheme.typography.bodyMedium, color = FrostColors.Live, maxLines = 1)
+                }
+            }
+        }
     }
 }
