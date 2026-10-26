@@ -190,13 +190,10 @@ class HomeViewModel(
         viewModelScope.launch {
             _top.update { it.copy(loading = true, error = null) }
             try {
-                val tab = _top.value.tab
-                if (tab == TopTab.Streams) {
-                    val s = helix.topStreams()
-                    _top.update { it.copy(streams = s) }
-                } else {
-                    val c = helix.topCategories()
-                    _top.update { it.copy(categories = c) }
+                coroutineScope {
+                    val s = async { helix.topStreams() }
+                    val c = async { helix.topCategories() }
+                    _top.update { it.copy(streams = s.await(), categories = c.await()) }
                 }
                 _top.update { it.copy(loading = false) }
                 succeeded("top")

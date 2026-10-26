@@ -1,70 +1,40 @@
 package tv.frostline.feature.home
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
-import coil3.compose.AsyncImage
 import tv.frostline.core.data.ResumeEntity
+import tv.frostline.core.twitch.Durations
 import tv.frostline.core.twitch.FollowedChannel
 import tv.frostline.core.twitch.HelixGame
 import tv.frostline.core.twitch.HelixStream
 import tv.frostline.core.twitch.SearchChannel
-import tv.frostline.core.twitch.sized
-import tv.frostline.core.ui.FrostColors
-import tv.frostline.core.ui.SizedImage
-import tv.frostline.core.ui.FrostCard
-import tv.frostline.core.ui.FrostTokens
-import tv.frostline.core.ui.rememberPreviewBucket
 import tv.frostline.core.twitch.Thumbnails
-
-@Composable
-private fun CardSurface(
-    onClick: () -> Unit,
-    modifier: Modifier,
-    focusedScale: Float = FrostTokens.CardFocusScale,
-    onLongClick: (() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    FrostCard(onClick, modifier, onLongClick = onLongClick, focusedScale = focusedScale, content = content)
-}
-
-@Composable
-private fun Line(text: String, size: Int, color: androidx.compose.ui.graphics.Color, bold: Boolean = false) {
-    Text(
-        text,
-        fontSize = size.sp,
-        color = color,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        fontWeight = if (bold) FontWeight.SemiBold else FontWeight.Normal,
-    )
-}
+import tv.frostline.core.twitch.sized
+import tv.frostline.core.ui.AvatarCircle
+import tv.frostline.core.ui.CardSizes
+import tv.frostline.core.ui.FrostCard
+import tv.frostline.core.ui.FrostColors
+import tv.frostline.core.ui.FrostMediaCard
+import tv.frostline.core.ui.LiveOverlay
+import tv.frostline.core.ui.SizedImage
+import tv.frostline.core.ui.ThumbBadge
+import tv.frostline.core.ui.rememberPreviewBucket
 
 fun formatViewers(n: Int): String = when {
     n >= 1_000_000 -> "%.1fM".format(n / 1_000_000.0)
@@ -77,146 +47,77 @@ fun formatViewers(n: Int): String = when {
 @Composable
 private fun LockBadge(login: String, modifier: Modifier) {
     val locked by tv.frostline.core.ui.RestrictedStreams.logins.collectAsStateWithLifecycle()
-    if (login.lowercase() in locked) {
-        Text(
-            "RESTRICTED",
-            fontSize = 10.sp,
-            color = FrostColors.OnSurface,
-            modifier = modifier.testTag("lock_badge").background(FrostColors.Background.copy(alpha = 0.8f), RoundedCornerShape(4.dp)).padding(horizontal = 5.dp, vertical = 2.dp),
-        )
-    }
+    if (login.lowercase() in locked) ThumbBadge("RESTRICTED", modifier.padding(8.dp).testTag("lock_badge"))
 }
 
+/** A live stream: 16:9 preview with the LIVE pill and viewer count, then streamer, title, category and viewers. */
 @Composable
 fun StreamCard(stream: HelixStream, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     val bucket by rememberPreviewBucket()
-    CardSurface(onClick, modifier.testTag("stream_card"), onLongClick = onLongClick) {
-        Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                AsyncImage(
-                    model = Thumbnails.livePreview(stream.thumbnailUrl, 440, 248, bucket) ?: stream.thumbnailUrl.sized(440, 248),
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-                Text(
-                    "${formatViewers(stream.viewerCount)} viewers",
-                    fontSize = 10.sp,
-                    color = FrostColors.Background,
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(6.dp)
-                        .background(FrostColors.Live.copy(alpha = 0.9f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                )
-                LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd).padding(6.dp))
-            }
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Line(stream.userName, 13, FrostColors.OnSurface, bold = true)
-                Line(stream.title.ifBlank { " " }, 11, FrostColors.Muted)
-                Line(stream.gameName.ifBlank { " " }, 11, FrostColors.Lavender)
-            }
-        }
+    FrostMediaCard(
+        onClick = onClick,
+        modifier = modifier.testTag("stream_card"),
+        onLongClick = onLongClick,
+        title = stream.userName,
+        subtitle = stream.title,
+        meta = listOf(stream.gameName, "${formatViewers(stream.viewerCount)} viewers").filter { it.isNotBlank() }.joinToString("  ·  "),
+    ) {
+        val px = 2
+        SizedImage(
+            Thumbnails.livePreview(stream.thumbnailUrl, 280 * px, 158 * px, bucket) ?: stream.thumbnailUrl.sized(280 * px, 158 * px),
+            CardSizes.StreamWidth, CardSizes.StreamThumbHeight, Modifier.fillMaxSize(),
+        )
+        LiveOverlay(formatViewers(stream.viewerCount), Modifier.align(Alignment.TopStart))
+        LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd))
     }
 }
 
+/** A category: 2:3 box art with the name below. */
 @Composable
 fun CategoryCard(game: HelixGame, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier) {
-        Column {
-            AsyncImage(
-                model = game.boxArtUrl.sized(285, 380),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
-            )
-            Box(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) { Line(game.name, 12, FrostColors.OnSurface, bold = true) }
-        }
+    FrostMediaCard(
+        onClick = onClick, modifier = modifier,
+        thumbWidth = CardSizes.BoxartWidth, thumbHeight = CardSizes.BoxartHeight,
+        title = game.name,
+    ) {
+        SizedImage(game.boxArtUrl.sized(280, 420), CardSizes.BoxartWidth, CardSizes.BoxartHeight, Modifier.fillMaxSize())
     }
 }
 
+/** A search result channel: the avatar on a card, LIVE pill when on air. */
 @Composable
 fun ChannelCard(channel: SearchChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    CardSurface(onClick, modifier, onLongClick = onLongClick) {
-        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SizedImage(channel.thumbnailUrl, 44.dp, 44.dp, Modifier.size(44.dp).clip(CircleShape))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Line(channel.displayName.ifBlank { channel.login }, 13, FrostColors.OnSurface, bold = true)
-                Line(if (channel.isLive) "LIVE  ${channel.gameName}" else "Offline", 11, if (channel.isLive) FrostColors.Live else FrostColors.Muted)
-            }
-        }
+    FrostMediaCard(
+        onClick = onClick, modifier = modifier, onLongClick = onLongClick,
+        title = channel.displayName.ifBlank { channel.login },
+        subtitle = if (channel.isLive) channel.gameName else "Offline",
+    ) {
+        AvatarCircle(channel.thumbnailUrl, 88.dp, Modifier.align(Alignment.Center))
+        if (channel.isLive) ThumbBadge("LIVE", Modifier.align(Alignment.TopStart).padding(8.dp), background = FrostColors.Live, color = androidx.compose.ui.graphics.Color.White, bold = true)
     }
 }
 
 @Composable
 fun OfflineChip(channel: FollowedChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    CardSurface(onClick, modifier.fillMaxWidth().height(40.dp), onLongClick = onLongClick) {
+    FrostCard(onClick, modifier.width(180.dp).height(40.dp), onLongClick = onLongClick) {
         Box(Modifier.fillMaxHeight().padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
-            Line(channel.displayName, 13, FrostColors.OnSurface)
+            Text(channel.displayName, style = MaterialTheme.typography.bodyLarge, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
 
+/** Continue watching: the past broadcast's thumbnail with a progress bar. */
 @Composable
 fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
-    CardSurface(onClick, modifier) {
-        Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f)) {
-                if (item.thumbnail.isNotBlank()) {
-                    AsyncImage(
-                        model = item.thumbnail,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Box(Modifier.fillMaxSize().background(FrostColors.SurfaceAlt))
-                }
-                val fraction = if (item.duration > 0) (item.position.toFloat() / item.duration).coerceIn(0f, 1f) else 0f
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.SurfaceAlt))
-                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Primary))
-            }
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Line(item.channel, 13, FrostColors.OnSurface, bold = true)
-                Line(item.title.ifBlank { " " }, 11, FrostColors.Muted)
-                Line(
-                    "${tv.frostline.core.twitch.Durations.clock(item.position)} of ${tv.frostline.core.twitch.Durations.clock(item.duration)}",
-                    11, FrostColors.Lavender,
-                )
-            }
-        }
-    }
-}
-
-/** Following page card: 16:9 thumbnail (~340 dp) on the left, channel details on the right. */
-@Composable
-fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    val bucket by rememberPreviewBucket()
-    CardSurface(onClick, modifier.fillMaxWidth().testTag("stream_card"), focusedScale = 1f, onLongClick = onLongClick) {
-        Row(Modifier.fillMaxWidth()) {
-            Box(Modifier.width(340.dp).aspectRatio(16f / 9f)) {
-                SizedImage(Thumbnails.livePreview(stream.thumbnailUrl, 680, 383, bucket) ?: stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.fillMaxSize())
-                LockBadge(stream.userLogin, Modifier.align(Alignment.TopEnd).padding(8.dp))
-            }
-            Column(
-                Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(36.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
-                        if (!avatarUrl.isNullOrEmpty()) {
-                            SizedImage(avatarUrl, 36.dp, 36.dp, Modifier.fillMaxSize())
-                        }
-                    }
-                    Line(stream.userName, 18, FrostColors.OnSurface, bold = true)
-                }
-                Line(stream.title.ifBlank { " " }, 15, FrostColors.OnSurface)
-                Line(stream.gameName.ifBlank { " " }, 14, FrostColors.Lavender)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(FrostColors.Live))
-                    Line("${formatViewers(stream.viewerCount)} viewers", 14, FrostColors.Live)
-                }
-            }
-        }
+    FrostMediaCard(
+        onClick = onClick, modifier = modifier,
+        title = item.channel,
+        subtitle = item.title,
+        meta = "${Durations.clock(item.position)} of ${Durations.clock(item.duration)}",
+    ) {
+        if (item.thumbnail.isNotBlank()) SizedImage(item.thumbnail, CardSizes.StreamWidth, CardSizes.StreamThumbHeight, Modifier.fillMaxSize())
+        val fraction = if (item.duration > 0) (item.position.toFloat() / item.duration).coerceIn(0f, 1f) else 0f
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth().height(4.dp).background(FrostColors.SurfaceAlt))
+        Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(fraction).height(4.dp).background(FrostColors.Primary))
     }
 }

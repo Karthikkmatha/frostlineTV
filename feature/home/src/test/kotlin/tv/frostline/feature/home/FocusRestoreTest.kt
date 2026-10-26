@@ -3,6 +3,7 @@ package tv.frostline.feature.home
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.tv.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -72,5 +73,42 @@ class FocusRestoreTest {
         rule.mainClock.advanceTimeBy(6_000)
         rule.waitForIdle()
         rule.onNodeWithText("card 0").assertIsFocused()
+    }
+
+    private fun rowOf(prefix: String, n: Int) = CardRowBlock(
+        prefix, "Row $prefix",
+        (0 until n).map { i -> GridEntry("$prefix:$i") { m -> Box(m.height(90.dp).width(200.dp).focusable().semantics(mergeDescendants = true) { }) { Text("$prefix card $i") } } },
+    )
+
+    @Test fun backRestoresTheExactCardDeepInAHorizontalRowOfASecondRow() {
+        val memory = FocusMemory()
+        val signal = FocusSignal()
+        var show by mutableStateOf(true)
+        val blocks = listOf(rowOf("a", 30), rowOf("b", 60))
+        rule.setContent { if (show) FocusRows(blocks, memory, signal) }
+        rule.waitForIdle()
+        rule.onNodeWithText("a card 0").assertIsFocused()
+        rule.runOnUiThread { memory.key = "b:41" }
+        signal.request()
+        rule.runOnUiThread { show = false }
+        rule.waitForIdle()
+        rule.runOnUiThread { show = true }
+        rule.waitForIdle()
+        rule.onNodeWithText("b card 41").assertIsFocused()
+        assertEquals("b:41", memory.key)
+    }
+
+    @Test fun rowsWaitForALateListInsteadOfLosingTheSavedCard() {
+        val memory = FocusMemory().also { it.key = "a:5" }
+        val signal = FocusSignal()
+        var blocks by mutableStateOf(emptyList<RowBlock>())
+        rule.mainClock.autoAdvance = false
+        rule.setContent { FocusRows(blocks, memory, signal) }
+        rule.mainClock.advanceTimeBy(500)
+        assertEquals("a:5", memory.key)
+        rule.runOnUiThread { blocks = listOf(rowOf("a", 12)) }
+        rule.mainClock.advanceTimeBy(500)
+        rule.onNodeWithText("a card 5").assertIsFocused()
+        rule.mainClock.autoAdvance = true
     }
 }

@@ -72,12 +72,13 @@ class FollowingUiTest {
         viewerCount = 12_345, thumbnailUrl = "https://img/{width}x{height}.jpg",
     )
 
-    @Test fun wideCardShowsNameTitleCategoryAndViewers() {
+    @Test fun streamCardShowsNameTitleCategoryAndViewers() {
         var opened = 0
-        rule.setContent { FrostlineTheme { WideStreamCard(stream, null, androidx.compose.ui.Modifier) { opened++ } } }
+        rule.setContent { FrostlineTheme { StreamCard(stream, androidx.compose.ui.Modifier) { opened++ } } }
         rule.onNodeWithText("Someone").assertIsDisplayed()
-        rule.onNodeWithText("Just Chatting").assertIsDisplayed()
-        rule.onNodeWithText("12K viewers").assertIsDisplayed()
+        rule.onNodeWithText("Just Chatting", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("12K viewers", substring = true).assertIsDisplayed()
+        rule.onNodeWithText("LIVE").assertIsDisplayed()
         rule.onNodeWithText(stream.title).requestFocus()
         rule.waitForIdle()
         rule.onNodeWithText(stream.title).performKeyInput { pressKey(Key.DirectionCenter) }
@@ -87,7 +88,7 @@ class FollowingUiTest {
 
     @Test fun restrictedStreamsShowABadgeOnceKnown() {
         tv.frostline.core.ui.RestrictedStreams.clear("someone")
-        rule.setContent { FrostlineTheme { WideStreamCard(stream, null, androidx.compose.ui.Modifier) {} } }
+        rule.setContent { FrostlineTheme { StreamCard(stream, androidx.compose.ui.Modifier) {} } }
         rule.onNodeWithText("RESTRICTED", substring = true).assertDoesNotExist()
         rule.runOnUiThread { tv.frostline.core.ui.RestrictedStreams.mark("Someone") }
         rule.waitForIdle()
@@ -104,7 +105,7 @@ class FollowingUiTest {
         rule.onNodeWithText("Sign in to see your follows").assertIsDisplayed()
     }
 
-    @Test fun signedInSeesLiveCardsAsAVerticalList() {
+    @Test fun signedInSeesLiveCardsAsARow() {
         val vm = HomeViewModel(HelixRepository(FakeApi(listOf(stream))), FakeResume()) { "99" }
         rule.setContent { FrostlineTheme { FollowingContent(vm, {}, {}, {}) } }
         rule.waitForIdle()
@@ -128,7 +129,7 @@ class FollowingUiTest {
         rule.onNodeWithText(stream.title).assertIsFocused()
     }
 
-    @Test fun upFromContinueWatchingGoesToTheLastLiveCard() {
+    @Test fun upFromContinueWatchingGoesToALiveCardNotTheRail() {
         val streams = (1..6).map { stream.copy(id = "$it", userId = "1$it", userLogin = "chan$it", userName = "Chan$it", title = "Title number $it") }
         val resume = ResumeEntity("555", 600_000, 3_600_000, "Last night", "", "someone", 1L)
         val vm = HomeViewModel(HelixRepository(FakeApi(streams)), FakeResume(listOf(resume))) { "99" }
@@ -139,7 +140,7 @@ class FollowingUiTest {
         rule.waitForIdle()
         rule.onNodeWithText("Last night").performKeyInput { pressKey(Key.DirectionUp) }
         rule.waitForIdle()
-        rule.onNodeWithText("Title number 6").assertIsFocused()
+        rule.onNodeWithText("Title number 1").assertIsFocused()
     }
 
     @Test fun continueWatchingOpensTheVideo() {
