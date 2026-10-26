@@ -104,6 +104,21 @@ class WeightedLru<K : Any, V : Any>(
         }
     }
 
+    /** Drops the least recently used entry (calling [onEvict]). False when empty. */
+    fun evictOldest(): Boolean {
+        val victim: Pair<K, V>
+        synchronized(this) {
+            val it = map.entries.iterator()
+            if (!it.hasNext()) return false
+            val e = it.next()
+            total -= e.value.weight
+            it.remove()
+            victim = e.key to e.value.value
+        }
+        onEvict(victim.first, victim.second)
+        return true
+    }
+
     @Synchronized
     fun clear() {
         val copy = map.entries.map { it.key to it.value.value }

@@ -37,6 +37,7 @@ import tv.frostline.core.twitch.HelixStream
 import tv.frostline.core.twitch.SearchChannel
 import tv.frostline.core.twitch.sized
 import tv.frostline.core.ui.FrostColors
+import tv.frostline.core.ui.SizedImage
 import tv.frostline.core.ui.cardScale
 import tv.frostline.core.ui.cardShape
 import tv.frostline.core.ui.focusRingBorder
@@ -135,12 +136,7 @@ fun CategoryCard(game: HelixGame, modifier: Modifier, onClick: () -> Unit) {
 fun ChannelCard(channel: SearchChannel, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     CardSurface(onClick, modifier, onLongClick = onLongClick) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            AsyncImage(
-                model = channel.thumbnailUrl,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.size(44.dp).clip(CircleShape),
-            )
+            SizedImage(channel.thumbnailUrl, 44.dp, 44.dp, Modifier.size(44.dp).clip(CircleShape))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Line(channel.displayName.ifBlank { channel.login }, 13, FrostColors.OnSurface, bold = true)
                 Line(if (channel.isLive) "LIVE  ${channel.gameName}" else "Offline", 11, if (channel.isLive) FrostColors.Live else FrostColors.Muted)
@@ -194,12 +190,7 @@ fun ResumeCard(item: ResumeEntity, modifier: Modifier, onClick: () -> Unit) {
 fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     CardSurface(onClick, modifier.fillMaxWidth().testTag("stream_card"), focusedScale = 1f, onLongClick = onLongClick) {
         Row(Modifier.fillMaxWidth()) {
-            AsyncImage(
-                model = stream.thumbnailUrl.sized(680, 383),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.width(340.dp).aspectRatio(16f / 9f),
-            )
+            SizedImage(stream.thumbnailUrl.sized(680, 383), 340.dp, 191.dp, Modifier.width(340.dp).aspectRatio(16f / 9f))
             Column(
                 Modifier.weight(1f).padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterVertically),
@@ -207,7 +198,7 @@ fun WideStreamCard(stream: HelixStream, avatarUrl: String?, modifier: Modifier, 
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Box(Modifier.size(36.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
                         if (!avatarUrl.isNullOrEmpty()) {
-                            AsyncImage(avatarUrl, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                            SizedImage(avatarUrl, 36.dp, 36.dp, Modifier.fillMaxSize())
                         }
                     }
                     Line(stream.userName, 18, FrostColors.OnSurface, bold = true)

@@ -15,7 +15,7 @@ import okio.Path.Companion.toOkioPath
  */
 object ChatImages {
     /** Upper bound of the decoded-image memory cache. */
-    const val MEMORY_CACHE_BYTES = 16L * 1024 * 1024
+    const val MEMORY_CACHE_BYTES = 8L * 1024 * 1024
 
     fun loader(context: Context): ImageLoader {
         val app = context.applicationContext
@@ -25,6 +25,7 @@ object ChatImages {
                 add(OkHttpNetworkFetcherFactory(callFactory = { http }))
                 add(AnimatedImageDecoder.Factory())
             }
+            // Requests allow hardware bitmaps (Coil's default; SizedImage sets it explicitly): pixels in GPU memory, none on the Java heap.
             // A fixed budget, not a share of the heap: decoded emotes and thumbnails must not grow with the device.
             .memoryCache { MemoryCache.Builder().maxSizeBytes(MEMORY_CACHE_BYTES).build() }
             .diskCache {

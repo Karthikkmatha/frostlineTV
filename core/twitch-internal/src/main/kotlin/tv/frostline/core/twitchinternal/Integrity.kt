@@ -44,6 +44,46 @@ object IntegrityStatus {
     internal fun set(text: String) { _line.value = text }
 }
 
+/**
+ * Debug overlay line ("webview ..."): how many hidden integrity WebViews were created and destroyed, how many are alive,
+ * and how many WebView renderer (sandboxed) processes this app can still see a few seconds after the last destroy.
+ * A healthy app reads "live 0 ... renderers 0" between captures.
+ */
+object WebViewRenderers {
+    private val created = java.util.concurrent.atomic.AtomicInteger()
+    private val destroyed = java.util.concurrent.atomic.AtomicInteger()
+    private val _line = MutableStateFlow("none created")
+    val line: StateFlow<String> = _line.asStateFlow()
+
+    internal fun onCreated() { created.incrementAndGet(); publish(null) }
+    internal fun onDestroyed() { destroyed.incrementAndGet(); publish(null) }
+
+    /** Counts the renderer processes (ActivityManager, then /proc where visible) and republishes the line. */
+    internal fun refresh(context: Context) = publish(renderers(context))
+
+    private fun publish(renderers: Int?) {
+        val live = created.get() - destroyed.get()
+        _line.value = "live $live (created ${created.get()}, destroyed ${destroyed.get()})" + (renderers?.let { ", renderer procs $it" } ?: "")
+    }
+
+    private fun renderers(context: Context): Int {
+        val names = HashSet<String>()
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.runningAppProcesses?.forEach { if (it.processName.contains("sandboxed_process") || it.processName.contains("webview", true)) names += "am:${it.pid}" }
+        }
+        runCatching {
+            java.io.File("/proc").listFiles()?.forEach { d ->
+                if (d.name.all(Char::isDigit)) {
+                    val cmd = java.io.File(d, "cmdline").takeIf { it.canRead() }?.readText().orEmpty()
+                    if (cmd.contains("sandboxed_process") || cmd.contains("webview_service")) names += "proc:${d.name}"
+                }
+            }
+        }
+        return names.map { it.substringAfter(':') }.toSet().size
+    }
+}
+
 /** The player tells the integrity capture when a stream is starting, so the hidden WebView never competes with it. */
 object IntegrityGate {
     @Volatile private var startingAtMs = 0L
@@ -134,6 +174,9 @@ class WebViewIntegrityProvider(
         val destroy = Runnable {
             web?.let { w ->
                 runCatching { w.stopLoading(); w.webViewClient = WebViewClient(); w.loadUrl("about:blank"); w.removeAllViews(); w.destroy() }
+                WebViewRenderers.onDestroyed()
+                // Give the renderer process a moment to exit, then record whether one lingers.
+                main.postDelayed({ WebViewRenderers.refresh(appContext) }, 3_000L)
             }
             web = null
         }
@@ -145,6 +188,7 @@ class WebViewIntegrityProvider(
                 cm.setCookie("https://www.twitch.tv", "auth-token=$value; Domain=.twitch.tv; Path=/; Secure")
                 cm.flush()
                 val w = WebView(appContext)
+                WebViewRenderers.onCreated()
                 web = w
                 w.settings.javaScriptEnabled = true
                 w.settings.domStorageEnabled = true

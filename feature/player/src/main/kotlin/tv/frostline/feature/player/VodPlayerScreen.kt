@@ -67,6 +67,7 @@ fun VodPlayerScreen(
     val skip by viewModel.skip.state.collectAsStateWithLifecycle()
     val debug by viewModel.debugOverlay.collectAsStateWithLifecycle(initialValue = false)
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
+    tv.frostline.core.ui.DropImageMemoryWhileShown()
     val fps = rememberUiFps(debug && showFps)
     val metrics by viewModel.metrics.state.collectAsStateWithLifecycle()
     val channelId by viewModel.channelId.collectAsStateWithLifecycle()

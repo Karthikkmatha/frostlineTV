@@ -85,7 +85,7 @@ val LocalEmoteGate = staticCompositionLocalOf { EmoteGate { true } }
 
 /**
  * An emote. It always draws its still frame once decoded (so it never pops in blank); when it is animated, hot
- * (it has a pre-decoded [FrameStrip]), the setting allows it ([LocalEmoteClock] non-null) and the chat mode lets this
+ * (it has a pre-decoded strip in the shared atlas), the setting allows it ([LocalEmoteClock] non-null) and the chat mode lets this
  * line animate ([LocalEmoteGate], by [seq]), it draws strip frame `tick % frames` instead. Nothing is decoded in the
  * draw phase: it only picks a ready bitmap. Without an engine (tests, previews) it draws nothing.
  *
@@ -109,8 +109,9 @@ fun EmoteImage(
             if (clock != null && engine.active && engine.mode != EmoteMode.Fast) engine.ensureAnimation(entry, priority)
         }
     }
-    val version = entry?.version // composition reads it: a finished decode recomposes this emote only
+    val version = entry?.version // composition reads it: a finished decode (or an eviction) recomposes this emote only
     val hasStrip = entry?.strip != null
+    val hasStill = entry?.still != null
     DisposableEffect(clock, hasStrip, version) {
         if (clock != null && hasStrip) {
             clock.subscribe()
@@ -119,21 +120,26 @@ fun EmoteImage(
             onDispose { }
         }
     }
+    // The still was evicted from the atlas while this emote is still on screen: ask for it again.
+    LaunchedEffect(entry, hasStill) {
+        if (engine != null && entry != null && !hasStill) engine.ensureStill(entry, EmoteEngine.PRIO_VISIBLE)
+    }
     ComposeCanvas(modifier.semantics { contentDescription = description }) {
         val e = entry ?: return@ComposeCanvas
         e.version // draw-phase read: a decode that lands later redraws without recomposing
         val strip = e.strip
-        // Animated: a src rect into the strip's single atlas. Otherwise the still frame (or the strip's first frame).
-        val frame = if (strip != null && clock != null && gate.allows(seq)) frameIndex(clock.tick, strip.count) else 0
-        val image: ImageBitmap
-        val srcY: Int
-        val iw: Int
-        val ih: Int
-        if (strip != null && (clock != null && gate.allows(seq) || e.still == null)) {
-            image = strip.atlas; srcY = frame * strip.frameH; iw = strip.frameW; ih = strip.frameH
+        val still = e.still
+        // Animated: a src rect of the shared atlas page. Otherwise the still's cells (or the strip's first frame).
+        val animating = strip != null && clock != null && gate.allows(seq)
+        val region: AtlasRegion
+        val frame: Int
+        if (strip != null && (animating || still == null)) {
+            region = strip; frame = if (animating) frameIndex(clock!!.tick, strip.count) else 0
         } else {
-            image = e.still ?: return@ComposeCanvas; srcY = 0; iw = image.width; ih = image.height
+            region = still ?: return@ComposeCanvas; frame = 0
         }
+        val iw = region.w
+        val ih = region.h
         val w = size.width.toInt()
         val h = size.height.toInt()
         if (w <= 0 || h <= 0) return@ComposeCanvas
@@ -141,8 +147,8 @@ fun EmoteImage(
         val dw = (iw * s).toInt().coerceAtLeast(1)
         val dh = (ih * s).toInt().coerceAtLeast(1)
         drawImage(
-            image,
-            srcOffset = IntOffset(0, srcY),
+            region.image,
+            srcOffset = IntOffset(region.srcX(frame), region.srcY(frame)),
             srcSize = IntSize(iw, ih),
             dstOffset = IntOffset((w - dw) / 2, (h - dh) / 2),
             dstSize = IntSize(dw, dh),

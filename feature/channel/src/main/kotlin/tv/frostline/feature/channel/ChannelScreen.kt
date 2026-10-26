@@ -211,7 +211,7 @@ private fun Header(state: ChannelState, actions: ChannelActions, watchLiveFocus:
     ) {
         Box(Modifier.size(72.dp).clip(CircleShape).background(FrostColors.SurfaceAlt)) {
             val avatar = state.user?.profileImageUrl.orEmpty()
-            if (avatar.isNotEmpty()) AsyncImage(avatar, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            if (avatar.isNotEmpty()) tv.frostline.core.ui.SizedImage(avatar, 72.dp, 72.dp, Modifier.fillMaxSize())
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(state.displayName, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, maxLines = 1, overflow = TextOverflow.Ellipsis)
