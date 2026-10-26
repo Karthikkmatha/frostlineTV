@@ -29,6 +29,15 @@ class ChatSettingsTest {
         assertEquals(true, s.show7tv)
     }
 
+    @Test fun syncChatIsOnByDefaultAndPersists() = runTest {
+        val store = SettingsStore(InMemoryPreferencesStore())
+        assertEquals(true, store.chat.first().syncChat)
+        store.updateChat { it.copy(syncChat = false) }
+        assertEquals(false, store.chat.first().syncChat)
+        store.updateChat { it.copy(timestamps = true) }
+        assertEquals(false, store.chat.first().syncChat)
+    }
+
     @Test fun optionListsMatchTheIndexRange() {
         assertEquals(4, ChatOptions.fontSizesSp.size)
         assertEquals(4, ChatOptions.fontNames.size)

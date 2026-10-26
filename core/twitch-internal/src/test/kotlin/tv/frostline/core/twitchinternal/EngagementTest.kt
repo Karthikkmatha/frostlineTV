@@ -64,10 +64,8 @@ class EngagementEventsTest {
         assertEquals(PollStatus.Completed, PollEvents.parse("""{"type":"POLL_COMPLETE","data":{"poll":{"poll_id":"p","title":"t","status":"COMPLETED","choices":[]}}}""")!!.status)
     }
 
-    @Test fun subscribeFrameCarriesAuthOnlyWhenGiven() {
-        val with = HermesProtocol.subscribe("community-points-user-v1.7", "n", "s", "t", "SECRET")
-        assertTrue(with.contains("\"auth\":{\"type\":\"bearer\",\"key\":\"SECRET\"}"))
-        assertFalse(HermesProtocol.subscribe("t", "n", "s", "ts").contains("auth"))
+    @Test fun subscribeFrameNeverCarriesAuth() {
+        assertFalse(HermesProtocol.subscribe("community-points-user-v1.7", "n", "s", "t").contains("auth"))
     }
 }
 
