@@ -53,8 +53,9 @@ import tv.frostline.feature.chat.rememberChatController
 
 /**
  * Past broadcast or clip. The same chrome, quality sheet and chat panel as the live player; the video is a
- * SurfaceView layer. [chat] is the read-only replay (null for clips). Skipping is by the buttons only:
- * Left and Right on the bare player do nothing here (Right enters the chat panel when it is shown).
+ * SurfaceView layer. [chat] is the read-only replay (null for clips). A past broadcast has a focusable
+ * timeline (Left/Right preview, OK seeks) next to the skip buttons; Left and Right on the bare player do nothing
+ * here (Right enters the chat panel when it is shown).
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -68,6 +69,7 @@ fun VodPlayerScreen(
     val player by viewModel.player.collectAsStateWithLifecycle()
     val aspect by viewModel.videoAspect.collectAsStateWithLifecycle()
     val skip by viewModel.skip.state.collectAsStateWithLifecycle()
+    val preview by viewModel.scrub.preview.collectAsStateWithLifecycle()
     val debug by viewModel.debugOverlay.collectAsStateWithLifecycle(initialValue = false)
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
     tv.frostline.core.ui.DropImageMemoryWhileShown()
@@ -144,13 +146,18 @@ fun VodPlayerScreen(
     }
 
     val prompt = ui.resumePromptMs
-    // A pending skip previews on the bar; otherwise the bar follows the playhead.
-    val shownPosition = if (skip.active) skip.targetMs else ui.positionMs
+    // A timeline preview or a pending skip shows on the bar; otherwise the bar follows the playhead.
+    val shownPosition = preview ?: if (skip.active) skip.targetMs else ui.positionMs
     val controls = VodControls(
         kindLabel = if (ui.isClip) "Clip" else "Past broadcast",
         positionMs = shownPosition,
         durationMs = ui.durationMs,
         skipCounter = skipLabel(skip.deltaMs),
+        seekable = !ui.isClip,
+        previewMs = preview,
+        onScrub = viewModel::scrubStep,
+        onScrubCommit = viewModel::scrubCommit,
+        onScrubCancel = viewModel::scrubCancel,
         onSkip = viewModel::pressSkip,
     )
 

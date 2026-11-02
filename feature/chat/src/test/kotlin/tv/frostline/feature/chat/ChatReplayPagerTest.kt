@@ -126,6 +126,22 @@ class ChatReplayPagerTest {
         assertEquals(2, api.offsetCalls.size)
     }
 
+    @Test fun bigTimelineJumpsBothWaysResyncTheChat() = runBlocking {
+        // A timeline seek can move minutes at once (300 s steps): forward and back both reset and refetch around the target.
+        val api = FakeComments(chat)
+        val p = pager(api)
+        p.advance(10_000)
+        val fwd = p.advance(150_000) // +140 s
+        assertTrue(fwd.reset)
+        assertTrue(fwd.messages.all { it.offsetSeconds <= 150 })
+        assertEquals(150 - 25, api.offsetCalls.last())
+        val back = p.advance(30_000)  // -120 s
+        assertTrue(back.reset)
+        assertTrue(back.messages.all { it.offsetSeconds <= 30 })
+        assertEquals(5, api.offsetCalls.last())
+        assertFalse("playing on after the jump is not another reset", p.advance(30_200).reset)
+    }
+
     @Test fun aSmallStepForwardKeepsPlaying() = runBlocking {
         val p = pager(FakeComments(chat))
         p.advance(10_000)

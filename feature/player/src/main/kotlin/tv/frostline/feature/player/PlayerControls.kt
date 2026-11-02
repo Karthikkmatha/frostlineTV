@@ -6,6 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.border
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -19,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -68,13 +74,18 @@ object ControlTags {
     const val SkipForward = "ctl_skip_fwd"
     const val SkipCounter = "skip_counter"
     const val SeekBar = "seek_bar"
+    const val Timeline = "timeline"
+    const val TimelineThumb = "timeline_thumb"
+    const val TimelineHint = "timeline_hint"
     const val Elapsed = "seek_elapsed"
     const val Total = "seek_total"
 }
 
 /**
  * Extra controls of a past broadcast or clip: skip buttons, a seek bar with elapsed/total time and the skip
- * counter. The bar only shows progress: skipping is done with the buttons, never with Left/Right.
+ * counter. For a past broadcast ([seekable]) the bar is a focusable timeline: Left/Right move a preview ([previewMs]),
+ * OK seeks to it, Back or leaving drops it. A clip keeps a plain progress bar. On the bare player and on the buttons,
+ * Left and Right never skip.
  */
 class VodControls(
     val kindLabel: String,
@@ -83,6 +94,16 @@ class VodControls(
     val durationMs: Long,
     /** "+00:30" while a skip is pending, else null. */
     val skipCounter: String?,
+    /** True for a past broadcast: the bar can take focus and scrub. False for a clip. */
+    val seekable: Boolean = false,
+    /** The preview position while scrubbing (the bar and the elapsed label show it), else null. */
+    val previewMs: Long? = null,
+    /** Left (-1) / Right (+1) on the timeline; [repeat] marks the auto-repeat events of a held key. */
+    val onScrub: (dir: Int, repeat: Boolean) -> Unit = { _, _ -> },
+    /** OK on the timeline: seek to the preview. */
+    val onScrubCommit: () -> Unit = {},
+    /** Back, or focus leaving the timeline: drop the preview. */
+    val onScrubCancel: () -> Unit = {},
     /** [deltaMs] is the step; [repeat] marks the auto-repeat events of a held button. */
     val onSkip: (deltaMs: Long, repeat: Boolean) -> Unit,
 )
@@ -137,17 +158,30 @@ fun PlayerChrome(
     val chat = remember { FocusRequester() }
     val skipBack = remember { FocusRequester() }
     val skipForward = remember { FocusRequester() }
+    val timeline = remember { FocusRequester() }
     var interaction by remember { mutableIntStateOf(0) }
+    var timelineFocused by remember { mutableStateOf(false) }
+    val timelineOn = vod != null && vod.seekable
 
-    // Back hides the controls first; with them hidden (or something else open) it falls through to the screen.
-    BackHandler(enabled = controlsVisible && !focusLocked, onBack = onHideControls)
+    // Back drops a timeline preview first, then hides the controls; with them hidden (or something else open) it falls through to the screen.
+    BackHandler(enabled = controlsVisible && !focusLocked) {
+        if (vod?.previewMs != null) vod.onScrubCancel() else onHideControls()
+    }
 
     LaunchedEffect(controlsVisible, focusLocked) {
         if (focusLocked) return@LaunchedEffect
         runCatching { if (controlsVisible) play.requestFocus() else root.requestFocus() }
     }
-    LaunchedEffect(controlsVisible, interaction, focusLocked) {
-        if (controlsVisible && autoHideMs > 0 && !focusLocked) {
+    // Controls going away takes the timeline's focus with them: nothing is left previewing.
+    LaunchedEffect(controlsVisible) {
+        if (!controlsVisible) {
+            timelineFocused = false
+            vod?.onScrubCancel()
+        }
+    }
+    // The controls stay while the timeline has focus (the preview is being chosen); the countdown starts again on blur.
+    LaunchedEffect(controlsVisible, interaction, focusLocked, timelineFocused) {
+        if (controlsVisible && autoHideMs > 0 && !focusLocked && !timelineFocused) {
             delay(autoHideMs)
             onHideControls()
         }
@@ -260,19 +294,31 @@ fun PlayerChrome(
                                 modifier = Modifier.align(Alignment.CenterHorizontally).testTag(ControlTags.SkipCounter),
                             )
                         }
-                        SeekBar(vod.positionMs, vod.durationMs)
+                        if (vod.seekable) {
+                            Timeline(
+                                vod, timelineFocused,
+                                onFocused = { f ->
+                                    timelineFocused = f
+                                    if (!f) vod.onScrubCancel()
+                                },
+                                modifier = Modifier.focusRequester(timeline)
+                                    .focusProperties { up = stop; left = stop; right = stop; down = play },
+                            )
+                        } else {
+                            SeekBar(vod.positionMs, vod.durationMs)
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconControl(
                             R.drawable.ic_refresh, "Refresh stream", onRefresh, 48,
                             Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
-                                .focusProperties { up = play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
+                                .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
                         )
                         if (showChatToggle) {
                             IconControl(
                                 R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 48,
                                 enterChat.focusRequester(chat).testTag(ControlTags.Chat)
-                                    .focusProperties { up = play; down = stop; left = refresh; right = stop },
+                                    .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = refresh; right = stop },
                                 active = chatVisible,
                             )
                             Text(if (chatVisible) "Chat on" else "Chat off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
@@ -280,6 +326,72 @@ fun PlayerChrome(
                     }
                 }
             }        }
+    }
+}
+
+/**
+ * The focusable timeline of a past broadcast. Focused: the round-1 ring and scale, a thicker track and a thumb at the
+ * previewed (or current) position, and a hint underneath. Left/Right preview, OK seeks, Back (handled by the chrome) cancels.
+ * Everything it reads is already state of the controls, so it adds no per-frame work.
+ */
+@Composable
+private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) -> Unit, modifier: Modifier) {
+    val shown = vod.previewMs ?: vod.positionMs
+    val fraction = if (vod.durationMs > 0) (shown.toFloat() / vod.durationMs).coerceIn(0f, 1f) else 0f
+    val shape = RoundedCornerShape(12.dp)
+    Column(
+        modifier
+            .fillMaxWidth()
+            .testTag(ControlTags.Timeline)
+            .graphicsLayer { val sc = if (focused) FrostTokens.RowFocusScale else 1f; scaleX = sc; scaleY = sc }
+            .then(if (focused) Modifier.border(FrostTokens.FocusBorderWidth, FrostColors.Violet, shape) else Modifier)
+            .onKeyEvent { e ->
+                when {
+                    e.key == Key.DirectionLeft || e.key == Key.DirectionRight -> {
+                        if (e.type == KeyEventType.KeyDown) vod.onScrub(if (e.key == Key.DirectionLeft) -1 else 1, e.nativeKeyEvent.repeatCount > 0)
+                        true
+                    }
+                    isSelect(e.key) -> {
+                        if (e.type == KeyEventType.KeyDown && e.nativeKeyEvent.repeatCount == 0) vod.onScrubCommit()
+                        true
+                    }
+                    else -> false
+                }
+            }
+            .onFocusChanged { onFocused(it.isFocused) }
+            .focusable()
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().testTag(ControlTags.SeekBar),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(Durations.clock(shown), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Elapsed))
+            val trackHeight = if (focused) 10.dp else 6.dp
+            Box(Modifier.weight(1f).height(18.dp), contentAlignment = Alignment.CenterStart) {
+                Box(Modifier.fillMaxWidth().height(trackHeight).clip(RoundedCornerShape(trackHeight / 2)).background(FrostColors.Track)) {
+                    Box(Modifier.fillMaxHeight().fillMaxWidth(fraction).background(FrostColors.Violet))
+                }
+                if (focused) {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        Box(
+                            Modifier.offset(x = (maxWidth - 18.dp) * fraction).size(18.dp)
+                                .background(FrostColors.Lavender, CircleShape).testTag(ControlTags.TimelineThumb),
+                        )
+                    }
+                }
+            }
+            Text(Durations.clock(vod.durationMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
+        }
+        if (focused) {
+            Text(
+                "\u25C0 \u25B6 choose time \u00B7 hold to move faster \u00B7 OK seek \u00B7 Back cancel",
+                style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted,
+                modifier = Modifier.align(Alignment.CenterHorizontally).testTag(ControlTags.TimelineHint),
+            )
+        }
     }
 }
 

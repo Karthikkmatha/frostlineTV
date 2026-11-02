@@ -101,6 +101,14 @@ class VodPlayerViewModel(
         now = { android.os.SystemClock.uptimeMillis() },
     )
 
+    /** The timeline's preview (past broadcasts only): Left/Right move it, OK seeks, Back or blur drops it. */
+    val scrub = ScrubController(
+        position = { player.value?.currentPosition ?: 0L },
+        duration = { knownDuration() },
+        seekTo = { pos -> seekNow(pos) },
+        now = { android.os.SystemClock.uptimeMillis() },
+    )
+
     private var loadJob: Job? = null
     private var tickJob: Job? = null
     private var netJob: Job? = null
@@ -173,11 +181,16 @@ class VodPlayerViewModel(
         netJob?.cancel()
         tickJob?.cancel()
         skip.cancel()
+        scrub.cancel()
         lifecycle.stop()
     }
 
     /** Reload (same position). */
-    fun refresh() = load(startAt = player.value?.currentPosition?.takeIf { it > 0 })
+    fun refresh() {
+        skip.cancel()
+        scrub.cancel()
+        load(startAt = player.value?.currentPosition?.takeIf { it > 0 })
+    }
 
     fun togglePlay() {
         val p = player.value ?: return
@@ -188,7 +201,34 @@ class VodPlayerViewModel(
         }
     }
 
-    fun pressSkip(deltaMs: Long, repeat: Boolean) = skip.press(deltaMs, repeat)
+    fun pressSkip(deltaMs: Long, repeat: Boolean) {
+        scrub.cancel()
+        skip.press(deltaMs, repeat)
+    }
+
+    /** Left (-1) / Right (+1) on the timeline. */
+    fun scrubStep(dir: Int, repeat: Boolean) {
+        if (_ui.value.resumePromptMs != null) return
+        skip.cancel()
+        scrub.step(dir, repeat)
+    }
+
+    fun scrubCommit() {
+        scrub.commit()
+    }
+
+    fun scrubCancel() = scrub.cancel()
+
+    /** Seeks at once, refreshes the shown position and saves the resume point without waiting for the 10 s poll. */
+    private fun seekNow(pos: Long) {
+        val p = player.value ?: return
+        p.seekTo(pos)
+        refreshPosition()
+        if (target is PlayTarget.Vod) {
+            lastSavedAt = clock()
+            saveResume(pos, knownDuration())
+        }
+    }
 
     fun resumeFromSaved() {
         val prompt = _ui.value.resumePromptMs ?: return
@@ -220,6 +260,8 @@ class VodPlayerViewModel(
 
     /** [variant] null = Auto (VOD) / the best quality (clip). */
     fun selectQuality(variant: StreamVariant?) {
+        skip.cancel()
+        scrub.cancel()
         _ui.update { it.copy(quality = variant?.groupId) }
         if (target is PlayTarget.Clip) {
             val q = clipQualities.firstOrNull { qualityId(it) == variant?.groupId } ?: clipQualities.firstOrNull() ?: return
