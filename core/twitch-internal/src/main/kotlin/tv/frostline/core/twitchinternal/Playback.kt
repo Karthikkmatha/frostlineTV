@@ -66,6 +66,7 @@ internal class TwitchPlaybackResolver(
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
     private val random: () -> Int = { (Math.random() * 9_999_999).toInt() },
+    private val decoders: DecoderCapability = DeviceDecoders,
 ) : PlaybackResolver {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -86,7 +87,7 @@ internal class TwitchPlaybackResolver(
                 .apply { if (fastBread) addQueryParameter("fast_bread", "true") }
                 .addQueryParameter("playlist_include_framerate", "true")
                 .addQueryParameter("player_backend", "mediaplayer")
-                .addQueryParameter("supported_codecs", "h264")
+                .addQueryParameter("supported_codecs", CodecPolicy.supportedCodecsParam(decoders))
                 .addQueryParameter("p", random().toString())
                 .build()
             val names = url.queryParameterNames.filter { it != "sig" && it != "token" }.joinToString(",")
@@ -102,7 +103,7 @@ internal class TwitchPlaybackResolver(
                         else -> r.body.string()
                     }
                 }
-                return@withContext ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text))
+                return@withContext ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text, decoders))
             } catch (e: ChannelOfflineException) {
                 throw e
             } catch (e: IOException) {

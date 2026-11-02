@@ -78,6 +78,7 @@ internal class TwitchVodResolver(
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
     private val random: () -> Int = { (Math.random() * 9_999_999).toInt() },
+    private val decoders: DecoderCapability = DeviceDecoders,
 ) : VodPlaybackResolver {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -97,7 +98,7 @@ internal class TwitchVodResolver(
             .addQueryParameter("allow_audio_only", "true")
             .addQueryParameter("playlist_include_framerate", "true")
             .addQueryParameter("player_backend", "mediaplayer")
-            .addQueryParameter("supported_codecs", "h264")
+            .addQueryParameter("supported_codecs", CodecPolicy.supportedCodecsParam(decoders))
             .addQueryParameter("p", random().toString())
             .build()
         val text = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
@@ -108,7 +109,7 @@ internal class TwitchVodResolver(
                 else -> r.body.string()
             }
         }
-        ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text))
+        ResolvedStream(url.toString(), MasterPlaylistParser.videoVariants(text, decoders))
     }
 
     override suspend fun clip(slug: String, webSession: String?): ResolvedClip = withContext(Dispatchers.IO) {

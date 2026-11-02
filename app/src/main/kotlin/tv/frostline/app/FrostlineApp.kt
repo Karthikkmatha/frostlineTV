@@ -29,6 +29,8 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
+        // Which hardware decoders this TV has (1440p60 HEVC?): asked once, off the main thread, cached for the usher requests.
+        tv.frostline.core.twitchinternal.TwitchInternal.warmUpDecoders()
         tv.frostline.core.twitch.NetworkRetry.start(this)
         container.twitch.tokenManager.startBackgroundRefresh(appScope)
         // After the TV wakes (or the app comes back) a long sleep may have let the token run out: look at once.

@@ -15,7 +15,7 @@ internal object QualityTracks {
             .clearOverridesOfType(C.TRACK_TYPE_VIDEO).build()
     }
 
-    /** Pins the track closest to [v] (same height first, then nearest bitrate). False if the tracks are not known yet. */
+    /** Pins the track closest to [v] (same height first, then same codec, then nearest bitrate). False if the tracks are not known yet. */
     fun pin(p: ExoPlayer, v: StreamVariant): Boolean {
         val group = p.currentTracks.groups.firstOrNull { it.type == C.TRACK_TYPE_VIDEO && it.length > 0 } ?: return false
         var best = -1
@@ -23,7 +23,8 @@ internal object QualityTracks {
         for (i in 0 until group.length) {
             val f = group.getTrackFormat(i)
             val heightPenalty = if (v.height > 0 && f.height != v.height) 1_000_000_000L else 0L
-            val score = heightPenalty + kotlin.math.abs((f.bitrate.takeIf { it > 0 } ?: 0).toLong() - v.bandwidth)
+            val codecPenalty = if (v.codec.mime != null && f.sampleMimeType != null && f.sampleMimeType != v.codec.mime) 500_000_000L else 0L
+            val score = heightPenalty + codecPenalty + kotlin.math.abs((f.bitrate.takeIf { it > 0 } ?: 0).toLong() - v.bandwidth)
             if (score < bestScore) {
                 bestScore = score
                 best = i

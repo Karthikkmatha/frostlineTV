@@ -19,7 +19,26 @@ data class MetricsSnapshot(
     val width: Int = 0,
     val height: Int = 0,
     val bandwidthBps: Long = 0,
+    /** "hevc", "h264", "av1" or "" while unknown. */
+    val codec: String = "",
+    /** Name of the decoder the video renderer initialised, "" while unknown. */
+    val decoder: String = "",
 )
+
+/** The debug overlay's video line: `video    2560x1440 @ 12000 kbps hevc (c2.mtk.hevc.decoder)`. */
+fun videoLine(m: MetricsSnapshot): String =
+    "video    ${m.width}x${m.height} @ ${m.videoBitrate / 1000} kbps" +
+        (if (m.codec.isNotEmpty()) " ${m.codec}" else "") +
+        (if (m.decoder.isNotEmpty()) " (${m.decoder})" else "")
+
+/** Short codec name from a sample MIME type. */
+fun codecName(mime: String?): String = when (mime) {
+    "video/hevc" -> "hevc"
+    "video/avc" -> "h264"
+    "video/av01" -> "av1"
+    null -> ""
+    else -> mime.substringAfter('/')
+}
 
 /** Pure bookkeeping behind the analytics listener, so it is unit-testable without a player. */
 class MetricsAccumulator(private val clock: () -> Long = System::currentTimeMillis) {
@@ -67,8 +86,12 @@ class MetricsAccumulator(private val clock: () -> Long = System::currentTimeMill
         }
     }
 
-    fun onVideoFormat(bitrate: Int, width: Int, height: Int) {
-        s = s.copy(videoBitrate = bitrate, width = width, height = height)
+    fun onVideoFormat(bitrate: Int, width: Int, height: Int, codec: String = "") {
+        s = s.copy(videoBitrate = bitrate, width = width, height = height, codec = codec)
+    }
+
+    fun onDecoder(name: String) {
+        s = s.copy(decoder = name)
     }
 
     fun onBandwidth(bps: Long) {
@@ -115,9 +138,20 @@ class PlaybackMetrics(private val acc: MetricsAccumulator = MetricsAccumulator()
         format: Format,
         decoderReuseEvaluation: DecoderReuseEvaluation?,
     ) {
-        acc.onVideoFormat(format.bitrate.coerceAtLeast(0), format.width, format.height)
+        acc.onVideoFormat(format.bitrate.coerceAtLeast(0), format.width, format.height, codecName(format.sampleMimeType))
         publish()
         Log.i(TAG, "video ${format.width}x${format.height} bitrate=${format.bitrate}")
+    }
+
+    override fun onVideoDecoderInitialized(
+        eventTime: AnalyticsListener.EventTime,
+        decoderName: String,
+        initializedTimestampMs: Long,
+        initializationDurationMs: Long,
+    ) {
+        acc.onDecoder(decoderName)
+        publish()
+        Log.i(TAG, "decoder=$decoderName")
     }
 
     override fun onBandwidthEstimate(

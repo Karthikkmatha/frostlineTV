@@ -68,9 +68,13 @@ object TwitchInternal {
     /** Past broadcasts and clips. */
     fun vodPlayback(): VodPlaybackResolver = TwitchVodResolver()
 
+    /** Test hook: point the VOD resolver at other hosts, with a fake decoder capability. */
+    fun vodPlayback(gqlUrl: String, usherBase: String, decoders: DecoderCapability): VodPlaybackResolver =
+        TwitchVodResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 }, decoders = decoders)
+
     /** Test hook: point the VOD resolver at other hosts. */
     fun vodPlayback(gqlUrl: String, usherBase: String): VodPlaybackResolver =
-        TwitchVodResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 })
+        TwitchVodResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 }, decoders = H264_ONLY_DEVICE)
 
     /** Chat replay of a past broadcast (GQL VideoCommentsByOffsetOrCursor). */
     fun videoComments(): VideoCommentsApi = GqlVideoComments()
@@ -78,7 +82,17 @@ object TwitchInternal {
     /** Test hook: point replay at another GQL URL. */
     fun videoComments(gqlUrl: String): VideoCommentsApi = GqlVideoComments(gqlUrl = gqlUrl)
 
+    /** Test hook: point the resolver at other hosts, with a fake decoder capability. */
+    fun playback(gqlUrl: String, usherBase: String, decoders: DecoderCapability): PlaybackResolver =
+        TwitchPlaybackResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 }, decoders = decoders)
+
+    /** Starts the hardware-decoder query off the main thread (call at app start); the result is cached. */
+    fun warmUpDecoders() = DeviceDecoders.warmUp()
+
     /** Test hook: point the resolver at other hosts. */
     fun playback(gqlUrl: String, usherBase: String): PlaybackResolver =
-        TwitchPlaybackResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 })
+        TwitchPlaybackResolver(gqlUrl = gqlUrl, usherBase = usherBase, random = { 42 }, decoders = H264_ONLY_DEVICE)
+
+    /** The default of the test hooks: a device that decodes H.264 only, so tests do not depend on the machine. */
+    private val H264_ONLY_DEVICE = DecoderCapability { codec, _, _, _ -> codec == VideoCodec.H264 || codec == VideoCodec.Unknown }
 }

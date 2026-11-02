@@ -333,7 +333,7 @@ internal fun DebugOverlay(m: MetricsSnapshot, liveOffsetMs: Long?, fps: androidx
             "startup  ${m.startupMs?.let { "$it ms" } ?: "-"}",
             "dropped  ${m.droppedFrames}",
             "rebuffer ${m.rebuffers} (${m.rebufferMs} ms)",
-            "video    ${m.width}x${m.height} @ ${m.videoBitrate / 1000} kbps",
+            videoLine(m),
             "net      ${m.bandwidthBps / 1000} kbps",
             "latency  ${liveOffsetMs?.let { "$it ms" } ?: "-"}",
         ) + listOfNotNull(fps?.let { "ui fps   ${it.value}" }, jank?.value) + extra

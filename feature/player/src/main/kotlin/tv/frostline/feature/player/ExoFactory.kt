@@ -31,8 +31,8 @@ object PlayerProfile {
     const val DEFAULT_START_BPS = 25_000_000L
 }
 
-/** Memory budget of the buffer: about 8-15 s of a 1080p60 stream. */
-private const val STABLE_BUFFER_BYTES = 24 * 1024 * 1024
+/** Memory budget of the buffer: about 15 s of a 1440p60 stream (about 14 Mbps). */
+internal const val STABLE_BUFFER_BYTES = 32 * 1024 * 1024
 
 @OptIn(UnstableApi::class)
 internal fun buildLoadControl(lowLatency: Boolean, live: Boolean = true): DefaultLoadControl =
@@ -69,7 +69,11 @@ internal fun steadyAdaptation(context: Context): Pair<DefaultTrackSelector, Defa
         /* minDurationToRetainAfterDiscardMs = */ 12_000,
         /* bandwidthFraction = */ 0.7f,
     )
-    return DefaultTrackSelector(context, factory) to meter
+    val selector = DefaultTrackSelector(context, factory)
+    // The default caps Auto at the display size. Decoding 1440p and showing it on a 1080p output is fine in hardware, so
+    // only the decoder (and the playlist filter) limit the choice, not the viewport.
+    selector.parameters = selector.buildUponParameters().setViewportSize(Int.MAX_VALUE, Int.MAX_VALUE, true).build()
+    return selector to meter
 }
 
 /**

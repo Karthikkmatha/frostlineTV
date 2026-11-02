@@ -18,6 +18,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -68,19 +69,24 @@ fun QualitySheet(
                 QualityRow("Auto", selected == null, { onSelect(null) }, Modifier.focusRequester(if (selected == null) initial else FocusRequester()).testTag("q_auto"))
             }
             items(variants, key = { it.groupId }) { v ->
-                QualityRow(v.label, selected == v.groupId, { onSelect(v) }, Modifier.focusRequester(if (selected == v.groupId) initial else FocusRequester()).testTag("q_${v.groupId}"))
+                QualityRow(v.label, selected == v.groupId, { onSelect(v) }, Modifier.focusRequester(if (selected == v.groupId) initial else FocusRequester()).testTag("q_${v.groupId}"), hevc = v.isHevc)
             }
         }
     }
 }
 
 @Composable
-private fun QualityRow(label: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier) {
+private fun QualityRow(label: String, isSelected: Boolean, onClick: () -> Unit, modifier: Modifier, hevc: Boolean = false) {
     FrostListItem(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
         selected = isSelected,
         minHeight = FrostTokens.SheetRowHeight,
         trailing = if (isSelected) ({ Text("\u2713", style = MaterialTheme.typography.bodyLarge, color = FrostColors.Lavender) }) else null,
-    ) { Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium) }
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
+            if (hevc) Text("HEVC", style = MaterialTheme.typography.labelSmall, color = FrostColors.Lavender, modifier = Modifier.testTag("hevc_tag"))
+        }
+    }
 }
