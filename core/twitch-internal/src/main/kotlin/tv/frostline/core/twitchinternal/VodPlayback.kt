@@ -68,6 +68,15 @@ interface VodPlaybackResolver {
     suspend fun vod(videoId: String, webSession: String?): ResolvedStream
 
     suspend fun clip(slug: String, webSession: String?): ResolvedClip
+
+    /**
+     * The seek-preview storyboard of a past broadcast (GQL `video(id:) { seekPreviewsURL }`, then the JSON it points at), or null when
+     * the field, the document or its shape is missing: no thumbnails, never an error. [durationSec] fills a missing frame interval.
+     */
+    suspend fun storyboard(videoId: String, durationSec: Long, webSession: String?): StoryboardSheetSet? = null
+
+    /** The bytes of one storyboard sheet (https only, capped at 6 MB), or null on any failure. */
+    suspend fun sheetBytes(url: String): ByteArray? = null
 }
 
 internal class TwitchVodResolver(
@@ -131,16 +140,54 @@ internal class TwitchVodResolver(
         ResolvedClip(qualities)
     }
 
+    override suspend fun storyboard(videoId: String, durationSec: Long, webSession: String?): StoryboardSheetSet? = withContext(Dispatchers.IO) {
+        runCatching {
+            val id = videoId.trim()
+            fun urlOf(root: JsonObject?) = root.obj("data")?.obj("video")?.get("seekPreviewsURL")?.jsonPrimitive?.contentOrNull?.takeIf { fetchable(it) }
+            // The web player's own persisted query first; a raw equivalent when Twitch does not know the hash or answers without the field.
+            val url = urlOf(runCatching { gql(SEEK_PERSISTED_OPERATION, "", buildJsonObject { put("includePrivate", false); put("videoID", id) }, webSession, SEEK_HASH) }.getOrNull())
+                ?: urlOf(gql(SEEK_OPERATION, SEEK_QUERY, buildJsonObject { put("id", id) }, webSession))
+                ?: return@runCatching null
+            val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (r.code !in 200..299) return@runCatching null
+                val src = r.body.source()
+                src.request(MAX_INFO_BYTES + 1)
+                if (src.buffer.size > MAX_INFO_BYTES) return@runCatching null
+                src.readUtf8()
+            }
+            Storyboards.parse(body, url, durationSec)
+        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else null }
+    }
+
+    override suspend fun sheetBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {
+        if (!fetchable(url)) return@withContext null
+        runCatching {
+            client.newCall(Request.Builder().url(url).build()).execute().use { r ->
+                if (r.code !in 200..299) return@use null
+                val src = r.body.source()
+                src.request(MAX_SHEET_BYTES + 1)
+                if (src.buffer.size > MAX_SHEET_BYTES) null else src.readByteArray()
+            }
+        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else null }
+    }
+
+    /** https only (plus loopback http for tests). */
+    private fun fetchable(url: String) = url.startsWith("https://") || url.startsWith("http://127.0.0.1") || url.startsWith("http://localhost")
+
     /** The GQL `errors[].message` texts joined (they carry no tokens), or empty. */
     private fun errorText(root: JsonObject): String =
         (root["errors"] as? JsonArray).orEmpty().joinToString(" ") { (it as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull.orEmpty() }
 
     private fun JsonObject?.obj(key: String): JsonObject? = this?.get(key) as? JsonObject
 
-    private fun gql(operation: String, query: String, variables: JsonObject, webSession: String?): JsonObject {
+    private fun gql(operation: String, query: String, variables: JsonObject, webSession: String?, persistedHash: String? = null): JsonObject {
         val body = buildJsonObject {
             put("operationName", operation)
-            put("query", query)
+            if (persistedHash != null) {
+                put("extensions", buildJsonObject { put("persistedQuery", buildJsonObject { put("version", 1); put("sha256Hash", persistedHash) }) })
+            } else {
+                put("query", query)
+            }
             put("variables", variables)
         }.toString().toRequestBody("application/json".toMediaType())
         val b = Request.Builder().url(gqlUrl).header("Client-Id", GqlWebSessionValidator.WEB_CLIENT_ID).post(body)
@@ -159,6 +206,12 @@ internal class TwitchVodResolver(
         const val VOD_QUERY =
             "query PlaybackAccessToken(\$vodID: ID!) { videoPlaybackAccessToken(id: \$vodID, " +
                 "params: {platform: \"web\", playerBackend: \"mediaplayer\", playerType: \"site\"}) { value signature } }"
+        const val SEEK_PERSISTED_OPERATION = "VideoPlayer_VODSeekbarPreviewVideo"
+        const val SEEK_HASH = "07e99e4d56c5a7c67117a154777b0baf85a5ffefa393b213f4bc712ccaf85dd6"
+        const val SEEK_OPERATION = "FrostlineSeekPreviews"
+        const val SEEK_QUERY = "query FrostlineSeekPreviews(\$id: ID!) { video(id: \$id) { seekPreviewsURL } }"
+        private const val MAX_INFO_BYTES = 1_000_000L
+        private const val MAX_SHEET_BYTES = 6_000_000L
         const val CLIP_OPERATION = "VideoAccessToken_Clip"
         const val CLIP_QUERY =
             "query VideoAccessToken_Clip(\$slug: ID!) { clip(slug: \$slug) { " +

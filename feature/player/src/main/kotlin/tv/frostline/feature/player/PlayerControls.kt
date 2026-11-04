@@ -17,6 +17,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -77,6 +82,9 @@ object ControlTags {
     const val Timeline = "timeline"
     const val TimelineThumb = "timeline_thumb"
     const val TimelineHint = "timeline_hint"
+    const val StepText = "scrub_step"
+    const val PreviewTime = "scrub_time"
+    const val PreviewCard = "scrub_thumb_card"
     const val Elapsed = "seek_elapsed"
     const val Total = "seek_total"
 }
@@ -98,8 +106,14 @@ class VodControls(
     val seekable: Boolean = false,
     /** The preview position while scrubbing (the bar and the elapsed label show it), else null. */
     val previewMs: Long? = null,
-    /** Left (-1) / Right (+1) on the timeline; [repeat] marks the auto-repeat events of a held key. */
-    val onScrub: (dir: Int, repeat: Boolean) -> Unit = { _, _ -> },
+    /** "\u25B6\u25B6 10 min": direction and step while scrubbing, else null. */
+    val stepText: String? = null,
+    /** The storyboard frame nearest the preview, shown in a card above the thumb; null = no card. */
+    val thumb: Thumb? = null,
+    /** Left (-1) / Right (+1) KeyDown on the timeline; [repeatCount] is the event's own (may be 0 on a held key). */
+    val onScrub: (dir: Int, repeatCount: Int) -> Unit = { _, _ -> },
+    /** KeyUp of Left/Right on the timeline: the hold is over. */
+    val onScrubRelease: () -> Unit = {},
     /** OK on the timeline: seek to the preview. */
     val onScrubCommit: () -> Unit = {},
     /** Back, or focus leaving the timeline: drop the preview. */
@@ -239,12 +253,12 @@ fun PlayerChrome(
                         "Channel",
                         onChannel,
                         Modifier.focusRequester(channel).testTag(ControlTags.Channel)
-                            .focusProperties { up = stop; left = stop; right = gear; down = play },
+                            .focusProperties { up = stop; left = stop; right = gear; down = if (timelineOn) timeline else play },
                     )
                     IconControl(
                         R.drawable.ic_gear, "Quality", onQuality, 48,
                         enterChat.focusRequester(gear).testTag(ControlTags.Quality)
-                            .focusProperties { up = stop; right = stop; left = channel; down = play },
+                            .focusProperties { up = stop; right = stop; left = channel; down = if (timelineOn) timeline else play },
                     )
                 }
             }
@@ -256,7 +270,7 @@ fun PlayerChrome(
                     enterChat.align(Alignment.Center).focusRequester(play).testTag(ControlTags.PlayPause)
                         .focusProperties { up = channel; down = refresh; left = stop; right = stop },
                 )
-            } else {
+            } else if (!timelineOn) {
                 Row(
                     Modifier.align(Alignment.Center),
                     horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -302,26 +316,66 @@ fun PlayerChrome(
                                     if (!f) vod.onScrubCancel()
                                 },
                                 modifier = Modifier.focusRequester(timeline)
-                                    .focusProperties { up = stop; left = stop; right = stop; down = play },
+                                    .focusProperties { up = channel; left = stop; right = stop; down = play },
                             )
                         } else {
                             SeekBar(vod.positionMs, vod.durationMs)
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconControl(
-                            R.drawable.ic_refresh, "Refresh stream", onRefresh, 48,
-                            Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
-                                .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
-                        )
-                        if (showChatToggle) {
-                            IconControl(
-                                R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 48,
-                                enterChat.focusRequester(chat).testTag(ControlTags.Chat)
-                                    .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = refresh; right = stop },
-                                active = chatVisible,
+                    if (timelineOn && vod != null) {
+                        // A past broadcast keeps every button in ONE row under the timeline: Up from any of them reaches the timeline,
+                        // Down from the timeline returns to play/pause, Up from the timeline reaches Channel and the gear.
+                        val rightmost = if (showChatToggle) chat else refresh
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            SkipButton(
+                                "\u221210 s", "Back 10 seconds", { r -> vod.onSkip(SkipController.BACK_MS, r) },
+                                Modifier.focusRequester(skipBack).testTag(ControlTags.SkipBack)
+                                    .focusProperties { up = timeline; down = stop; left = stop; right = play },
                             )
-                            Text(if (chatVisible) "Chat on" else "Chat off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
+                            IconControl(
+                                if (playing) R.drawable.ic_pause else R.drawable.ic_play,
+                                if (playing) "Pause" else "Play",
+                                onPlayPause, 48,
+                                Modifier.focusRequester(play).testTag(ControlTags.PlayPause)
+                                    .focusProperties { up = timeline; down = stop; left = skipBack; right = skipForward },
+                            )
+                            SkipButton(
+                                "+30 s", "Forward 30 seconds", { r -> vod.onSkip(SkipController.FORWARD_MS, r) },
+                                Modifier.focusRequester(skipForward).testTag(ControlTags.SkipForward)
+                                    .focusProperties { up = timeline; down = stop; left = play; right = refresh },
+                            )
+                            Spacer(Modifier.width(24.dp))
+                            IconControl(
+                                R.drawable.ic_refresh, "Refresh stream", onRefresh, 48,
+                                (if (showChatToggle) Modifier else enterChat).focusRequester(refresh).testTag(ControlTags.Refresh)
+                                    .focusProperties { up = timeline; down = stop; left = skipForward; right = if (showChatToggle) chat else stop },
+                            )
+                            if (showChatToggle) {
+                                IconControl(
+                                    R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 48,
+                                    enterChat.focusRequester(chat).testTag(ControlTags.Chat)
+                                        .focusProperties { up = timeline; down = stop; left = refresh; right = stop },
+                                    active = chatVisible,
+                                )
+                                Text(if (chatVisible) "Chat on" else "Chat off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
+                            }
+                        }
+                    } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            IconControl(
+                                R.drawable.ic_refresh, "Refresh stream", onRefresh, 48,
+                                Modifier.focusRequester(refresh).testTag(ControlTags.Refresh)
+                                    .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = stop; right = if (showChatToggle) chat else stop },
+                            )
+                            if (showChatToggle) {
+                                IconControl(
+                                    R.drawable.ic_chat, if (chatVisible) "Hide chat" else "Show chat", onToggleChat, 48,
+                                    enterChat.focusRequester(chat).testTag(ControlTags.Chat)
+                                        .focusProperties { up = if (timelineOn) timeline else play; down = stop; left = refresh; right = stop },
+                                    active = chatVisible,
+                                )
+                                Text(if (chatVisible) "Chat on" else "Chat off", style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted)
+                            }
                         }
                     }
                 }
@@ -348,7 +402,12 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
             .onKeyEvent { e ->
                 when {
                     e.key == Key.DirectionLeft || e.key == Key.DirectionRight -> {
-                        if (e.type == KeyEventType.KeyDown) vod.onScrub(if (e.key == Key.DirectionLeft) -1 else 1, e.nativeKeyEvent.repeatCount > 0)
+                        // Every KeyDown counts (a remote may never set repeatCount); the KeyUp ends the hold.
+                        when (e.type) {
+                            KeyEventType.KeyDown -> vod.onScrub(if (e.key == Key.DirectionLeft) -1 else 1, e.nativeKeyEvent.repeatCount)
+                            KeyEventType.KeyUp -> vod.onScrubRelease()
+                            else -> Unit
+                        }
                         true
                     }
                     isSelect(e.key) -> {
@@ -380,12 +439,24 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
                             Modifier.offset(x = (maxWidth - 18.dp) * fraction).size(18.dp)
                                 .background(FrostColors.Lavender, CircleShape).testTag(ControlTags.TimelineThumb),
                         )
+                        // The storyboard frame nearest the preview, above the thumb. Its parameter changes only when the frame index does.
+                        val t = vod.thumb
+                        if (t != null && vod.previewMs != null) {
+                            val x = (maxWidth * fraction - PreviewCardWidth / 2).coerceIn(0.dp, (maxWidth - PreviewCardWidth).coerceAtLeast(0.dp))
+                            PreviewCard(t, Modifier.offset(x = x, y = -(PreviewCardHeight + 14.dp)))
+                        }
                     }
                 }
             }
             Text(Durations.clock(vod.durationMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
         }
-        if (focused) {
+        if (focused && vod.previewMs != null && vod.stepText != null) {
+            // Large and clear: the step in force and the time it points at.
+            Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Text(vod.stepText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag(ControlTags.StepText))
+                Text(Durations.clock(vod.previewMs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.PreviewTime))
+            }
+        } else if (focused) {
             Text(
                 "\u25C0 \u25B6 choose time \u00B7 hold to move faster \u00B7 OK seek \u00B7 Back cancel",
                 style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted,
@@ -393,6 +464,22 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
             )
         }
     }
+}
+
+private val PreviewCardWidth = 220.dp
+private val PreviewCardHeight = 124.dp
+
+/** The seek-preview frame: 220 x 124 dp. [thumb] is stable, so this only recomposes when the frame index changes. */
+@Composable
+private fun PreviewCard(thumb: Thumb, modifier: Modifier) {
+    val image = remember(thumb.index, thumb.bitmap) { thumb.bitmap.asImageBitmap() }
+    Image(
+        bitmap = image, contentDescription = null, contentScale = ContentScale.Crop,
+        modifier = modifier.size(PreviewCardWidth, PreviewCardHeight)
+            .clip(RoundedCornerShape(10.dp))
+            .border(2.dp, FrostColors.Violet, RoundedCornerShape(10.dp))
+            .testTag(ControlTags.PreviewCard),
+    )
 }
 
 @Composable

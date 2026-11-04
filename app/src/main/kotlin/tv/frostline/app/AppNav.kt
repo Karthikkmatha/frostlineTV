@@ -182,7 +182,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                 val vm: HomeViewModel = viewModel(
                     factory = viewModelFactory {
                         initializer {
-                            HomeViewModel(container.twitch.helix, container.database.resumeDao(), container.settings) { container.userId() }
+                            HomeViewModel(container.twitch.helix, container.database.resumeDao(), container.settings, container.twitchHistory) { container.userId() }
                         }
                     },
                 )
@@ -270,6 +270,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                             VodPlayerViewModel(
                                 PlayTarget.Vod(id), container.playerSlot, container.vodPlayback, container.twitch.helix,
                                 container.vault, container.settings, container.database.resumeDao(), container.ioScope,
+                                history = container.twitchHistory,
                             )
                         }
                     },
@@ -297,6 +298,7 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                             VodPlayerViewModel(
                                 PlayTarget.Clip(slug), container.playerSlot, container.vodPlayback, container.twitch.helix,
                                 container.vault, container.settings, container.database.resumeDao(), container.ioScope,
+                                history = container.twitchHistory,
                             )
                         }
                     },

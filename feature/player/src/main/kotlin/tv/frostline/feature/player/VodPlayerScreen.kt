@@ -70,6 +70,8 @@ fun VodPlayerScreen(
     val aspect by viewModel.videoAspect.collectAsStateWithLifecycle()
     val skip by viewModel.skip.state.collectAsStateWithLifecycle()
     val preview by viewModel.scrub.preview.collectAsStateWithLifecycle()
+    val scrubStatus by viewModel.scrub.status.collectAsStateWithLifecycle()
+    val thumb by viewModel.thumbs.frame.collectAsStateWithLifecycle()
     val debug by viewModel.debugOverlay.collectAsStateWithLifecycle(initialValue = false)
     val showFps by viewModel.showFps.collectAsStateWithLifecycle(initialValue = false)
     tv.frostline.core.ui.DropImageMemoryWhileShown()
@@ -88,6 +90,8 @@ fun VodPlayerScreen(
     val chatLines = chat?.lines?.collectAsStateWithLifecycle()?.value ?: emptyList()
     val chatStatus = chat?.status?.collectAsStateWithLifecycle()?.value ?: ""
     val chatDebug = chat?.debug?.collectAsStateWithLifecycle()?.value.orEmpty()
+    // The scrub debug line (step, hold time, repeats) is only collected while the overlay is on.
+    val scrubLine = if (debug) viewModel.scrub.info.collectAsStateWithLifecycle().value?.line() else null
     val chatVisible = chat != null && chatSettings?.enabled == true
     val chatController = rememberChatController()
     val playerRoot = remember { FocusRequester() }
@@ -155,7 +159,10 @@ fun VodPlayerScreen(
         skipCounter = skipLabel(skip.deltaMs),
         seekable = !ui.isClip,
         previewMs = preview,
+        stepText = scrubStatus?.let { Scrub.stepText(it.dir, it.stepMs) },
+        thumb = if (preview != null) thumb else null,
         onScrub = viewModel::scrubStep,
+        onScrubRelease = viewModel::scrubRelease,
         onScrubCommit = viewModel::scrubCommit,
         onScrubCancel = viewModel::scrubCancel,
         onSkip = viewModel::pressSkip,
@@ -219,7 +226,7 @@ fun VodPlayerScreen(
                         .background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOfNotNull(chatDebug.ifEmpty { null }))
+            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOfNotNull(chatDebug.ifEmpty { null }, scrubLine))
             if (qualityOpen) {
                 QualitySheet(
                     variants = ui.variants,

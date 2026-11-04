@@ -28,6 +28,10 @@ import tv.frostline.core.data.TokenVault
 import tv.frostline.core.twitch.HelixRepository
 import tv.frostline.core.twitch.Thumbnails
 import tv.frostline.core.twitchinternal.ClipQuality
+import tv.frostline.core.twitchinternal.HistoryItem
+import tv.frostline.core.twitchinternal.HistoryMerge
+import tv.frostline.core.twitchinternal.HistoryReporter
+import tv.frostline.core.twitchinternal.TwitchHistory
 import tv.frostline.core.twitchinternal.StreamVariant
 import tv.frostline.core.twitchinternal.VodPlaybackResolver
 import tv.frostline.core.twitchinternal.VodUnavailableException
@@ -75,6 +79,8 @@ class VodPlayerViewModel(
     private val resumeDao: ResumeDao,
     /** Outlives the screen: the final position is written after the view model is gone. */
     private val ioScope: CoroutineScope,
+    /** Twitch's watch history: read for the resume prompt, written back while a VOD plays. Null = local history only. */
+    private val history: TwitchHistory? = null,
     private val clock: () -> Long = System::currentTimeMillis,
 ) : ViewModel() {
     private val _ui = MutableStateFlow(VodUi(target))
@@ -109,6 +115,25 @@ class VodPlayerViewModel(
         now = { android.os.SystemClock.uptimeMillis() },
     )
 
+    /** Seek-preview frames from the broadcast's storyboard; nothing is fetched until the timeline is first used. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val thumbs = StoryboardThumbs(
+        scope = viewModelScope,
+        worker = kotlinx.coroutines.Dispatchers.IO.limitedParallelism(1),
+        fetch = { url -> resolver.sheetBytes(url) },
+        cut = { bytes, set, col, row -> cutFrame(bytes, set, col, row, THUMB_PX_W, THUMB_PX_H) },
+    )
+
+    /** Writes the position back to Twitch (VODs only): throttled while playing, at once on pause, seek and leaving. Never blocks playback. */
+    private val reporter = HistoryReporter(if (target is PlayTarget.Vod) history else null, ioScope, clock)
+    private val vodId: String? get() = (target as? PlayTarget.Vod)?.videoId
+
+    private fun reportNow(positionMs: Long) {
+        val id = vodId ?: return
+        if (!resumeDecided || positionMs <= 0) return
+        reporter.flush(id, positionMs)
+    }
+
     private var loadJob: Job? = null
     private var tickJob: Job? = null
     private var netJob: Job? = null
@@ -125,6 +150,7 @@ class VodPlayerViewModel(
         override fun onIsPlayingChanged(isPlaying: Boolean) {
             tv.frostline.core.ui.DebugPlayerState.report(this@VodPlayerViewModel, "vod", isPlaying)
             _ui.update { it.copy(playing = isPlaying) }
+            if (!isPlaying) player.value?.let { reportNow(it.currentPosition) } // paused (or stopped): tell Twitch where
         }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width > 0 && videoSize.height > 0) {
@@ -154,6 +180,7 @@ class VodPlayerViewModel(
         },
         onReleasing = { p ->
             saveResume(p.currentPosition, p.duration.takeIf { it != C.TIME_UNSET } ?: 0L)
+            reportNow(p.currentPosition)
             p.removeListener(listener)
             p.removeAnalyticsListener(metrics)
             p.stop()
@@ -186,6 +213,7 @@ class VodPlayerViewModel(
         tickJob?.cancel()
         skip.cancel()
         scrub.cancel()
+        thumbs.hide()
         tv.frostline.core.ui.DebugPlayerState.clear(this)
         lifecycle.stop()
     }
@@ -211,18 +239,26 @@ class VodPlayerViewModel(
         skip.press(deltaMs, repeat)
     }
 
-    /** Left (-1) / Right (+1) on the timeline. */
-    fun scrubStep(dir: Int, repeat: Boolean) {
+    /** Left (-1) / Right (+1) KeyDown on the timeline; [repeatCount] is the event's own and may be 0 on a held key. */
+    fun scrubStep(dir: Int, repeatCount: Int) {
         if (_ui.value.resumePromptMs != null) return
         skip.cancel()
-        scrub.step(dir, repeat)
+        scrub.key(dir, repeatCount)
+        scrub.preview.value?.let { thumbs.show(it) }
     }
+
+    /** KeyUp of Left/Right: the hold is over. */
+    fun scrubRelease() = scrub.release()
 
     fun scrubCommit() {
         scrub.commit()
+        thumbs.hide()
     }
 
-    fun scrubCancel() = scrub.cancel()
+    fun scrubCancel() {
+        scrub.cancel()
+        thumbs.hide()
+    }
 
     /** Seeks at once, refreshes the shown position and saves the resume point without waiting for the 10 s poll. */
     private fun seekNow(pos: Long) {
@@ -232,6 +268,7 @@ class VodPlayerViewModel(
         if (target is PlayTarget.Vod) {
             lastSavedAt = clock()
             saveResume(pos, knownDuration())
+            reportNow(pos)
         }
     }
 
@@ -301,17 +338,24 @@ class VodPlayerViewModel(
                         val stream = withSession { resolver.vod(t.videoId, it) }
                         currentVariants = stream.variants
                         _ui.update { it.copy(variants = stream.variants, loading = false) }
+                        loadStoryboard(t.videoId)
                         val saved = if (startAt == null) resumeDao.get(t.videoId) else null
                         resumeEntity = saved
-                        val offer = saved?.takeIf { ResumePolicy.resumable(it.position, it.duration) }
+                        // Local history against Twitch's: the newest updatedAt wins. Twitch unreachable or no web session = the local one.
+                        val remote = if (startAt == null) remoteResumePoint(t.videoId) else null
+                        val local = saved?.let { HistoryItem(it.videoId, (it.position / 1000).toInt(), it.updatedAt, lengthSec = (it.duration / 1000).toInt()) }
+                        val point = HistoryMerge.pick(local, remote)
+                        var pointDurationMs = point?.lengthSec?.takeIf { it > 0 }?.let { it * 1000L } ?: saved?.duration?.takeIf { it > 0 } ?: knownDuration()
+                        if (point != null && pointDurationMs <= 0) { info.join(); pointDurationMs = knownDuration() } // Twitch gave a bare position: the length comes from Helix
+                        val offerMs = point?.let { it.positionSec * 1000L }?.takeIf { ResumePolicy.resumable(it, pointDurationMs) }
                         p.setMediaItem(
                             MediaItem.Builder().setUri(stream.masterUrl).setMimeType(MimeTypes.APPLICATION_M3U8).build(),
                             startAt ?: 0L,
                         )
                         p.prepare()
-                        if (offer != null && !resumeDecided) {
+                        if (offerMs != null && !resumeDecided) {
                             // Wait for the choice; the picture shows the first frame meanwhile.
-                            _ui.update { it.copy(resumePromptMs = offer.position) }
+                            _ui.update { it.copy(resumePromptMs = offerMs) }
                             p.playWhenReady = false
                         } else {
                             resumeDecided = true
@@ -339,6 +383,27 @@ class VodPlayerViewModel(
             } catch (e: Exception) {
                 _ui.update { it.copy(loading = false, error = e.message ?: "Could not start playback") }
             }
+        }
+    }
+
+    /** Fetches the storyboard description (small JSON); the sheets themselves stay unfetched until a preview asks. No storyboard = no thumbnails. */
+    private fun loadStoryboard(videoId: String) {
+        viewModelScope.launch {
+            val set = runCatching { withSession { resolver.storyboard(videoId, knownDuration() / 1000, it) } }.getOrNull()
+            thumbs.load(set)
+        }
+    }
+
+    /** This video's point on Twitch: from the shelf when it is there (with its time), else the bare position. Null on any failure. */
+    private suspend fun remoteResumePoint(videoId: String): HistoryItem? {
+        val h = history ?: return null
+        return try {
+            h.continueWatching().firstOrNull { it.videoId == videoId }
+                ?: h.position(videoId)?.takeIf { it > 0 }?.let { HistoryItem(videoId, it, 0L) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -412,6 +477,7 @@ class VodPlayerViewModel(
         if (target !is PlayTarget.Vod || !resumeDecided) return
         val p = player.value ?: return
         if (!p.isPlaying) return
+        vodId?.let { reporter.tick(it, p.currentPosition) }
         val now = clock()
         if (now - lastSavedAt < ResumePolicy.SAVE_EVERY_MS) return
         lastSavedAt = now
@@ -444,5 +510,8 @@ class VodPlayerViewModel(
 
     private companion object {
         const val AUTO = "\u0000auto"
+        /** The preview card is 220 x 124 dp; cut at about 2x for a 1080p screen. */
+        const val THUMB_PX_W = 440
+        const val THUMB_PX_H = 248
     }
 }

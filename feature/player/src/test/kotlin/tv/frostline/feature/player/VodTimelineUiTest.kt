@@ -37,24 +37,31 @@ class VodTimelineUiTest {
         position = { 125_000L }, duration = { 3_725_000L }, seekTo = { seeks += it }, now = { System.nanoTime() / 1_000_000 },
     )
 
+    private var thumb: Thumb? = null
+    private var channels = 0
+    private var qualities = 0
+
     private fun show(seekable: Boolean = true, autoHideMs: Long = 0) {
         rule.setContent {
             FrostlineTheme {
                 var visible by remember { mutableStateOf(false) }
                 visibleNow = visible
                 val preview by scrub.preview.collectAsState()
+                val status by scrub.status.collectAsState()
                 PlayerChrome(
                     controlsVisible = visible,
                     onShowControls = { visible = true },
                     onHideControls = { visible = false },
                     channelName = "Streamer", title = "A past broadcast", badge = liveBadge(null),
                     playing = true, chatVisible = false,
-                    onPlayPause = { plays++ }, onRefresh = {}, onToggleChat = {}, onChannel = {}, onQuality = {},
+                    onPlayPause = { plays++ }, onRefresh = {}, onToggleChat = {}, onChannel = { channels++ }, onQuality = { qualities++ },
                     modifier = Modifier, autoHideMs = autoHideMs,
                     vod = VodControls(
                         "Past broadcast", preview ?: 125_000L, 3_725_000L, null,
                         seekable = seekable, previewMs = preview,
-                        onScrub = scrub::step, onScrubCommit = { scrub.commit() }, onScrubCancel = scrub::cancel,
+                        stepText = status?.let { Scrub.stepText(it.dir, it.stepMs) },
+                        thumb = if (preview != null) thumb else null,
+                        onScrub = scrub::key, onScrubRelease = scrub::release, onScrubCommit = { scrub.commit() }, onScrubCancel = scrub::cancel,
                     ) { _, _ -> },
                 )
             }
@@ -72,8 +79,6 @@ class VodTimelineUiTest {
     private fun toTimeline() {
         press(Key.DirectionCenter)           // controls, on play
         focused(ControlTags.PlayPause)
-        press(Key.DirectionDown)             // refresh
-        focused(ControlTags.Refresh)
         press(Key.DirectionUp)               // timeline
         focused(ControlTags.Timeline)
     }
@@ -90,7 +95,7 @@ class VodTimelineUiTest {
     @Test fun upFromTheChatButtonAlsoReachesIt() {
         show()
         press(Key.DirectionCenter)
-        press(Key.DirectionDown); press(Key.DirectionRight)
+        press(Key.DirectionRight); press(Key.DirectionRight); press(Key.DirectionRight)
         focused(ControlTags.Chat)
         press(Key.DirectionUp)
         focused(ControlTags.Timeline)
@@ -164,5 +169,81 @@ class VodTimelineUiTest {
         focused(ControlTags.Refresh)
         press(Key.DirectionUp)
         focused(ControlTags.PlayPause)
+    }
+
+    @Test fun upFromEveryButtonOfTheRowReachesTheTimeline() {
+        show()
+        press(Key.DirectionCenter)
+        val row = listOf(ControlTags.PlayPause, ControlTags.SkipForward, ControlTags.Refresh, ControlTags.Chat)
+        for ((i, tag) in row.withIndex()) {
+            repeat(i) { press(Key.DirectionRight) }
+            focused(tag)
+            press(Key.DirectionUp)
+            focused(ControlTags.Timeline)
+            press(Key.DirectionDown)
+            focused(ControlTags.PlayPause)
+        }
+        press(Key.DirectionLeft) // the left-most one
+        focused(ControlTags.SkipBack)
+        press(Key.DirectionUp)
+        focused(ControlTags.Timeline)
+    }
+
+    @Test fun upFromTheTimelineReachesChannelAndTheGear() {
+        show()
+        toTimeline()
+        press(Key.DirectionUp)
+        focused(ControlTags.Channel)
+        press(Key.DirectionRight)
+        focused(ControlTags.Quality)
+        press(Key.DirectionDown)
+        focused(ControlTags.Timeline)
+        press(Key.DirectionDown)
+        focused(ControlTags.PlayPause)
+        assertEquals(0, channels + qualities)
+    }
+
+    @Test fun theTimelineHasNoSideExits() {
+        show()
+        toTimeline()
+        press(Key.DirectionRight); press(Key.DirectionLeft)
+        focused(ControlTags.Timeline)
+    }
+
+    @Test fun stepAndPreviewTimeAreShownLargeUnderTheBarWhileScrubbing() {
+        show()
+        toTimeline()
+        rule.onNodeWithTag(ControlTags.StepText).assertDoesNotExist()
+        press(Key.DirectionRight)
+        rule.onNodeWithTag(ControlTags.StepText).assertTextEquals("\u25B6\u25B6 10 s")
+        rule.onNodeWithTag(ControlTags.PreviewTime).assertTextEquals("2:15")
+        press(Key.DirectionLeft)
+        rule.onNodeWithTag(ControlTags.StepText).assertTextEquals("\u25C0\u25C0 10 s")
+    }
+
+    @Test fun aKeyDownStartsTheHoldAndTheKeyUpResetsItToTheTapStep() {
+        show()
+        toTimeline()
+        rule.onNodeWithTag(ControlTags.Root).performKeyInput {
+            keyDown(Key.DirectionRight)
+        }
+        rule.waitForIdle()
+        rule.onNodeWithTag(ControlTags.StepText).assertExists()
+        rule.onNodeWithTag(ControlTags.Root).performKeyInput { keyUp(Key.DirectionRight) }
+        rule.waitForIdle()
+        rule.onNodeWithTag(ControlTags.StepText).assertTextEquals("\u25B6\u25B6 10 s") // released: back to the tap step
+        assertTrue(seeks.isEmpty())
+    }
+
+    @Test fun theThumbnailCardShowsOnlyWhilePreviewingAndOnlyWithAFrame() {
+        show()
+        toTimeline()
+        press(Key.DirectionRight)
+        rule.onNodeWithTag(ControlTags.PreviewCard).assertDoesNotExist() // no storyboard: no card
+        thumb = Thumb(3, android.graphics.Bitmap.createBitmap(44, 25, android.graphics.Bitmap.Config.ARGB_8888))
+        press(Key.DirectionRight)
+        rule.onNodeWithTag(ControlTags.PreviewCard).assertExists()
+        press(Key.DirectionCenter) // seek: the preview and its card are gone
+        rule.onNodeWithTag(ControlTags.PreviewCard).assertDoesNotExist()
     }
 }
