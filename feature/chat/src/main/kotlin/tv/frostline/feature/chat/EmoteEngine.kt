@@ -200,23 +200,6 @@ class EmoteEngine(
     private var channelJob: Job? = null
     private var userJob: Job? = null
 
-    init {
-        ticker = scope.launch {
-            while (isActive) {
-                val t = clockMs()
-                val prev = mode
-                mode = tracker.update(t)
-                // Fast chat shows stills only: nothing animated is held, and its memory is freed until the rate drops.
-                if (mode == EmoteMode.Fast && prev != EmoteMode.Fast) strips.clear()
-                ratePerSec = tracker.rate(t)
-                sweepQueuedReleases()
-                if (++tickCount % 5 == 0) { refreshHotSet(); trimExtraStillPage() }
-                // Hidden chat has no rate to follow: wake less often. (The cache directory is no longer walked here: the debug line reads it.)
-                delay(if (active) 1_000 else 5_000)
-            }
-        }
-    }
-
     /** One line for the debug overlay: mode, rate, hot animations, memory and disk. */
     fun debugLine(): String {
         val now = clockMs()
@@ -765,5 +748,24 @@ class EmoteEngine(
         )
 
         fun dirBytes(dir: File): Long = dir.listFiles()?.sumOf { if (it.isFile) it.length() else dirBytes(it) } ?: 0L
+    }
+
+    // Declared last on purpose: the ticker runs on another thread as soon as it launches and reads every field above (a field
+    // initialised after this block crashed the launch with a NullPointerException in sweepQueuedReleases).
+    init {
+        ticker = scope.launch {
+            while (isActive) {
+                val t = clockMs()
+                val prev = mode
+                mode = tracker.update(t)
+                // Fast chat shows stills only: nothing animated is held, and its memory is freed until the rate drops.
+                if (mode == EmoteMode.Fast && prev != EmoteMode.Fast) strips.clear()
+                ratePerSec = tracker.rate(t)
+                sweepQueuedReleases()
+                if (++tickCount % 5 == 0) { refreshHotSet(); trimExtraStillPage() }
+                // Hidden chat has no rate to follow: wake less often. (The cache directory is no longer walked here: the debug line reads it.)
+                delay(if (active) 1_000 else 5_000)
+            }
+        }
     }
 }
