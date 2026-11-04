@@ -125,6 +125,11 @@ Run on the TV (adb over the network, the device is chosen with `ANDROID_SERIAL`)
 Commit the generated file after regenerating. Verify an install is compiled with `adb shell dumpsys package dexopt` or
 `cmd package compile -m speed-profile -f tv.frostline.app` for a manual comparison.
 
+Testers: **install the APK, open the app once, then send the ProfileInstaller broadcast, then compile.** The broadcast
+(`androidx.profileinstaller.action.INSTALL_PROFILE`) is only answered after the app has been launched at least once;
+before that it reports no profile. Then run `cmd package compile -m speed-profile -f tv.frostline.app`. The debug
+overlay's `profile` line shows the compiler filter and which method read it (`via maps`, `via file`, `via reflect`).
+
 ### Chat pipeline (performance)
 
 Frames are parsed by `IrcTokenizer` (index-based: no tag map, split or regex; PRIVMSG is read in one pass, other commands take
@@ -142,7 +147,7 @@ batches (200 ms slow, 300 ms busy, 500 ms fast) as a 150-reference list with sta
   rects. At most 300 stills and 180 cells of strips (LRU); a full atlas evicts its least recently used entry, which also bumps the
   entry's version so no recorded draw refers to a reused cell. Pages are released when chat is hidden or the player closes.
   Settings > Emote atlas (debug) off gives every emote its own bitmap. No graphicsLayer on chat rows or the panel (no offscreen
-  render targets); the debug overlay shows `bitmaps` (textures and bytes) and `profile` (compiled / awaiting / none).
+  render targets); the debug overlay shows `bitmaps` (textures and bytes) and `profile` (compiled / not compiled / odex present / awaiting / unknown, plus the method).
 - Thumbnails, avatars and category art: Coil (`SizedImage` decodes at the exact display size as a hardware bitmap), one
   8 MB memory cache; it is emptied while a player is on screen, and Home's lazy grids only compose what is on screen.
 - The integrity WebView is created per capture, then `stopLoading`, `loadUrl("about:blank")`, `removeAllViews`, `destroy`; the

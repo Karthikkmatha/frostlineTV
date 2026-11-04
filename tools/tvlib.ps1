@@ -93,3 +93,23 @@ function Get-Sample([string]$AppPid) {
         Alive = [bool]$pidNow
     }
 }
+
+# Which screen and player are in front, as the app reports in the same stats line (screen=player|vod|settings|.., player=none|live:playing|live:idle|vod:playing|vod:idle).
+# Returns @{ Known; Screen; Player; Playing } ; Known is $false when the app did not log (older build or debug overlay off).
+function Get-FrontState {
+    Invoke-Tv @("am start -a android.intent.action.VIEW -d frostline://debug/stats $Package") | Out-Null
+    Start-Sleep -Seconds 2
+    $cmd = "logcat -d -s FrostlineDebug:I | grep ' stats n=' | tail -n 1"
+    $text = Get-Section (Invoke-Tv @($cmd)) $cmd
+    $m = [regex]::Match($text, 'stats n=\d+ .*?(?:screen=(\S+) )?player=(\S+)')
+    if (-not $m.Success) { return @{ Known = $false; Screen = ''; Player = ''; Playing = $false } }
+    $pl = $m.Groups[2].Value
+    @{ Known = $true; Screen = $m.Groups[1].Value; Player = $pl; Playing = ($pl -like '*:playing') }
+}
+
+# Waits (up to $Tries x 3 s) for a player that is playing and in front. Returns the last Get-FrontState.
+function Wait-PlayerFront([int]$Tries = 4) {
+    $f = Get-FrontState
+    for ($i = 1; $i -lt $Tries -and $f.Known -and -not $f.Playing; $i++) { Start-Sleep -Seconds 3; $f = Get-FrontState }
+    return $f
+}

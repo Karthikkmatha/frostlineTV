@@ -101,6 +101,7 @@ class PlayerViewModel(
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            tv.frostline.core.ui.DebugPlayerState.report(this@PlayerViewModel, "live", isPlaying)
             if (isPlaying) tv.frostline.core.twitchinternal.IntegrityGate.streamStarted()
             playingSinceMs = if (isPlaying) System.currentTimeMillis() else 0L
             _ui.update { it.copy(playing = isPlaying, notice = if (isPlaying && it.notice == RECONNECTING) null else it.notice) }
@@ -176,6 +177,7 @@ class PlayerViewModel(
         PlayerProfile.forLive = true
         _ui.update { it.copy(liveMode = modeAtStart) }
         lifecycle.start()
+        tv.frostline.core.ui.DebugPlayerState.report(this, "live", false)
         startTicker()
         startWatchdog()
         recovery.reset()
@@ -188,6 +190,7 @@ class PlayerViewModel(
         tickJob?.cancel()
         watchJob?.cancel()
         recoverJob?.cancel()
+        tv.frostline.core.ui.DebugPlayerState.clear(this)
         lifecycle.stop()
     }
 

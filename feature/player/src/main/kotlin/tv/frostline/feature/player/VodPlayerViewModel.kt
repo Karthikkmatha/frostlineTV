@@ -122,7 +122,10 @@ class VodPlayerViewModel(
     private var helixDurationMs = 0L
 
     private val listener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) = _ui.update { it.copy(playing = isPlaying) }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            tv.frostline.core.ui.DebugPlayerState.report(this@VodPlayerViewModel, "vod", isPlaying)
+            _ui.update { it.copy(playing = isPlaying) }
+        }
         override fun onVideoSizeChanged(videoSize: VideoSize) {
             if (videoSize.width > 0 && videoSize.height > 0) {
                 _aspect.value = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
@@ -167,6 +170,7 @@ class VodPlayerViewModel(
         if (lifecycle.isActive) return
         PlayerProfile.forLive = false // VODs always use the stable buffer profile
         lifecycle.start()
+        tv.frostline.core.ui.DebugPlayerState.report(this, "vod", false)
         startTicker()
         netJob?.cancel()
         // Playback failed and the network is back: rebuild the source at the same position.
@@ -182,6 +186,7 @@ class VodPlayerViewModel(
         tickJob?.cancel()
         skip.cancel()
         scrub.cancel()
+        tv.frostline.core.ui.DebugPlayerState.clear(this)
         lifecycle.stop()
     }
 

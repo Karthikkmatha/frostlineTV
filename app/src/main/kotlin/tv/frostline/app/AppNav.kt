@@ -123,12 +123,17 @@ private fun AppNavHost(container: AppContainer, startRoute: String) {
                     }
                     "refresh-integrity" -> container.integrity.current(forceRefresh = true) != null
                     "open-vod" -> {
-                        val login = nav.currentBackStackEntry?.arguments?.getString("login")
+                        val login = tv.frostline.core.ui.DebugHooks.openVodChannel(
+                            nav.currentDestination?.route,
+                            nav.currentBackStackEntry?.arguments?.getString("login"),
+                            nav.previousBackStackEntry?.arguments?.getString("login"),
+                        )
                         val id = login?.let { container.twitch.helix.userByLogin(it)?.id }
                         val vod = id?.let { container.twitch.helix.videos(it, tv.frostline.core.twitch.VideoKind.Broadcasts).items.firstOrNull() }
-                        if (vod != null) { nav.navigate("vod/${vod.id}"); true } else false
+                        // Idempotent: a VOD already in front is replaced, never stacked, so "back" pops exactly one screen to the live player.
+                        if (vod != null) { nav.navigate("vod/${vod.id}") { if (nav.currentDestination?.route == VOD) popUpTo(VOD) { inclusive = true } }; true } else false
                     }
-                    "stats" -> { android.util.Log.i("FrostlineDebug", tv.frostline.core.ui.HealthStats.statsLogLine()); true }
+                    "stats" -> { android.util.Log.i("FrostlineDebug", tv.frostline.core.ui.HealthStats.statsLogLine(nav.currentDestination?.route.orEmpty().substringBefore('/').substringBefore('?'))); true }
                     "back" -> if (nav.currentDestination?.route == VOD) nav.popBackStack() else false
                     "showcase" -> { nav.navigate(SHOWCASE); true }
                     else -> false

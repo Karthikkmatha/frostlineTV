@@ -19,4 +19,16 @@ object DebugHooks {
         h()
         return true
     }
+
+    /**
+     * Which channel `debug/open-vod` takes its latest broadcast from. On a player it is that player's channel; on a VOD it is
+     * the live player behind it (so the VOD is replaced, never stacked); anywhere else (Settings, Home...) it is null and the
+     * link does nothing, so the screens cannot pile up.
+     */
+    fun openVodChannel(route: String?, currentLogin: String?, previousLogin: String?): String? = when {
+        route == null -> null
+        route.startsWith("vod/") -> previousLogin
+        route.startsWith("player/") -> currentLogin
+        else -> null
+    }
 }

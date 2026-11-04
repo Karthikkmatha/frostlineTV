@@ -33,14 +33,14 @@ $env:TV_PORT = "$Port"
 
 $csv = Join-Path $OutDir 'stress.csv'
 $log = Join-Path $OutDir 'stress.log'
-'step,phase,action,time,pss_mb,java_mb,native_mb,graphics_mb,threads,fds,cpu_pct,alive' | Set-Content $csv
+'step,phase,action,time,pss_mb,java_mb,native_mb,graphics_mb,threads,fds,cpu_pct,alive,front,playing' | Set-Content $csv
 
 $appPid = Get-AppPid
 if (-not $appPid) { throw "$Package is not running on $TvHost. Start the app and a stream first." }
 $startPid = $appPid
 # All mutable state lives in one object: `$script:` variables are not the same variables when this file is dot-sourced
 # (`& { . .\tools\stress.ps1 ... }` from Start-Process), which left the rows empty and the summary at 0 steps.
-$st = @{ Rows = (New-Object System.Collections.Generic.List[object]); Crashes = 0; Step = 0; Pid = $appPid }
+$st = @{ Rows = (New-Object System.Collections.Generic.List[object]); Crashes = 0; Step = 0; Pid = $appPid; NotPlaying = (New-Object System.Collections.Generic.List[string]) }
 
 function Send-Link([string]$Uri) { Invoke-Tv @("am start -a android.intent.action.VIEW -d $Uri $Package") | Out-Null }
 
@@ -49,10 +49,17 @@ function Measure-Step([int]$Phase, [string]$Action) {
     $st.Step++
     Send-Link 'frostline://debug/gc'
     Start-Sleep -Seconds 5
+    # A sample only means something with a player in front and playing: check through the app's own stats line and mark it when not.
+    $front = Wait-PlayerFront
+    $playing = (-not $front.Known) -or $front.Playing   # an older build that does not report is not blamed
+    if (-not $playing) {
+        $st.NotPlaying.Add("$($st.Step) ($Action: screen=$($front.Screen) player=$($front.Player))")
+        "$(Get-Date -Format o) step $($st.Step) ($Action) NOT PLAYING: screen=$($front.Screen) player=$($front.Player)" | Add-Content $log
+    }
     $s = Get-Sample $st.Pid
     if ($s.Alive -and $s.Pid -ne $st.Pid) { $st.Crashes++; $st.Pid = $s.Pid; "$(Get-Date -Format o) pid changed at step $($st.Step) ($Action)" | Add-Content $log }
     if (-not $s.Alive) { $st.Crashes++; "$(Get-Date -Format o) process gone at step $($st.Step) ($Action)" | Add-Content $log; $np = Get-AppPid; if ($np) { $st.Pid = $np } }
-    "$($st.Step),$Phase,$Action,$(Get-Date -Format o),$($s.Pss),$($s.Java),$($s.Native),$($s.Gfx),$($s.Threads),$($s.Fds),$($s.Cpu),$($s.Alive)" | Add-Content $csv
+    "$($st.Step),$Phase,$Action,$(Get-Date -Format o),$($s.Pss),$($s.Java),$($s.Native),$($s.Gfx),$($s.Threads),$($s.Fds),$($s.Cpu),$($s.Alive),$($front.Screen)/$($front.Player),$playing" | Add-Content $csv
     $st.Rows.Add([pscustomobject]@{ Step = $st.Step; Phase = $Phase; Pss = $s.Pss; Java = $s.Java; Threads = $s.Threads; Fds = $s.Fds; Cpu = $s.Cpu })
 }
 
@@ -77,7 +84,10 @@ for ($i = 0; $i -lt 6; $i++) {
 }
 # Phase 4: four VOD round trips, 30 s each.
 for ($i = 0; $i -lt 4; $i++) {
+    # open-vod replaces a VOD already in front and does nothing outside a player; back pops exactly one screen.
     Send-Link 'frostline://debug/open-vod'; Start-Sleep -Seconds 20
+    $f = Get-FrontState
+    if ($f.Known -and $f.Player -notlike 'vod:*') { $st.NotPlaying.Add("vod-$($i + 1) open (screen=$($f.Screen) player=$($f.Player))"); "$(Get-Date -Format o) open-vod did not put a VOD in front: screen=$($f.Screen) player=$($f.Player)" | Add-Content $log }
     Send-Link 'frostline://debug/back'; Start-Sleep -Seconds 4
     Measure-Step 4 "vod-$($i + 1)"
 }
@@ -110,6 +120,7 @@ $lines = @()
 $lines += "Stress $Package on $TvHost, $($rows.Count) steps (post-GC values; PSS in MB)"
 $lines += $v.Lines
 $lines += (Format-CpuLine @($rows | ForEach-Object { $_.Cpu }))
+if ($st.NotPlaying.Count -gt 0) { $lines += "Samples/steps taken while NOT playing or without a player in front: $($st.NotPlaying.Count): $($st.NotPlaying -join '; ')" } else { $lines += 'All samples were taken with a player in front and playing.' }
 $lines += "Crashes / pid changes: $crashes (pid $startPid -> $appPid); crash buffer lines for the app: $crashBuf; debug actions that logged err: $dbgErr"
 $lines += "VERDICT: $(if ($pass) { 'PASS' } else { 'FAIL' })  (each phase END post-GC at most +15 MB PSS and +5 threads/fds above the MAX of the baseline phase; peaks are reported, never fail a phase; PSS and Java heap slope at most +0.5 MB/step; no crash)"
 $lines += "Files: $OutDir (stress.csv, stress.log)"
