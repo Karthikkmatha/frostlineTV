@@ -100,6 +100,17 @@ object Storyboards {
     private fun num(e: JsonElement?): Double? = (e as? JsonPrimitive)?.let { it.doubleOrNull ?: it.contentOrNull?.trim()?.toDoubleOrNull() }
     private fun int(e: JsonElement?): Int? = num(e)?.takeIf { it.isFinite() && it < Int.MAX_VALUE }?.toInt()
 
+    /** The field names of the first quality entry (comma-separated, at most 12): shows a format surprise in the debug overlay. */
+    fun fieldNames(text: String): String {
+        val root = runCatching { json.parseToJsonElement(text) }.getOrNull() ?: return "notjson"
+        val first = when (root) {
+            is JsonArray -> root.firstOrNull() as? JsonObject
+            is JsonObject -> root
+            else -> null
+        } ?: return "noobject"
+        return first.keys.take(12).joinToString(",")
+    }
+
     /** An image name relative to the info document's directory, or already absolute. */
     fun absolute(infoUrl: String, name: String): String {
         if (name.startsWith("http://") || name.startsWith("https://")) return name

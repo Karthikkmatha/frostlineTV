@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -114,6 +115,12 @@ class VodPlayerViewModel(
         seekTo = { pos -> seekNow(pos) },
         now = { android.os.SystemClock.uptimeMillis() },
     )
+    private var scrubTicker: Job? = null
+
+    private val _seekDiag = MutableStateFlow(tv.frostline.core.twitchinternal.StoryboardDiag.NONE)
+
+    /** What the storyboard fetch saw, for the debug overlay's `seekpv:` line. */
+    val seekDiag: StateFlow<tv.frostline.core.twitchinternal.StoryboardDiag> = _seekDiag.asStateFlow()
 
     /** Seek-preview frames from the broadcast's storyboard; nothing is fetched until the timeline is first used. */
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -245,17 +252,32 @@ class VodPlayerViewModel(
         skip.cancel()
         scrub.key(dir, repeatCount)
         scrub.preview.value?.let { thumbs.show(it) }
+        _seekDiag.value = resolver.storyboardDiag()
+        if (scrub.isHolding() && scrubTicker?.isActive != true) {
+            // A hold scrubs by time, at about 20 Hz, whatever rate the remote's events come at; the loop ends with the hold.
+            scrubTicker = viewModelScope.launch {
+                while (isActive) {
+                    delay(Scrub.TICK_MS)
+                    val more = scrub.tick()
+                    scrub.preview.value?.let { thumbs.show(it) }
+                    _seekDiag.value = resolver.storyboardDiag()
+                    if (!more) break
+                }
+            }
+        }
     }
 
     /** KeyUp of Left/Right: the hold is over. */
     fun scrubRelease() = scrub.release()
 
     fun scrubCommit() {
+        scrubTicker?.cancel()
         scrub.commit()
         thumbs.hide()
     }
 
     fun scrubCancel() {
+        scrubTicker?.cancel()
         scrub.cancel()
         thumbs.hide()
     }
@@ -391,6 +413,7 @@ class VodPlayerViewModel(
         viewModelScope.launch {
             val set = runCatching { withSession { resolver.storyboard(videoId, knownDuration() / 1000, it) } }.getOrNull()
             thumbs.load(set)
+            _seekDiag.value = resolver.storyboardDiag()
         }
     }
 

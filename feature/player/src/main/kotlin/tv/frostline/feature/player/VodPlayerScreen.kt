@@ -92,6 +92,7 @@ fun VodPlayerScreen(
     val chatDebug = chat?.debug?.collectAsStateWithLifecycle()?.value.orEmpty()
     // The scrub debug line (step, hold time, repeats) is only collected while the overlay is on.
     val scrubLine = if (debug) viewModel.scrub.info.collectAsStateWithLifecycle().value?.line() else null
+    val seekLine = if (debug) viewModel.seekDiag.collectAsStateWithLifecycle().value.line(thumb?.index) else null
     val chatVisible = chat != null && chatSettings?.enabled == true
     val chatController = rememberChatController()
     val playerRoot = remember { FocusRequester() }
@@ -159,7 +160,7 @@ fun VodPlayerScreen(
         skipCounter = skipLabel(skip.deltaMs),
         seekable = !ui.isClip,
         previewMs = preview,
-        stepText = scrubStatus?.let { Scrub.stepText(it.dir, it.stepMs) },
+        stepText = scrubStatus?.let { Scrub.stepText(it.dir, it.speed) },
         thumb = if (preview != null) thumb else null,
         onScrub = viewModel::scrubStep,
         onScrubRelease = viewModel::scrubRelease,
@@ -226,7 +227,7 @@ fun VodPlayerScreen(
                         .background(FrostColors.SurfaceFocused, RoundedCornerShape(8.dp)).padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
-            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOfNotNull(chatDebug.ifEmpty { null }, scrubLine))
+            if (debug) DebugOverlay(metrics, null, if (showFps) fps else null, Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 120.dp), jank = jank, extra = listOfNotNull(chatDebug.ifEmpty { null }, scrubLine, seekLine))
             if (qualityOpen) {
                 QualitySheet(
                     variants = ui.variants,

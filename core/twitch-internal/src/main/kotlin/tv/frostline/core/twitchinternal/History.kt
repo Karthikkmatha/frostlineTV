@@ -153,7 +153,7 @@ object HistoryMerge {
         return win.copy(
             title = win.title.ifBlank { lose.title },
             lengthSec = if (win.lengthSec > 0) win.lengthSec else lose.lengthSec,
-            thumbnailUrl = win.thumbnailUrl.ifBlank { lose.thumbnailUrl },
+            thumbnailUrl = if (!HistoryParser.isMissingThumb(win.thumbnailUrl)) win.thumbnailUrl else lose.thumbnailUrl.takeIf { !HistoryParser.isMissingThumb(it) } ?: win.thumbnailUrl,
             channelLogin = win.channelLogin.ifBlank { lose.channelLogin },
             channelName = win.channelName.ifBlank { lose.channelName },
             game = win.game.ifBlank { lose.game },
@@ -220,7 +220,7 @@ object HistoryParser {
                 updatedAtMs = instantMs(hist?.get("updatedAt").str()) ?: instantMs(self?.get("viewingHistory").obj()?.get("updatedAt").str()) ?: 0L,
                 title = node["title"].str().orEmpty(),
                 lengthSec = node["lengthSeconds"].int() ?: 0,
-                thumbnailUrl = sized(node["previewThumbnailURL"].str().orEmpty()),
+                thumbnailUrl = thumbnail(node["previewThumbnailURL"].str().orEmpty(), owner?.get("offlineImageURL").str(), owner?.get("profileImageURL").str()),
                 channelLogin = owner?.get("login").str().orEmpty(),
                 channelName = owner?.get("displayName").str().orEmpty(),
                 game = game?.get("displayName").str() ?: game?.get("name").str().orEmpty(),
@@ -233,6 +233,19 @@ object HistoryParser {
         root["data"].obj()?.get("video").obj()?.get("self").obj()?.get("viewingHistory").obj()?.get("position").int()
 
     /** Thumbnail templates (`%{width}x%{height}` or `{width}x{height}`) filled for a 320 x 180 card. */
+    /**
+     * The card image: the video's preview (template filled for 320 x 180), or when that is empty or Twitch's `404_processing`
+     * placeholder (a 24/7 rerun, a live archive), the channel's offline banner, then its avatar, else empty.
+     */
+    fun thumbnail(previewUrl: String, offlineBanner: String?, avatar: String?): String {
+        val sized = sized(previewUrl)
+        if (!isMissingThumb(sized)) return sized
+        return listOf(offlineBanner, avatar).firstOrNull { !it.isNullOrBlank() }.orEmpty()
+    }
+
+    /** Blank, or one of Twitch's "no thumbnail yet" placeholders. */
+    fun isMissingThumb(url: String?): Boolean = url.isNullOrBlank() || url.contains("_404") || url.contains("404_processing")
+
     fun sized(url: String): String = url
         .replace("%{width}", "320").replace("%{height}", "180")
         .replace("{width}", "320").replace("{height}", "180")
@@ -334,7 +347,7 @@ internal class GqlTwitchHistory(
         const val LIST_OP = "FollowedStreamsContinueWatching"
         const val LIST_HASH = "f072a74b5a454d1971b4650adfdfb5d42b69d31af7fac58f64b5a09494f7ad53"
         const val LIST_RAW = "query FollowedStreamsContinueWatching(\$limit: Int!) { currentUser { viewedVideos(first: \$limit) { edges { history { position updatedAt } " +
-            "node { id title lengthSeconds previewThumbnailURL(width: 320, height: 180) publishedAt owner { id login displayName profileImageURL(width: 70) } game { name } } } } } }"
+            "node { id title lengthSeconds previewThumbnailURL(width: 320, height: 180) publishedAt owner { id login displayName profileImageURL(width: 70) offlineImageURL } game { name } } } } } }"
         const val POSITION_OP = "queryUserViewedVideo"
         const val POSITION_HASH = "86bf57f2a04e2f4705ce456d082bcffd80a372b6641a9c9120c409b10959a7a5"
         const val POSITION_RAW = "query queryUserViewedVideo(\$videoId: ID!) { video(id: \$videoId) { id self { viewingHistory { position } } } }"

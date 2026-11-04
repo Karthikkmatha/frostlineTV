@@ -6,71 +6,68 @@ import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Timeline scrubbing of a past broadcast: Left/Right move a PREVIEW position, the video keeps playing where it is,
- * and OK seeks to the preview. A tap is 10 s. Holding climbs a ladder, one rung per [RUNG_MS], 10 s, 30 s, 1 min, 2 min,
- * 5 min, 10 min, 30 min, but never above a top rung scaled to the broadcast so that one full hold crosses all of it in
- * a few seconds whatever its length.
+ * and OK seeks to the preview. A tap is 10 s. A hold (a second same-direction KeyDown within [HOLD_GAP_MS]) scrubs by TIME:
+ * a ticker advances the preview by speed x elapsed, the speed climbing with hold time and capped so one full hold crosses the
+ * whole broadcast in about 5 s, whatever the remote's event rate.
  */
 object Scrub {
     const val TAP_MS = 10_000L
 
-    /** The step sizes, smallest first. */
-    val LADDER_MS: LongArray = longArrayOf(10_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L, 1_800_000L)
+    /** A same-direction KeyDown this soon after the previous one continues a hold. */
+    const val HOLD_GAP_MS = 600L
 
-    /** Hold time per rung (0.8 s: the ladder is climbed in about 5 s). */
-    const val RUNG_MS = 800L
+    /** The preview stops moving this long after the last KeyDown (the Streamer remote repeats every 320-380 ms), the hold ends at [HOLD_GAP_MS]. */
+    const val COAST_MS = 400L
 
-    /** A held key repeats far faster than anyone can follow: one step per this long. */
-    const val THROTTLE_MS = 120L
+    /** The ticker period. */
+    const val TICK_MS = 50L
 
-    /** The cap is about duration / this many steps. */
-    const val CROSS_STEPS = 40
+    /** Hold time per speed rung. */
+    const val RUNG_MS = 600L
+
+    /** Scrub speeds in video seconds per real second: 20 s/s, 1, 3, 10, 30, 100, 300, 1000 min/s. */
+    val SPEEDS: LongArray = longArrayOf(20L, 60L, 180L, 600L, 1_800L, 6_000L, 18_000L, 60_000L)
 
     private const val ONE_HOUR_MS = 3_600_000L
-    private const val LONG_FLOOR_MS = 300_000L
+    private const val LONG_FLOOR_SPS = 300L
 
-    /** Top rung for a broadcast of [durationMs]: the smallest ladder value at least duration/40, at least 5 min over an hour. Unknown duration: 5 min. */
-    fun topRungMs(durationMs: Long): Long {
-        if (durationMs <= 0) return LONG_FLOOR_MS
-        var want = (durationMs + CROSS_STEPS - 1) / CROSS_STEPS
-        if (durationMs > ONE_HOUR_MS) want = want.coerceAtLeast(LONG_FLOOR_MS)
-        return LADDER_MS.firstOrNull { it >= want } ?: LADDER_MS.last()
+    /** Fastest speed for a broadcast of [durationMs]: duration / 4 s (over an hour never below 5 min/s). Unknown duration: 5 min/s. */
+    fun maxSpeed(durationMs: Long): Long {
+        if (durationMs <= 0) return LONG_FLOOR_SPS
+        var cap = durationMs / 4_000L
+        if (durationMs > ONE_HOUR_MS) cap = cap.coerceAtLeast(LONG_FLOOR_SPS)
+        return cap.coerceAtLeast(10L)
     }
 
-    /** Step size for a key held for [heldMs] in a broadcast of [durationMs]. */
-    fun stepMs(heldMs: Long, durationMs: Long): Long {
-        val top = LADDER_MS.indexOf(topRungMs(durationMs))
-        val rung = (heldMs.coerceAtLeast(0L) / RUNG_MS).coerceAtMost(top.toLong()).toInt()
-        return LADDER_MS[rung]
+    /** Video seconds per real second after [heldMs] of hold. */
+    fun speed(heldMs: Long, durationMs: Long): Long {
+        val rung = (heldMs.coerceAtLeast(0L) / RUNG_MS).coerceAtMost((SPEEDS.size - 1).toLong()).toInt()
+        return minOf(SPEEDS[rung], maxSpeed(durationMs))
     }
 
-    /** Where one step from [positionMs] lands: [dir] is -1 or +1 (sign is used), the result is clamped to [0, durationMs]. */
-    fun scrubTarget(positionMs: Long, dir: Int, heldMs: Long, durationMs: Long): Long {
+    /** Where one tap from [positionMs] lands: [dir] is -1 or +1 (sign is used), clamped to [0, durationMs]. */
+    fun tapTarget(positionMs: Long, dir: Int, durationMs: Long): Long {
         val upper = if (durationMs > 0) durationMs else Long.MAX_VALUE
-        val d = if (dir < 0) -1 else 1
-        return (positionMs + d * stepMs(heldMs, durationMs)).coerceIn(0L, upper)
+        return (positionMs + (if (dir < 0) -TAP_MS else TAP_MS)).coerceIn(0L, upper)
     }
 
-    /** "10 s", "30 s", "1 min", "2 min", "5 min", "10 min", "30 min". */
-    fun stepLabel(stepMs: Long): String {
-        val s = stepMs / 1000
-        return if (s < 60) "$s s" else "${s / 60} min"
+    /** "10 s/s", "1 min/s", "3 min/s", "10 min/s", "690 min/s". */
+    fun speedLabel(sps: Long): String = if (sps < 60) "$sps s/s" else {
+        val m = sps / 60.0
+        if (m >= 10 || sps % 60 == 0L) "${Math.round(m)} min/s" else "${"%.1f".format(java.util.Locale.US, m)} min/s"
     }
 
-    /** "▶▶ 10 min" forward, "◀◀ 10 min" back. */
-    fun stepText(dir: Int, stepMs: Long): String = (if (dir < 0) "◀◀ " else "▶▶ ") + stepLabel(stepMs)
+    /** "▶▶ 10 s" for a tap ([sps] 0), "▶▶ 10 min/s" while holding; "◀◀" backwards. */
+    fun stepText(dir: Int, sps: Long): String = (if (dir < 0) "\u25C0\u25C0 " else "\u25B6\u25B6 ") + (if (sps <= 0) "10 s" else speedLabel(sps))
 }
 
 /**
- * Tells a held Left/Right key from taps without trusting `repeatCount`: some remotes never set it, some send the first
- * repeat only 400-500 ms after the press. A hold starts at a KeyDown that does not continue the previous one and lasts
- * until a KeyUp or a gap between KeyDown events of [gapMs] (the second event may take [firstGapMs], the initial repeat delay).
- * An event that does carry repeatCount > 0 is a repeat by definition and continues the hold (within [maxGapMs]).
+ * Tells a held Left/Right key from taps without trusting `repeatCount` or KeyUp. The Google TV Streamer remote sends a held key
+ * as a separate DOWN+UP pair every ~350 ms, others send DOWN with repeats. A KeyDown in the same direction within [gapMs] of the
+ * previous one continues the hold, whatever repeatCount says; KeyUp is ignored. The hold ends when [gapMs] pass without a
+ * same-direction KeyDown (see [holding]) or the direction changes.
  */
-class KeyHold(
-    private val gapMs: Long = 300L,
-    private val firstGapMs: Long = 600L,
-    private val maxGapMs: Long = 2_000L,
-) {
+class KeyHold(private val gapMs: Long = Scrub.HOLD_GAP_MS) {
     private var active = false
     private var dir = 0
     private var startedAt = 0L
@@ -80,14 +77,10 @@ class KeyHold(
     var events = 0
         private set
 
-    /** Repeat events after the press. */
-    val repeats: Int get() = (events - 1).coerceAtLeast(0)
-
-    /** One KeyDown. True when it continues the current hold, false when it starts a new one. */
-    fun down(d: Int, repeatCount: Int, t: Long): Boolean {
+    /** One KeyDown. True when it continues the current hold (this is at least the second event), false when it starts a new one. */
+    fun down(d: Int, @Suppress("UNUSED_PARAMETER") repeatCount: Int, t: Long): Boolean {
         val gap = t - lastAt
-        val limit = if (events <= 1) firstGapMs else gapMs
-        val continuing = active && d == dir && gap >= 0 && (gap < limit || (repeatCount > 0 && gap < maxGapMs))
+        val continuing = active && d == dir && gap in 0 until gapMs
         if (!continuing) {
             active = true
             dir = d
@@ -99,8 +92,15 @@ class KeyHold(
         return continuing
     }
 
-    /** KeyUp: the hold is over, the next press is a tap again. */
-    fun up() {
+    /** True at [t] while a hold (two or more events) is in force. */
+    fun holding(t: Long): Boolean = active && events >= 2 && t - lastAt < gapMs
+
+    /** True at [t] while the last KeyDown is recent enough that the key is probably still down. */
+    fun recent(t: Long, coastMs: Long = Scrub.COAST_MS): Boolean = active && t - lastAt < coastMs
+
+    fun lastDownAt(): Long = lastAt
+
+    fun end() {
         active = false
         events = 0
     }
@@ -108,24 +108,23 @@ class KeyHold(
     fun heldMs(t: Long): Long = if (active) (t - startedAt).coerceAtLeast(0L) else 0L
 }
 
-/** The step in force while scrubbing: its direction and size (changes only when a rung changes or the key is released). */
-data class ScrubStatus(val dir: Int, val stepMs: Long)
+/** The state shown in the label: direction and speed in video s per real s (0 = a tap, 10 s). */
+data class ScrubStatus(val dir: Int, val speed: Long)
 
-/** For the debug overlay: `scrub step 5 min held 3.2 s repeats 18`. */
-data class ScrubInfo(val stepMs: Long, val heldMs: Long, val repeats: Int) {
-    fun line(): String = "scrub step ${Scrub.stepLabel(stepMs)} held ${"%.1f".format(java.util.Locale.US, heldMs / 1000.0)} s repeats $repeats"
+/** For the debug overlay: `scrub speed 10 min/s held 3.2 s events 18`. */
+data class ScrubInfo(val speed: Long, val heldMs: Long, val events: Int) {
+    fun line(): String = "scrub speed ${if (speed <= 0) "tap" else Scrub.speedLabel(speed)} held ${"%.1f".format(java.util.Locale.US, heldMs / 1000.0)} s events $events"
 }
 
 /**
  * The preview state behind the timeline. [position] is the playhead (the start of a preview), [seekTo] applies it.
- * Nothing here touches the player until [commit].
+ * Nothing here touches the player until [commit]. While a hold is in force the owner calls [tick] every [Scrub.TICK_MS].
  */
 class ScrubController(
     private val position: () -> Long,
     private val duration: () -> Long,
     private val seekTo: (Long) -> Unit,
     private val now: () -> Long,
-    private val throttleMs: Long = Scrub.THROTTLE_MS,
 ) {
     private val _preview = MutableStateFlow<Long?>(null)
 
@@ -134,38 +133,64 @@ class ScrubController(
 
     private val _status = MutableStateFlow<ScrubStatus?>(null)
 
-    /** Direction and step size, for the label under the bar. Null when no preview exists. */
+    /** Direction and speed, for the label above the bar. Null when no preview exists. */
     val status: StateFlow<ScrubStatus?> = _status.asStateFlow()
 
     private val _info = MutableStateFlow<ScrubInfo?>(null)
 
-    /** Step, hold time and repeat count of the last step, for the debug overlay. Collected only while the overlay is on. */
+    /** Speed, hold time and event count, for the debug overlay. Collected only while the overlay is on. */
     val info: StateFlow<ScrubInfo?> = _info.asStateFlow()
 
     private val hold = KeyHold()
-    private var lastStepAt = Long.MIN_VALUE
+    private var dir = 1
+    private var lastTickAt = 0L
+    private var tickedAt = 0L
 
-    /** One Left/Right KeyDown. [repeatCount] is the event's own, which may be 0 on every event of a held key. */
-    fun key(dir: Int, repeatCount: Int) {
+    /** True while a hold is in force: the owner should be ticking. */
+    fun isHolding(): Boolean = hold.holding(now())
+
+    /** One Left/Right KeyDown. [repeatCount] is the event's own, which may be 0 on every event of a held key. KeyUp is not needed. */
+    fun key(d: Int, repeatCount: Int) {
         val t = now()
-        val d = if (dir < 0) -1 else 1
-        val continuing = hold.down(d, repeatCount, t)
-        if (continuing && t - lastStepAt < throttleMs) return
-        lastStepAt = t
-        val held = hold.heldMs(t)
-        val dur = duration()
-        val step = Scrub.stepMs(held, dur)
+        dir = if (d < 0) -1 else 1
+        val continuing = hold.down(dir, repeatCount, t)
+        if (continuing) {
+            if (hold.events == 2) lastTickAt = t // the hold starts: the ticker takes over
+            return
+        }
+        // A press that continues nothing is a tap: exactly 10 s.
         val from = _preview.value ?: position().coerceAtLeast(0L)
-        _preview.value = Scrub.scrubTarget(from, d, held, dur)
-        _status.value = ScrubStatus(d, step)
-        _info.value = ScrubInfo(step, held, hold.repeats)
+        _preview.value = Scrub.tapTarget(from, dir, duration())
+        _status.value = ScrubStatus(dir, 0L)
+        _info.value = ScrubInfo(0L, 0L, 1)
     }
 
-    /** KeyUp of Left/Right: the next press starts at the tap step again. */
-    fun release() {
-        hold.up()
-        _status.value?.let { _status.value = it.copy(stepMs = Scrub.TAP_MS) }
+    /** Advances the preview by speed x elapsed while a hold is in force. False once the hold is over (stop ticking). */
+    fun tick(): Boolean {
+        val t = now()
+        if (!hold.holding(t)) {
+            if (_status.value?.speed != 0L) _status.value?.let { _status.value = ScrubStatus(it.dir, 0L) }
+            return false
+        }
+        val dt = t - lastTickAt
+        lastTickAt = t
+        if (!hold.recent(t)) return true // the key is probably up: freeze until the hold times out
+        val dur = duration()
+        val held = hold.heldMs(t)
+        val sps = Scrub.speed(held, dur)
+        val upper = if (dur > 0) dur else Long.MAX_VALUE
+        val from = _preview.value ?: position().coerceAtLeast(0L)
+        _preview.value = (from + dir * dt * sps).coerceIn(0L, upper)
+        val st = _status.value
+        if (st == null || st.speed != sps || st.dir != dir) _status.value = ScrubStatus(dir, sps)
+        // The debug line only needs a refresh when the speed or the event count moved (no allocation on the other ticks).
+        val inf = _info.value
+        if (inf == null || inf.speed != sps || inf.events != hold.events) _info.value = ScrubInfo(sps, held, hold.events)
+        return true
     }
+
+    /** KeyUp of Left/Right: ignored on purpose (the Streamer remote sends one after every KeyDown). */
+    fun release() = Unit
 
     /** OK: seeks to the preview and clears it. False when there was no preview. */
     fun commit(): Boolean {
@@ -182,6 +207,6 @@ class ScrubController(
         _preview.value = null
         _status.value = null
         _info.value = null
-        hold.up()
+        hold.end()
     }
 }

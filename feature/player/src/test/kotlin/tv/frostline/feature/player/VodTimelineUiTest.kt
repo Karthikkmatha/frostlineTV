@@ -30,11 +30,13 @@ import tv.frostline.core.ui.FrostlineTheme
 class VodTimelineUiTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 
+    /** A second press of the same direction within 600 ms is a hold: each test press moves the clock on by a second. */
+    private var clock = 10_000L
     private val seeks = mutableListOf<Long>()
     private var plays = 0
     private var visibleNow = false
     private val scrub = ScrubController(
-        position = { 125_000L }, duration = { 3_725_000L }, seekTo = { seeks += it }, now = { System.nanoTime() / 1_000_000 },
+        position = { 125_000L }, duration = { 3_725_000L }, seekTo = { seeks += it }, now = { clock },
     )
 
     private var thumb: Thumb? = null
@@ -59,7 +61,7 @@ class VodTimelineUiTest {
                     vod = VodControls(
                         "Past broadcast", preview ?: 125_000L, 3_725_000L, null,
                         seekable = seekable, previewMs = preview,
-                        stepText = status?.let { Scrub.stepText(it.dir, it.stepMs) },
+                        stepText = status?.let { Scrub.stepText(it.dir, it.speed) },
                         thumb = if (preview != null) thumb else null,
                         onScrub = scrub::key, onScrubRelease = scrub::release, onScrubCommit = { scrub.commit() }, onScrubCancel = scrub::cancel,
                     ) { _, _ -> },
@@ -70,6 +72,7 @@ class VodTimelineUiTest {
     }
 
     private fun press(key: Key) {
+        clock += 1_000
         rule.onNodeWithTag(ControlTags.Root).performKeyInput { pressKey(key) }
         rule.waitForIdle()
     }

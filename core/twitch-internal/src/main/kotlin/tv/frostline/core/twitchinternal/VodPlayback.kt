@@ -77,6 +77,25 @@ interface VodPlaybackResolver {
 
     /** The bytes of one storyboard sheet (https only, capped at 6 MB), or null on any failure. */
     suspend fun sheetBytes(url: String): ByteArray? = null
+
+    /** What the last [storyboard] call saw, for the debug overlay (no URLs, tokens or ids). */
+    fun storyboardDiag(): StoryboardDiag = StoryboardDiag.NONE
+}
+
+/** `seekpv: url ok|missing, sheets N, fmt <field names seen>, frame i, err <class>`: [urlOk] null = never asked. */
+data class StoryboardDiag(val urlOk: Boolean?, val sheets: Int, val fmt: String, val err: String) {
+    fun line(frame: Int?): String =
+        "seekpv: url ${when (urlOk) { true -> "ok"; false -> "missing"; null -> "-" }}, sheets $sheets, fmt ${fmt.ifEmpty { "-" }}, frame ${frame ?: "-"}, err ${err.ifEmpty { "-" }}"
+
+    companion object {
+        val NONE = StoryboardDiag(null, 0, "", "")
+
+        /** Only the class of a failure, or the HTTP code in "(HTTP 403)": never a message that may carry a URL. */
+        fun errorClass(e: Throwable): String {
+            val code = Regex("HTTP (\\d{3})").find(e.message.orEmpty())?.groupValues?.get(1)
+            return if (code != null) "http$code" else e.javaClass.simpleName
+        }
+    }
 }
 
 internal class TwitchVodResolver(
@@ -140,35 +159,61 @@ internal class TwitchVodResolver(
         ResolvedClip(qualities)
     }
 
+    @Volatile private var diag = StoryboardDiag.NONE
+
+    override fun storyboardDiag(): StoryboardDiag = diag
+
     override suspend fun storyboard(videoId: String, durationSec: Long, webSession: String?): StoryboardSheetSet? = withContext(Dispatchers.IO) {
-        runCatching {
+        var err = ""
+        var urlOk: Boolean? = null
+        var fmt = ""
+        var sheets = 0
+        try {
             val id = videoId.trim()
-            fun urlOf(root: JsonObject?) = root.obj("data")?.obj("video")?.get("seekPreviewsURL")?.jsonPrimitive?.contentOrNull?.takeIf { fetchable(it) }
+            fun urlOf(root: JsonObject?): String? {
+                if (root == null) return null
+                if ((root["errors"] as? JsonArray)?.isNotEmpty() == true && err.isEmpty()) err = "gqlerror"
+                return root.obj("data")?.obj("video")?.get("seekPreviewsURL")?.jsonPrimitive?.contentOrNull?.takeIf { fetchable(it) }
+            }
             // The web player's own persisted query first; a raw equivalent when Twitch does not know the hash or answers without the field.
-            val url = urlOf(runCatching { gql(SEEK_PERSISTED_OPERATION, "", buildJsonObject { put("includePrivate", false); put("videoID", id) }, webSession, SEEK_HASH) }.getOrNull())
-                ?: urlOf(gql(SEEK_OPERATION, SEEK_QUERY, buildJsonObject { put("id", id) }, webSession))
-                ?: return@runCatching null
+            val url = urlOf(runCatching { gql(SEEK_PERSISTED_OPERATION, "", buildJsonObject { put("includePrivate", false); put("videoID", id) }, webSession, SEEK_HASH) }
+                .onFailure { err = StoryboardDiag.errorClass(it) }.getOrNull())
+                ?: urlOf(runCatching { gql(SEEK_OPERATION, SEEK_QUERY, buildJsonObject { put("id", id) }, webSession) }
+                    .onFailure { err = StoryboardDiag.errorClass(it) }.getOrNull())
+            urlOk = url != null
+            if (url == null) return@withContext null
             val body = client.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                if (r.code !in 200..299) return@runCatching null
+                if (r.code !in 200..299) { err = "http${r.code}"; return@use null }
                 val src = r.body.source()
                 src.request(MAX_INFO_BYTES + 1)
-                if (src.buffer.size > MAX_INFO_BYTES) return@runCatching null
+                if (src.buffer.size > MAX_INFO_BYTES) { err = "toolarge"; return@use null }
                 src.readUtf8()
-            }
-            Storyboards.parse(body, url, durationSec)
-        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else null }
+            } ?: return@withContext null
+            fmt = Storyboards.fieldNames(body)
+            val set = Storyboards.parse(body, url, durationSec)
+            sheets = set?.images?.size ?: 0
+            if (set == null && err.isEmpty()) err = "noparse"
+            set
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            err = StoryboardDiag.errorClass(e)
+            null
+        } finally {
+            diag = StoryboardDiag(urlOk, sheets, fmt, err)
+        }
     }
 
     override suspend fun sheetBytes(url: String): ByteArray? = withContext(Dispatchers.IO) {
         if (!fetchable(url)) return@withContext null
         runCatching {
             client.newCall(Request.Builder().url(url).build()).execute().use { r ->
-                if (r.code !in 200..299) return@use null
+                if (r.code !in 200..299) { diag = diag.copy(err = "sheet" + r.code); return@use null }
                 val src = r.body.source()
                 src.request(MAX_SHEET_BYTES + 1)
                 if (src.buffer.size > MAX_SHEET_BYTES) null else src.readByteArray()
             }
-        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else null }
+        }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else { diag = diag.copy(err = StoryboardDiag.errorClass(it)); null } }
     }
 
     /** https only (plus loopback http for tests). */

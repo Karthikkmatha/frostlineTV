@@ -89,6 +89,23 @@ class HistoryParserTest {
         assertEquals(40, items[1].positionSec) // position and time from self.viewingHistory
     }
 
+    @Test fun thumbnailTemplatesAreFilledFor320x180() {
+        assertEquals("https://cdn/x-320x180.jpg", HistoryParser.thumbnail("https://cdn/x-%{width}x%{height}.jpg", null, null))
+        assertEquals("https://cdn/x-320x180.jpg", HistoryParser.thumbnail("https://cdn/x-{width}x{height}.jpg", "https://off", "https://av"))
+    }
+
+    @Test fun anEmptyOrProcessingThumbnailFallsBackToTheOfflineBannerThenTheAvatar() {
+        val proc = "https://vod-secure.twitch.tv/_404/404_processing_%{width}x%{height}.png"
+        assertEquals("https://off", HistoryParser.thumbnail(proc, "https://off", "https://av"))
+        assertEquals("https://off", HistoryParser.thumbnail("", "https://off", "https://av"))
+        assertEquals("https://av", HistoryParser.thumbnail("", "", "https://av"))
+        assertEquals("https://av", HistoryParser.thumbnail(proc, null, "https://av"))
+        assertEquals("", HistoryParser.thumbnail("", null, null))
+        val json = """{"data":{"currentUser":{"viewedVideos":{"edges":[{"history":{"position":50,"updatedAt":"2026-11-03T10:00:00Z"},
+            "node":{"id":"9","lengthSeconds":999999,"previewThumbnailURL":"","owner":{"login":"caedrel247","offlineImageURL":"https://off","profileImageURL":"https://av"}}}]}}}}"""
+        assertEquals("https://off", HistoryParser.list(J.parse(json)!!)[0].thumbnailUrl)
+    }
+
     @Test fun emptyOrWrongShapesGiveNothing() {
         for (t in listOf("""{}""", """{"data":null}""", """{"data":{"currentUser":null}}""", """{"data":{"currentUser":{"viewedVideos":{"edges":[]}}}}""")) {
             assertTrue(t, HistoryParser.list(J.parse(t)!!).isEmpty())

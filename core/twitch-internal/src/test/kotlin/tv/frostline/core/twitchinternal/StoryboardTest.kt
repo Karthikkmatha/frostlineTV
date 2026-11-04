@@ -82,6 +82,30 @@ class StoryboardTest {
         }
     }
 
+    @Test fun theRealTwitchShapeWithRelativeNamesResolvesAgainstTheJsonsDirectory() {
+        val url = "https://d2vjef5jvl6bfs.cloudfront.net/abc123_streamer_4444/storyboards/2501-info.json"
+        val real = """[{"count":100,"width":320,"rows":10,"images":["2501-high-0.jpg","2501-high-1.jpg"],"interval":10,"quality":"high","sprite_size":[3200,1800],"cols":10,"height":180},
+            {"count":100,"width":160,"rows":10,"images":["2501-low-0.jpg","2501-low-1.jpg","2501-low-2.jpg"],"interval":10,"quality":"low","sprite_size":[1600,900],"cols":10,"height":90}]"""
+        val s = Storyboards.parse(real, url)!!
+        assertEquals("low", s.quality)
+        assertEquals("https://d2vjef5jvl6bfs.cloudfront.net/abc123_streamer_4444/storyboards/2501-low-2.jpg", s.images[2])
+        assertEquals(3, s.images.size)
+        assertEquals("count,width,rows,images,interval,quality,sprite_size,cols,height", Storyboards.fieldNames(real))
+    }
+
+    @Test fun fieldNamesNeverThrow() {
+        assertEquals("notjson", Storyboards.fieldNames("""{"a":"""))
+        assertEquals("noobject", Storyboards.fieldNames("[]"))
+        assertEquals("a,b", Storyboards.fieldNames("""{"a":1,"b":2}"""))
+    }
+
+    @Test fun theDebugLineNamesTheStateWithoutAnyUrl() {
+        assertEquals("seekpv: url ok, sheets 3, fmt count,width, frame 7, err -", StoryboardDiag(true, 3, "count,width", "").line(7))
+        assertEquals("seekpv: url missing, sheets 0, fmt -, frame -, err http401", StoryboardDiag(false, 0, "", "http401").line(null))
+        assertEquals("http403", StoryboardDiag.errorClass(java.io.IOException("Access token request failed (HTTP 403)")))
+        assertEquals("SocketTimeoutException", StoryboardDiag.errorClass(java.net.SocketTimeoutException("https://secret.example/x")))
+    }
+
     @Test fun anObjectWrappingTheArrayIsAccepted() {
         assertNotNull(Storyboards.parse("""{"storyboards":[{"width":100,"height":56,"rows":1,"cols":1,"interval":1,"count":1,"images":["a.jpg"]}]}""", info))
     }
@@ -127,6 +151,18 @@ class StoryboardResolverTest {
         gql.enqueue(MockResponse().setBody("""{"data":{"video":{"seekPreviewsURL":"${cdn.url("/x.json")}"}}}"""))
         cdn.enqueue(MockResponse().setResponseCode(404))
         assertNull(resolver().storyboard("9", 12, null))
+    }
+
+    @Test fun theDiagnosticsRecordWhatHappened() = runBlocking {
+        val r = resolver()
+        repeat(2) { gql.enqueue(MockResponse().setResponseCode(403)) }
+        assertNull(r.storyboard("9", 12, null))
+        assertEquals("seekpv: url missing, sheets 0, fmt -, frame -, err http403", r.storyboardDiag().line(null))
+        val infoUrl = cdn.url("/b/storyboards/9-info.json").toString()
+        gql.enqueue(MockResponse().setBody("""{"data":{"video":{"seekPreviewsURL":"$infoUrl"}}}"""))
+        cdn.enqueue(MockResponse().setBody("""[{"width":100,"height":56,"rows":2,"cols":2,"interval":3,"count":4,"images":["9-low-0.jpg"],"quality":"low"}]"""))
+        assertNotNull(r.storyboard("9", 12, null))
+        assertEquals("seekpv: url ok, sheets 1, fmt width,height,rows,cols,interval,count,images,quality, frame 2, err -", r.storyboardDiag().line(2))
     }
 
     @Test fun aSheetIsFetchedAsBytes() = runBlocking {

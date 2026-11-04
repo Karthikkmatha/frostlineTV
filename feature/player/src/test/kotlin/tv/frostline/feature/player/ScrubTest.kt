@@ -11,193 +11,196 @@ class ScrubTest {
     private val min = 60_000L
     private val hour = 3_600_000L
 
-    // ---- the ladder over time ----
-
-    @Test fun theLadderClimbsOneRungPerEightHundredMillisecondsOfHold() {
-        val d = 10 * hour
-        val expect = listOf(10_000L, 30_000L, 60_000L, 120_000L, 300_000L, 600_000L, 1_800_000L)
-        expect.forEachIndexed { i, step ->
-            assertEquals("rung $i", step, Scrub.stepMs(i * Scrub.RUNG_MS, d))
-            assertEquals("rung $i just before the next", step, Scrub.stepMs((i + 1) * Scrub.RUNG_MS - 1, d))
-        }
-        assertEquals(1_800_000L, Scrub.stepMs(60_000, d))
-        assertEquals(10_000L, Scrub.stepMs(0, d))
-        assertEquals(10_000L, Scrub.stepMs(-5, d))
-    }
-
-    @Test fun theLabelsReadAsSecondsAndMinutes() {
-        assertEquals(listOf("10 s", "30 s", "1 min", "2 min", "5 min", "10 min", "30 min"), Scrub.LADDER_MS.map(Scrub::stepLabel))
-        assertEquals("\u25B6\u25B6 10 min", Scrub.stepText(1, 600_000))
-        assertEquals("\u25C0\u25C0 30 s", Scrub.stepText(-1, 30_000))
-    }
-
-    // ---- the cap per duration ----
-
-    @Test fun theTopRungIsAboutDurationOverFortyRoundedUpToTheLadder() {
-        assertEquals(2 * min, Scrub.topRungMs(hour))            // 1.5 min -> 2 min
-        assertEquals(5 * min, Scrub.topRungMs(3 * hour))        // 4.5 min -> 5 min
-        assertEquals(30 * min, Scrub.topRungMs(10 * hour))      // 15 min -> 30 min
-        assertEquals(10 * min, Scrub.topRungMs(6 * hour))       // 9 min -> 10 min
-        assertEquals(30 * min, Scrub.topRungMs(40 * hour))      // never above the ladder
-    }
-
-    @Test fun overAnHourNeverBelowFiveMinutes() {
-        assertEquals(5 * min, Scrub.topRungMs(hour + 1))
-        assertEquals(5 * min, Scrub.topRungMs(90 * min))
-        assertTrue(Scrub.topRungMs(2 * hour) >= 5 * min)
-    }
-
-    @Test fun shortBroadcastsKeepSmallSteps() {
-        assertEquals(10_000L, Scrub.topRungMs(5 * min))
-        assertEquals(30_000L, Scrub.topRungMs(15 * min))
-        assertEquals(5 * min, Scrub.topRungMs(0)) // unknown
-        assertEquals(30_000L, Scrub.stepMs(60_000, 15 * min)) // the cap holds however long the key is held
-    }
-
-    @Test fun scrubTargetMovesByTheStepAndClamps() {
-        assertEquals(110_000L, Scrub.scrubTarget(100_000, 1, 0, hour))
-        assertEquals(90_000L, Scrub.scrubTarget(100_000, -1, 0, hour))
-        assertEquals(130_000L, Scrub.scrubTarget(100_000, 1, 800, hour))
-        assertEquals(0L, Scrub.scrubTarget(5_000, -1, 0, hour))
-        assertEquals(0L, Scrub.scrubTarget(100_000, -1, 5_000, hour))
-        assertEquals(hour, Scrub.scrubTarget(hour - 3_000, 1, 0, hour))
-        assertEquals(hour, Scrub.scrubTarget(hour - 50_000, 1, 5_000, hour))
-    }
-
-    @Test fun unknownDurationOnlyClampsAtZero() {
-        assertEquals(10_000L + 300_000L, Scrub.scrubTarget(10_000, 1, 60_000, 0))
-        assertEquals(0L, Scrub.scrubTarget(10_000, -1, 5_000, 0))
-    }
-
-    private var t = 0L
+    private var t = 1_000L
     private var pos = 600_000L
     private val seeks = mutableListOf<Long>()
     private fun controller(duration: Long = hour) =
         ScrubController(position = { pos }, duration = { duration }, seekTo = { seeks += it }, now = { t })
 
-    /** Holds Right from the start of the broadcast with a key-repeat every [everyMs]; returns how long the preview took to reach the end. */
-    private fun holdToTheEnd(duration: Long, everyMs: Long = 40, withRepeatCount: Boolean = true): Long {
-        t = 0; pos = 0
-        val c = controller(duration)
-        var n = 0
-        c.key(1, 0)
-        while (c.preview.value!! < duration && t < 60_000) {
-            t += everyMs; n++
-            c.key(1, if (withRepeatCount) n else 0)
+    /** Runs the clock forward [ms] in 50 ms ticks (the ViewModel's ticker), stopping early when the hold is over. */
+    private fun advance(c: ScrubController, ms: Long) {
+        val end = t + ms
+        while (t < end) { t += Scrub.TICK_MS; c.tick() }
+    }
+
+    // ---- speed ----
+
+    @Test fun theSpeedClimbsWithHoldTimeAndIsCappedByTheBroadcast() {
+        val d = 46 * hour
+        assertEquals(20L, Scrub.speed(0, d))
+        assertEquals(60L, Scrub.speed(Scrub.RUNG_MS, d))
+        assertEquals(180L, Scrub.speed(2 * Scrub.RUNG_MS, d))
+        assertEquals(600L, Scrub.speed(3 * Scrub.RUNG_MS, d))
+        assertEquals(60_000L, Scrub.speed(60_000, 1000 * hour))
+        assertEquals(20L, Scrub.speed(-5, d))
+        assertEquals(d / 4000, Scrub.maxSpeed(d))
+        assertEquals(900L, Scrub.maxSpeed(hour + 1)) // over an hour: duration / 4 s, which is above the 5 min/s floor
+        assertEquals(1800L, Scrub.maxSpeed(2 * hour))
+        assertEquals(300L, Scrub.maxSpeed(0)) // unknown duration: 5 min/s
+        assertTrue(Scrub.maxSpeed(hour + 1) >= 300L)
+        assertEquals(225L, Scrub.maxSpeed(15 * min))
+        assertEquals(225L, Scrub.speed(60_000, 15 * min))
+    }
+
+    @Test fun theLabelsReadAsSpeeds() {
+        assertEquals(listOf("20 s/s", "1 min/s", "3 min/s", "10 min/s", "30 min/s", "100 min/s", "300 min/s", "1000 min/s"), Scrub.SPEEDS.map(Scrub::speedLabel))
+        assertEquals("\u25B6\u25B6 10 min/s", Scrub.stepText(1, 600))
+        assertEquals("\u25C0\u25C0 10 s", Scrub.stepText(-1, 0))
+        assertEquals("\u25B6\u25B6 10 s", Scrub.stepText(1, 0))
+        assertEquals("3.8 min/s", Scrub.speedLabel(225))
+    }
+
+    @Test fun tapTargetMovesTenSecondsAndClamps() {
+        assertEquals(110_000L, Scrub.tapTarget(100_000, 1, hour))
+        assertEquals(90_000L, Scrub.tapTarget(100_000, -1, hour))
+        assertEquals(0L, Scrub.tapTarget(5_000, -1, hour))
+        assertEquals(hour, Scrub.tapTarget(hour - 3_000, 1, hour))
+        assertEquals(20_000L, Scrub.tapTarget(10_000, 1, 0)) // unknown duration: only 0 clamps
+    }
+
+    // ---- the Google TV Streamer remote: DOWN+UP pairs about 350 ms apart ----
+
+    private val streamerGaps = longArrayOf(320, 350, 330, 380, 350, 340, 360, 330)
+
+    /** Presses Right the way the Streamer remote reports a hold: DOWN+UP at the same instant, every ~350 ms; the ticker runs between. */
+    private fun holdLikeTheStreamer(c: ScrubController, forMs: Long) {
+        val start = t
+        var i = 0
+        c.key(1, 0); c.release()
+        while (t - start < forMs) {
+            val next = t + streamerGaps[i++ % streamerGaps.size]
+            while (t < next && t - start < forMs) { t = minOf(t + Scrub.TICK_MS, next); c.tick() }
+            if (t == next) { c.key(1, 0); c.release() }
         }
-        return t
     }
 
-    @Test fun aFullHoldCrossesTheWholeBroadcastInAFewSecondsWhateverItsLength() {
-        val oneHour = holdToTheEnd(hour)
-        val threeHours = holdToTheEnd(3 * hour)
-        val tenHours = holdToTheEnd(10 * hour)
-        println("hold to cross: 1 h ${oneHour} ms, 3 h ${threeHours} ms, 10 h ${tenHours} ms")
-        for (ms in listOf(oneHour, threeHours, tenHours)) assertTrue("crossed in $ms ms", ms in 4_000..8_000)
+    @Test fun theStreamerRemotesDownUpPairsAreOneContinuousHold() {
+        val h = KeyHold()
+        var tt = 0L
+        assertFalse(h.down(1, 0, tt)) // the press
+        for (gap in streamerGaps) {
+            tt += gap
+            assertTrue("gap $gap", h.down(1, 0, tt))
+            assertTrue(h.holding(tt))
+        }
+        assertEquals(streamerGaps.size + 1, h.events)
     }
 
-    @Test fun holdingWorksWithoutAnyRepeatCount() {
-        val withCount = holdToTheEnd(3 * hour, withRepeatCount = true)
-        val without = holdToTheEnd(3 * hour, withRepeatCount = false)
-        assertEquals(withCount, without)
-    }
-
-    @Test fun slowRepeatsOfOneHundredMillisecondsStillCrossAndAreNotThrottledAway() {
-        val ms = holdToTheEnd(3 * hour, everyMs = 100, withRepeatCount = false)
-        assertTrue("crossed in $ms ms", ms in 4_000..10_000)
-    }
-
-    // ---- taps, throttle, hold detection ----
-
-    @Test fun aTapMovesTheBarTenSecondsWithoutSeeking() {
+    @Test fun aSingleDownUpIsOneTenSecondStep() {
         val c = controller()
-        assertNull(c.preview.value)
         c.key(1, 0); c.release()
         assertEquals(610_000L, c.preview.value)
-        t = 500
-        c.key(-1, 0); c.release()
-        t = 1_000
-        c.key(-1, 0); c.release()
-        assertEquals(590_000L, c.preview.value)
-        assertTrue("the video keeps playing where it is", seeks.isEmpty())
-    }
-
-    @Test fun repeatsInsideTheThrottleAreIgnored() {
-        val c = controller()
-        c.key(1, 0)
-        t = 50; c.key(1, 1)
+        assertEquals(ScrubStatus(1, 0L), c.status.value)
+        advance(c, 2_000) // nothing else comes: the ticker never moves it
         assertEquals(610_000L, c.preview.value)
-        t = 130; c.key(1, 2)
-        assertEquals(620_000L, c.preview.value)
+        assertFalse(c.isHolding())
+        assertTrue(seeks.isEmpty())
     }
 
-    @Test fun releasingResetsToTheTapStep() {
-        val c = controller(10 * hour)
-        c.key(1, 0)
-        var n = 0
-        while (t < 3_000) { t += 40; c.key(1, ++n) }
-        assertEquals(Scrub.stepMs(3_000, 10 * hour), c.status.value!!.stepMs)
-        assertTrue(c.status.value!!.stepMs > 10_000)
-        c.release()
-        assertEquals(10_000L, c.status.value!!.stepMs)
-        val before = c.preview.value!!
-        t += 1_000; c.key(1, 0)
-        assertEquals(before + 10_000L, c.preview.value)
-    }
-
-    @Test fun aGapOfThreeHundredMillisecondsWithoutAKeyUpEndsTheHold() {
-        val c = controller(10 * hour)
-        c.key(1, 0)
-        var n = 0
-        while (t < 3_000) { t += 40; c.key(1, 0); n++ }
-        assertTrue(c.info.value!!.stepMs > 10_000)
-        t += 350; c.key(1, 0) // no KeyUp was seen, but nothing came for 350 ms: this is a new press
-        assertEquals(10_000L, c.info.value!!.stepMs)
-        assertEquals(0, c.info.value!!.repeats)
-    }
-
-    @Test fun theFirstRepeatMayComeFourToFiveHundredMillisecondsAfterThePress() {
-        val c = controller(10 * hour)
-        c.key(1, 0)
-        t = 450; c.key(1, 0)      // the remote's initial repeat delay
-        t = 570; c.key(1, 0)
-        assertEquals(2, c.info.value!!.repeats)
-        assertEquals(570L, c.info.value!!.heldMs)
-    }
-
-    @Test fun aDirectionChangeStartsANewHold() {
-        val c = controller(10 * hour)
-        c.key(1, 0)
-        t = 1_000; c.key(1, 1)
+    @Test fun holdingOnTheStreamerRemoteCrossesAtLeastAQuarterOfA46HourVodInSixSeconds() {
+        val d = 46 * hour
+        pos = 0
+        val c = controller(d)
+        holdLikeTheStreamer(c, 6_000)
         val p = c.preview.value!!
-        t = 1_130; c.key(-1, 0)
-        assertEquals(p - 10_000L, c.preview.value)
-        assertEquals(-1, c.status.value!!.dir)
+        println("46 h VOD, 6 s hold: preview at ${p / hour} h (${100 * p / d} %), speed ${c.status.value}")
+        assertTrue("reached $p of $d", p >= d / 4)
+        assertTrue(c.status.value!!.speed > 600L)
     }
 
-    @Test fun theDebugLineShowsStepHoldAndRepeats() {
-        assertEquals("scrub step 5 min held 3.2 s repeats 18", ScrubInfo(300_000, 3_200, 18).line())
-        val c = controller(3 * hour)
+    @Test fun theLabelShowsTheSpeedWhileHoldingAndTenSecondsForATap() {
+        val c = controller(10 * hour)
+        pos = 0
+        holdLikeTheStreamer(c, 2_500)
+        val speed = c.status.value!!.speed
+        assertTrue(speed > 20L)
+        assertEquals("\u25B6\u25B6 " + Scrub.speedLabel(speed), Scrub.stepText(1, speed))
+        t += 2_000; c.tick() // released: back to the tap label
+        assertEquals(ScrubStatus(1, 0L), c.status.value)
+        assertEquals("\u25B6\u25B6 10 s", Scrub.stepText(1, c.status.value!!.speed))
+    }
+
+    @Test fun theHoldEndsSixHundredMillisecondsAfterTheLastDownAndTheNextPressIsATapAgain() {
+        val c = controller(10 * hour)
+        pos = 0
+        holdLikeTheStreamer(c, 3_000)
+        assertTrue(c.isHolding())
+        val at = c.preview.value!!
+        advance(c, 1_000)
+        assertFalse(c.isHolding())
+        val after = c.preview.value!!
+        // it coasts for at most 400 ms after the last event, then holds still
+        assertTrue(after >= at)
+        advance(c, 1_000)
+        assertEquals(after, c.preview.value)
+        c.key(1, 0)
+        assertEquals(minOf(after + 10_000L, 10 * hour), c.preview.value)
+        assertEquals(ScrubStatus(1, 0L), c.status.value)
+    }
+
+    @Test fun aTrueRepeatStreamStillWorks() {
+        val d = 10 * hour
+        pos = 0
+        val c = controller(d)
         c.key(1, 0)
         var n = 0
-        while (t < 4_000) { t += 40; c.key(1, ++n) }
-        val line = c.info.value!!.line()
-        assertTrue(line, line.startsWith("scrub step 5 min held 4.0") && line.contains("repeats "))
+        val start = t
+        while (t - start < 6_000) { t += 40; c.key(1, ++n); c.tick() }
+        assertTrue("moved ${c.preview.value}", c.preview.value!! >= d / 4)
     }
 
-    @Test fun previewIsClampedToTheVideo() {
-        val c = controller(duration = 605_000)
+    @Test fun aRepeatStreamWithTheInitialRepeatDelayContinuesTheHold() {
+        val c = controller(10 * hour)
         c.key(1, 0)
-        assertEquals(605_000L, c.preview.value)
-        pos = 3_000
-        val d = controller()
-        d.key(-1, 0)
-        assertEquals(0L, d.preview.value)
+        t += 450; c.key(1, 1)   // the first repeat 450 ms after the press
+        assertTrue(c.isHolding())
+        t += 40; c.key(1, 2)
+        assertTrue(c.isHolding())
+    }
+
+    @Test fun aDirectionChangeIsANewTap() {
+        val c = controller(10 * hour)
+        pos = 5 * hour
+        holdLikeTheStreamer(c, 2_000)
+        val p = c.preview.value!!
+        t += 100
+        c.key(-1, 0)
+        assertEquals(p - 10_000L, c.preview.value)
+        assertEquals(ScrubStatus(-1, 0L), c.status.value)
+        assertFalse(c.isHolding())
+    }
+
+    @Test fun holdingBackwardsClampsAtZeroAndForwardsAtTheEnd() {
+        val c = controller(hour)
+        pos = 60_000
+        c.key(-1, 0)
+        repeat(60) { t += 100; c.key(-1, 0); c.tick() }
+        assertEquals(0L, c.preview.value)
+        val d = controller(hour)
+        pos = hour - 60_000
+        d.key(1, 0)
+        repeat(60) { t += 100; d.key(1, 0); d.tick() }
+        assertEquals(hour, d.preview.value)
+    }
+
+    @Test fun anyOtherActionEndsTheHold() {
+        val c = controller(10 * hour)
+        holdLikeTheStreamer(c, 1_500)
+        c.cancel()
+        assertFalse(c.isHolding())
+        assertNull(c.preview.value)
+        assertFalse(c.tick())
+        assertNull(c.preview.value)
+    }
+
+    @Test fun theDebugLineShowsSpeedHoldAndEvents() {
+        assertEquals("scrub speed 10 min/s held 3.2 s events 18", ScrubInfo(600, 3_200, 18).line())
+        assertEquals("scrub speed tap held 0.0 s events 1", ScrubInfo(0, 0, 1).line())
     }
 
     @Test fun commitSeeksOnceAndClears() {
         val c = controller()
-        c.key(1, 0); c.release(); t += 500; c.key(1, 0)
+        c.key(1, 0); c.release(); t += 1_000; c.key(1, 0)
         assertTrue(c.commit())
         assertEquals(listOf(620_000L), seeks)
         assertNull(c.preview.value)
@@ -215,6 +218,16 @@ class ScrubTest {
         t += 1_000
         c.key(1, 0) // a fresh preview starts from the playhead again
         assertEquals(610_000L, c.preview.value)
+    }
+
+    @Test fun previewIsClampedToTheVideo() {
+        val c = controller(duration = 605_000)
+        c.key(1, 0)
+        assertEquals(605_000L, c.preview.value)
+        pos = 3_000
+        val d = controller()
+        d.key(-1, 0)
+        assertEquals(0L, d.preview.value)
     }
 }
 

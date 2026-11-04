@@ -422,6 +422,21 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        if (focused) {
+            // One row above the bar on a dark pill: the time the preview points at, then the speed. Plain text (no animation).
+            // The slot has a fixed height, so the controls do not shift when a preview starts.
+            Box(Modifier.fillMaxWidth().height(PillHeight), contentAlignment = Alignment.Center) {
+                if (vod.previewMs != null && vod.stepText != null) {
+                    Row(
+                        Modifier.height(PillHeight).background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(PillHeight / 2)).padding(horizontal = 20.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        Text(Durations.clock(vod.previewMs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, maxLines = 1, modifier = Modifier.testTag(ControlTags.PreviewTime))
+                        Text(vod.stepText, style = MaterialTheme.typography.bodyLarge, color = FrostColors.Muted, maxLines = 1, modifier = Modifier.testTag(ControlTags.StepText))
+                    }
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth().testTag(ControlTags.SeekBar),
             verticalAlignment = Alignment.CenterVertically,
@@ -443,20 +458,14 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
                         val t = vod.thumb
                         if (t != null && vod.previewMs != null) {
                             val x = (maxWidth * fraction - PreviewCardWidth / 2).coerceIn(0.dp, (maxWidth - PreviewCardWidth).coerceAtLeast(0.dp))
-                            PreviewCard(t, Modifier.offset(x = x, y = -(PreviewCardHeight + 14.dp)))
+                            PreviewCard(t, Modifier.offset(x = x, y = -(PreviewCardHeight + PillHeight + 14.dp)))
                         }
                     }
                 }
             }
             Text(Durations.clock(vod.durationMs), style = MaterialTheme.typography.bodySmall, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.Total))
         }
-        if (focused && vod.previewMs != null && vod.stepText != null) {
-            // Large and clear: the step in force and the time it points at.
-            Row(Modifier.align(Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                Text(vod.stepText, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.Lavender, modifier = Modifier.testTag(ControlTags.StepText))
-                Text(Durations.clock(vod.previewMs), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = FrostColors.OnSurface, modifier = Modifier.testTag(ControlTags.PreviewTime))
-            }
-        } else if (focused) {
+        if (focused) {
             Text(
                 "\u25C0 \u25B6 choose time \u00B7 hold to move faster \u00B7 OK seek \u00B7 Back cancel",
                 style = MaterialTheme.typography.bodySmall, color = FrostColors.Muted,
@@ -466,6 +475,7 @@ private fun Timeline(vod: VodControls, focused: Boolean, onFocused: (Boolean) ->
     }
 }
 
+private val PillHeight = 44.dp
 private val PreviewCardWidth = 220.dp
 private val PreviewCardHeight = 124.dp
 
