@@ -130,12 +130,58 @@ class ScrubTest {
         assertFalse(c.isHolding())
         val after = c.preview.value!!
         // it coasts for at most 400 ms after the last event, then holds still
-        assertTrue(after >= at)
+        assertTrue("released: back near the last DOWN, $after vs $at", after <= at + 60_000L * Scrub.COAST_MS)
         advance(c, 1_000)
         assertEquals(after, c.preview.value)
         c.key(1, 0)
         assertEquals(minOf(after + 10_000L, 10 * hour), c.preview.value)
         assertEquals(ScrubStatus(1, 0L), c.status.value)
+    }
+
+    @Test fun releasingAtTopSpeedOn46HoursLandsWithinOneIntervalOfTheLastDown() {
+        val d = 46 * hour
+        pos = 0
+        val c = controller(d)
+        holdLikeTheStreamer(c, 6_000)
+        val lastDown = c.preview.value!! // read at the last tick; find the preview at the last DOWN below
+        // replay: hold, then record the preview right after the final DOWN
+        pos = 0; t = 1_000
+        val c2 = controller(d)
+        var i = 0
+        c2.key(1, 0)
+        var atLastDown = 0L
+        var speedAtLastDown = 0L
+        val start = t
+        var lastDownT = t
+        while (t - start < 6_000) {
+            val next = t + streamerGaps[i++ % streamerGaps.size]
+            while (t < next) { t = minOf(t + Scrub.TICK_MS, next); c2.tick() }
+            c2.key(1, 0)
+            atLastDown = c2.preview.value!!; speedAtLastDown = c2.status.value!!.speed; lastDownT = t
+        }
+        advance(c2, 1_500) // released: the hold times out
+        assertFalse(c2.isHolding())
+        val fin = c2.preview.value!!
+        val oneInterval = speedAtLastDown * 350
+        println("46 h release: at last DOWN ${atLastDown / 1000} s, final ${fin / 1000} s, allowed ${oneInterval / 1000} s past, speed $speedAtLastDown")
+        assertTrue("speed $speedAtLastDown", speedAtLastDown > 10_000)
+        assertTrue(fin >= atLastDown && fin - atLastDown <= oneInterval)
+        assertEquals(atLastDown + oneInterval, fin)
+        assertTrue(lastDown > 0 && lastDownT > start)
+        advance(c2, 1_000)
+        assertEquals(fin, c2.preview.value) // stays put
+    }
+
+    @Test fun theTickerNeverRunsMoreThanFourHundredMillisecondsPastTheLastDown() {
+        val c = controller(46 * hour)
+        pos = 0
+        c.key(1, 0)
+        t += 300; c.key(1, 0)
+        val at = c.preview.value!!
+        var maxSeen = at
+        repeat(10) { t += 50; c.tick(); if (t - 1_300 < 600) maxSeen = maxOf(maxSeen, c.preview.value!!) }
+        val speed = Scrub.speed(1_000, 46 * hour)
+        assertTrue("moved ${maxSeen - at} at $at max $maxSeen speed $speed", maxSeen - at <= speed * Scrub.COAST_MS)
     }
 
     @Test fun aTrueRepeatStreamStillWorks() {

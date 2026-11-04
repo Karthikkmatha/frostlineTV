@@ -144,7 +144,9 @@ class ScrubController(
     private val hold = KeyHold()
     private var dir = 1
     private var lastTickAt = 0L
-    private var tickedAt = 0L
+    private var inHold = false
+    private var previewAtLastDown = 0L
+    private var speedAtLastDown = 0L
 
     /** True while a hold is in force: the owner should be ticking. */
     fun isHolding(): Boolean = hold.holding(now())
@@ -155,7 +157,10 @@ class ScrubController(
         dir = if (d < 0) -1 else 1
         val continuing = hold.down(dir, repeatCount, t)
         if (continuing) {
-            if (hold.events == 2) lastTickAt = t // the hold starts: the ticker takes over
+            if (hold.events == 2) { lastTickAt = t; inHold = true } // the hold starts: the ticker takes over
+            // Where the preview and the speed were at this DOWN: the release is put back to here (plus one interval) when the hold ends.
+            previewAtLastDown = _preview.value ?: position().coerceAtLeast(0L)
+            speedAtLastDown = Scrub.speed(hold.heldMs(t), duration())
             return
         }
         // A press that continues nothing is a tap: exactly 10 s.
@@ -169,12 +174,21 @@ class ScrubController(
     fun tick(): Boolean {
         val t = now()
         if (!hold.holding(t)) {
+            if (inHold) {
+                // The key was released between the last DOWN and now, about one remote interval after the last DOWN at the latest:
+                // put the preview where the user let go, not where the ticker had coasted to.
+                inHold = false
+                val gap = t - hold.lastDownAt()
+                val upper = if (duration() > 0) duration() else Long.MAX_VALUE
+                _preview.value = (previewAtLastDown + dir * speedAtLastDown * minOf(gap, RELEASE_MS)).coerceIn(0L, upper)
+            }
             if (_status.value?.speed != 0L) _status.value?.let { _status.value = ScrubStatus(it.dir, 0L) }
             return false
         }
-        val dt = t - lastTickAt
+        // Never advance more than COAST_MS past the last DOWN: the key is probably up, so freeze until the hold times out.
+        val dt = (minOf(t, hold.lastDownAt() + Scrub.COAST_MS) - lastTickAt).coerceAtLeast(0L)
         lastTickAt = t
-        if (!hold.recent(t)) return true // the key is probably up: freeze until the hold times out
+        if (dt == 0L) return true
         val dur = duration()
         val held = hold.heldMs(t)
         val sps = Scrub.speed(held, dur)
@@ -208,5 +222,11 @@ class ScrubController(
         _status.value = null
         _info.value = null
         hold.end()
+        inHold = false
+    }
+
+    private companion object {
+        /** About one remote repeat interval (320-380 ms): how far past its last DOWN a released key can have scrubbed. */
+        const val RELEASE_MS = 350L
     }
 }
