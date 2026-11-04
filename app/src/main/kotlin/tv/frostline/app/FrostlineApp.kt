@@ -37,27 +37,43 @@ class FrostlineApp : Application(), SingletonImageLoader.Factory {
         appScope.launch { tv.frostline.core.ui.WakeSignal.events.collect { runCatching { container.twitch.tokenManager.checkNow() } } }
         appScope.launch { container.settings.liveMode.collect { tv.frostline.feature.player.PlayerProfile.liveMode = it } }
         // Baseline profile state for the debug overlay. The dexopt state is read from the odex file itself (its compiler filter), found
-        // through /proc/self/maps; ProfileVerifier cannot see a `cmd package compile`. Read again every few seconds while the overlay is up.
+        // through /proc/self/maps, then the file beside the apk, then reflection; ProfileVerifier cannot see a `cmd package compile`. Read again every few seconds while the overlay is up.
         tv.frostline.core.ui.ProfileStatus.evaluator = {
             val status = runCatching { androidx.profileinstaller.ProfileVerifier.getCompilationStatusAsync().get() }.getOrNull()
             val code = status?.profileInstallResultCode
             val verifierCompiled = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE ||
                 code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING
             val enqueued = code == androidx.profileinstaller.ProfileVerifier.CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION
-            val mapped = runCatching {
-                java.io.File("/proc/self/maps").bufferedReader().use { r -> tv.frostline.core.ui.ProfileState.odexPathFromMaps(r.lineSequence(), packageName) }
+            val isas = android.os.Build.SUPPORTED_ABIS.mapNotNull {
+                when (it) { "arm64-v8a" -> "arm64"; "armeabi-v7a", "armeabi" -> "arm"; "x86_64" -> "x86_64"; "x86" -> "x86"; else -> null }
+            }.distinct()
+            val reading = runCatching {
+                tv.frostline.core.ui.ProfileState.probe(
+                    pkg = packageName,
+                    mapsLines = java.io.File("/proc/self/maps").readLines().asSequence(),
+                    sourceDirParent = java.io.File(applicationInfo.sourceDir).parentFile,
+                    isas = isas,
+                    readHeader = { f ->
+                        runCatching {
+                            f.inputStream().use { ins ->
+                                val buf = ByteArray(64 * 1024)
+                                var n = 0
+                                while (n < buf.size) { val k = ins.read(buf, n, buf.size - n); if (k < 0) break; n += k }
+                                buf.copyOf(n)
+                            }
+                        }.getOrNull()
+                    },
+                    // The hidden DexFile.getDexFileOptimizationStatus(apk, isa) -> [filter, reason]; may be blocked by the hidden-API list, then null.
+                    reflect = {
+                        runCatching {
+                            val m = Class.forName("dalvik.system.DexFile").getDeclaredMethod("getDexFileOptimizationStatus", String::class.java, String::class.java)
+                            val r = m.invoke(null, applicationInfo.sourceDir, isas.firstOrNull() ?: "arm64") as? Array<*>
+                            r?.firstOrNull() as? String
+                        }.getOrNull()
+                    },
+                )
             }.getOrNull()
-            val odex = mapped?.let { java.io.File(it) }
-                ?: java.io.File(applicationInfo.sourceDir).parentFile?.resolve("oat")?.walkTopDown()?.firstOrNull { it.name == "base.odex" }
-            val filter = runCatching {
-                odex?.inputStream()?.use { ins ->
-                    val buf = ByteArray(64 * 1024)
-                    var n = 0
-                    while (n < buf.size) { val k = ins.read(buf, n, buf.size - n); if (k < 0) break; n += k }
-                    tv.frostline.core.ui.ProfileState.filterIn(buf.copyOf(n))
-                }
-            }.getOrNull()
-            tv.frostline.core.ui.ProfileState.text(verifierCompiled, enqueued, filter, odexMapped = mapped != null)
+            tv.frostline.core.ui.ProfileState.text(verifierCompiled, enqueued, reading)
         }
         appScope.launch {
             tv.frostline.core.ui.StartupGate.awaitIdle()
