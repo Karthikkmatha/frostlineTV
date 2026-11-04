@@ -72,9 +72,22 @@ internal fun steadyAdaptation(context: Context): Pair<DefaultTrackSelector, Defa
     val selector = DefaultTrackSelector(context, factory)
     // The default caps Auto at the display size. Decoding 1440p and showing it on a 1080p output is fine in hardware, so
     // only the decoder (and the playlist filter) limit the choice, not the viewport.
-    selector.parameters = selector.buildUponParameters().setViewportSize(Int.MAX_VALUE, Int.MAX_VALUE, true).build()
+    selector.parameters = autoQualityParameters(selector.buildUponParameters()).build()
     return selector to meter
 }
+
+/**
+ * What Auto may choose from. No viewport or size cap, and MIXED codecs: Twitch's 1440p60 is HEVC while the ladder below it
+ * is H.264, and by default the track selector only adapts inside one MIME type (the one with the most tracks, H.264), so the
+ * lone HEVC 1440p track was never a candidate and Auto sat at 1080p until the user pinned 1440p.
+ */
+@OptIn(UnstableApi::class)
+internal fun autoQualityParameters(b: DefaultTrackSelector.Parameters.Builder): DefaultTrackSelector.Parameters.Builder =
+    b.setViewportSize(Int.MAX_VALUE, Int.MAX_VALUE, true)
+        .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
+        .setForceHighestSupportedBitrate(false)
+        .setAllowVideoMixedMimeTypeAdaptiveness(true)
+        .setAllowVideoNonSeamlessAdaptiveness(true)
 
 /**
  * Renderers for what Twitch streams carry: video and audio only. Text, metadata (ID3 timed metadata), camera-motion and image

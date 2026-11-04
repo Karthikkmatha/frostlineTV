@@ -169,3 +169,24 @@ class RaidCountdownTest {
         assertEquals(emptyList<String>(), switched)
     }
 }
+
+@org.junit.runner.RunWith(org.robolectric.RobolectricTestRunner::class)
+@org.robolectric.annotation.Config(sdk = [34])
+class AutoQualityPolicyTest {
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    @Test fun autoMayMixCodecsAndIsNotCappedByTheViewport() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val p = autoQualityParameters(androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder(context)).build()
+        assertEquals(true, p.allowVideoMixedMimeTypeAdaptiveness)
+        assertEquals(true, p.allowVideoNonSeamlessAdaptiveness)
+        assertEquals(Int.MAX_VALUE, p.maxVideoWidth)
+        assertEquals(Int.MAX_VALUE, p.maxVideoHeight)
+        assertEquals(Int.MAX_VALUE, p.viewportWidth)
+        assertEquals(false, p.forceHighestSupportedBitrate)
+    }
+
+    @Test fun theStartEstimateAdmitsTheHevc1440Variant() {
+        // The first selection uses estimate x bandwidthFraction (0.7); the 1440p60 HEVC variant is about 14 Mbps.
+        org.junit.Assert.assertTrue(PlayerProfile.DEFAULT_START_BPS * 7 / 10 >= 14_000_000L)
+    }
+}
