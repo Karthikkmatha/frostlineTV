@@ -89,6 +89,8 @@ class HomeViewModel(
     resumeDao: ResumeDao,
     /** Where the last searches are kept (null in tests). */
     private val settings: SettingsStore? = null,
+    /** Twitch's watch history (null = local history only). */
+    private val history: tv.frostline.core.twitchinternal.TwitchHistory? = null,
     private val userId: suspend () -> String?,
 ) : ViewModel() {
     private val _section = MutableStateFlow(HomeSection.Following)
@@ -101,8 +103,27 @@ class HomeViewModel(
     private val _search = MutableStateFlow(SearchState())
     val search: StateFlow<SearchState> = _search.asStateFlow()
 
+    /** Twitch's Continue watching list, or null when it could not be had (no web session, or a failed call). */
+    private val remoteHistory = MutableStateFlow<List<tv.frostline.core.twitchinternal.HistoryItem>?>(null)
+
+    /** Continue watching: the local history merged with Twitch's, the newest `updatedAt` winning per video; the local one alone whenever Twitch cannot be asked. */
     val resume: StateFlow<List<ResumeEntity>> =
-        resumeDao.observeAll().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+        kotlinx.coroutines.flow.combine(resumeDao.observeAll(), remoteHistory) { local, remote -> mergeResume(local, remote) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Asks Twitch again (when Home is shown). A failure keeps the local list. */
+    fun refreshHistory() {
+        val h = history ?: return
+        viewModelScope.launch {
+            remoteHistory.value = try {
+                h.continueWatching()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                null
+            }
+        }
+    }
 
     /** The last five searches, newest first. */
     val recentSearches: StateFlow<List<String>> =
@@ -320,5 +341,27 @@ class HomeViewModel(
     private companion object {
         const val STALE_MS = 60_000L
         const val AVATAR_CACHE_MAX = 600
+    }
+}
+
+/** Local resume entries merged with Twitch's; [remote] null leaves [local] exactly as it is. */
+internal fun mergeResume(local: List<ResumeEntity>, remote: List<tv.frostline.core.twitchinternal.HistoryItem>?): List<ResumeEntity> {
+    if (remote == null) return local
+    val byId = local.associateBy { it.videoId }
+    val merged = tv.frostline.core.twitchinternal.HistoryMerge.merge(
+        local.map { tv.frostline.core.twitchinternal.HistoryItem(it.videoId, (it.position / 1000).toInt(), it.updatedAt, it.title, (it.duration / 1000).toInt(), it.thumbnail, it.channel) },
+        remote,
+    )
+    return merged.map { m ->
+        val l = byId[m.videoId]
+        ResumeEntity(
+            videoId = m.videoId,
+            position = m.positionSec * 1000L,
+            duration = if (m.lengthSec > 0) m.lengthSec * 1000L else l?.duration ?: 0L,
+            title = m.title,
+            thumbnail = m.thumbnailUrl,
+            channel = m.channelName.ifBlank { m.channelLogin },
+            updatedAt = m.updatedAtMs,
+        )
     }
 }

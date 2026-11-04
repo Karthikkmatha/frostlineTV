@@ -32,6 +32,9 @@ class AppContainer(context: Context) {
     val integrity = TwitchInternal.integrity(context) { vault.currentWebSession() }
     val engagement = TwitchInternal.engagement(integrity)
     val vodPlayback = TwitchInternal.vodPlayback()
+    /** Twitch's watch history over the web session (cached 30 s); every use falls back to the local history when it is unavailable. */
+    val twitchHistory: tv.frostline.core.twitchinternal.TwitchHistory =
+        tv.frostline.core.twitchinternal.CachingTwitchHistory(TwitchInternal.history(integrity) { vault.currentWebSession() })
     val videoComments = TwitchInternal.videoComments()
 
     /** Outlives screens: the last playback position is written after the player screen has gone. */

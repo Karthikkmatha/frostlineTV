@@ -65,6 +65,12 @@ object TwitchInternal {
     /** Test hook: point the engagement client at another GQL URL. */
     fun engagement(gqlUrl: String): EngagementApi = GqlEngagementApi(gqlUrl = gqlUrl)
 
+    /** The viewer's Twitch watch history (read, and write-back of VOD positions) with the linked web session; [session] returns its auth-token. */
+    fun history(integrity: IntegrityProvider, session: suspend () -> String?): TwitchHistory = GqlTwitchHistory(session, integrity)
+
+    /** Test hook: another GQL URL. */
+    fun history(gqlUrl: String, integrity: IntegrityProvider, session: suspend () -> String?): TwitchHistory = GqlTwitchHistory(session, integrity, gqlUrl)
+
     /** Past broadcasts and clips. */
     fun vodPlayback(): VodPlaybackResolver = TwitchVodResolver()
 

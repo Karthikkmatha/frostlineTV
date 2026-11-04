@@ -42,6 +42,8 @@ fun HomeScreen(
 ) {
     val section by viewModel.section.collectAsStateWithLifecycle()
     androidx.compose.runtime.LaunchedEffect(viewModel) { viewModel.watchNetwork() }
+    // Twitch's Continue watching list is asked again whenever Home comes back (the history call is cached for 30 s).
+    androidx.lifecycle.compose.LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { viewModel.refreshHistory() }
     var railFocused by remember { mutableStateOf(false) }
     val railRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
